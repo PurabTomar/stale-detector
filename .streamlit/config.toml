@@ -1,0 +1,32 @@
+# Dark theme for Stale-Answer Detector with a single indigo accent color.
+[theme]
+base = "dark"
+primaryColor = "#6366F1"
+backgroundColor = "#0B0F19"
+secondaryBackgroundColor = "#131A2A"
+codeBackgroundColor = "#1A2236"
+textColor = "#F1F5F9"
+linkColor = "#818CF8"
+borderColor = "#243047"
+codeTextColor = "#E2E8F0"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "10px"
+buttonRadius = "10px"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+paddingTop = "1.5rem"
+paddingBottom = "2.5rem"
+
+greenColor = "#22C55E"
+yellowColor = "#F59E0B"
+redColor = "#EF4444"
+
+[theme.sidebar]
+backgroundColor = "#0F1524"
+secondaryBackgroundColor = "#161F33"
+codeBackgroundColor = "#1A2236"
+textColor = "#F1F5F9"
+borderColor = "#243047"
+primaryColor = "#6366F1"
+linkColor = "#818CF8"

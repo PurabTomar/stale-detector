@@ -5,7 +5,17 @@ Uses the configured LLM to scan a pasted text and return a structured list of
 claims, each tagged with a category and a web search query for live verification.
 """
 
-from llm import call_llm, parse_json_response
+import threading
+import time
+
+from llm import call_llm, parse_json_response, pop_last_gateway_metrics
+
+_extractor_state = threading.local()
+
+
+def get_last_gateway_metrics() -> dict | None:
+    """Return telemetry recorded during the most recent `extract_claims` call."""
+    return getattr(_extractor_state, "last_metrics", None)
 
 # Allowed categories for extracted claims.
 VALID_CATEGORIES = (
@@ -93,6 +103,7 @@ def extract_claims(answer_text: str) -> tuple[list[dict[str, str]], str]:
         RuntimeError: If the LLM API call fails even after retries/fallbacks.
     """
     if not answer_text or not answer_text.strip():
+        _extractor_state.last_metrics = None
         return [], ""
 
     user_prompt = (
@@ -101,11 +112,33 @@ def extract_claims(answer_text: str) -> tuple[list[dict[str, str]], str]:
         f"{answer_text.strip()}"
     )
 
+    pop_last_gateway_metrics()
+    t0 = time.perf_counter()
     raw_response, model_used = call_llm(
         system_prompt=EXTRACTION_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         temperature=0.1,
     )
+    elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 1)
+
+    metrics = pop_last_gateway_metrics()
+    if metrics is None:
+        metrics = {
+            "primary_model": model_used,
+            "requested_model": model_used,
+            "model_used": model_used,
+            "provider_used": model_used.split("/", 1)[0] if "/" in str(model_used) else None,
+            "fallback_models": [],
+            "fallback_used": False,
+            "latency_ms": elapsed_ms,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "simulated_outage": False,
+            "timestamp": time.strftime("%H:%M:%S"),
+        }
+    metrics["operation"] = "Extract claims"
+    _extractor_state.last_metrics = metrics
 
     # Parse and validate the JSON list returned by the LLM.
     parsed = parse_json_response(raw_response)
