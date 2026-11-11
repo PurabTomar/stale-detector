@@ -190,6 +190,300 @@ class TestReporting(unittest.TestCase):
         self.assertIn("iOS 26 is the latest iOS.", md_str)
         self.assertIn("| 3 | Rewrite answer | 14:31:50 |", md_str)
 
+    def test_build_draft_corrected_answer_replaces_outdated_claims_and_keeps_fresh_ones(self):
+        original = "Sam Altman is CEO of OpenAI. Python 3.11 is the latest Python release."
+        results = [
+            {
+                "claim": "Sam Altman is CEO of OpenAI.",
+                "status": "fresh",
+                "score": 92,
+                "current_info": "Sam Altman remains CEO of OpenAI.",
+            },
+            {
+                "claim": "Python 3.11 is the latest Python release.",
+                "status": "outdated",
+                "score": 12,
+                "current_info": "Python 3.14 is the latest stable Python release",
+            },
+        ]
+
+        draft = reporting.build_draft_corrected_answer(original, results)
+        self.assertIn("Sam Altman is CEO of OpenAI.", draft)
+        self.assertIn("Python 3.14 is the latest stable Python release.", draft)
+        self.assertNotIn("Python 3.11", draft)
+
+        # When explicit matched_spans are provided, replace only that exact span.
+        span_start = original.index("Python 3.11")
+        draft_with_spans = reporting.build_draft_corrected_answer(
+            original,
+            results,
+            matched_spans=[{"claim_index": 1, "start": span_start, "end": len(original) - 1}],
+        )
+        self.assertIn("Python 3.14 is the latest stable Python release.", draft_with_spans)
+
+        # Fresh-only or empty answers return unchanged text.
+        fresh_only = [results[0]]
+        self.assertEqual(reporting.build_draft_corrected_answer(original, fresh_only), original)
+        self.assertEqual(reporting.build_draft_corrected_answer("", results), "")
+
+    def test_report_handles_unverifiable_risk_weighted_score_and_structured_fields(self):
+        results = [
+            {
+                "claim": "India GST slab includes 12% and 28%.",
+                "category": "regulation",
+                "risk_level": "critical",
+                "status": "fresh",
+                "score": 90,
+                "confidence": "high",
+                "current_info": "Verified GST slabs match.",
+                "reason": "Government portal confirms.",
+                "sources": [{"title": "GST Council", "url": "https://gstcouncil.gov.in/rates"}],
+            },
+            {
+                "claim": "iOS 17 is the latest iOS.",
+                "category": "version",
+                "risk_level": "moderate",
+                "status": "outdated",
+                "score": 10,
+                "confidence": "high",
+                "current_info": "iOS 26 is current.",
+                "current_value": "iOS 26",
+                "effective_date": "2026-09-15",
+                "change_summary": "iOS 18 and iOS 26 superseded iOS 17",
+                "stale_since": "2024-09",
+                "reason": "Newer major OS versions released.",
+                "sources": [{"title": "Apple Support", "url": "https://support.apple.com/ios"}],
+            },
+            {
+                "claim": "Internal Codename X ships in Q5.",
+                "category": "other",
+                "risk_level": "low",
+                "status": "unverifiable",
+                "score": None,
+                "confidence": "low",
+                "current_info": "Unverified (no authoritative live web sources found).",
+                "reason": "No public evidence found.",
+                "sources": [],
+            },
+        ]
+
+        # Change log includes outdated AND unverifiable (marked Flagged (unverifiable)) with structured fields.
+        changes = reporting.build_change_log(results)
+        self.assertEqual([c["action"] for c in changes], ["Replaced", "Flagged (unverifiable)"])
+        self.assertEqual(changes[0]["current_value"], "iOS 26")
+        self.assertEqual(changes[0]["effective_date"], "2026-09-15")
+        self.assertEqual(changes[0]["change_summary"], "iOS 18 and iOS 26 superseded iOS 17")
+        self.assertEqual(changes[0]["stale_since"], "2024-09")
+        self.assertIsNone(changes[1]["score"])
+
+        # Overall score is risk-weighted: (90*3.0 + 10*1.5) / (3.0 + 1.5) = 63, skipping unverifiable.
+        payload = reporting.build_report_payload(
+            mode="Audit pasted answer",
+            original_answer="Test original.",
+            corrected_answer="Test corrected.",
+            verification_results=results,
+        )
+        self.assertEqual(payload["summary"]["overall_score"], 63)
+        self.assertEqual(payload["summary"]["overall_tier"], "Mixed")
+        self.assertEqual(payload["summary"]["unverifiable"], 1)
+        self.assertIsNone(payload["claims"][2]["score"])
+        self.assertEqual(payload["claims"][1]["change_summary"], "iOS 18 and iOS 26 superseded iOS 17")
+
+        md_str = reporting.format_report_markdown(payload)
+        self.assertIn("63/100 (Mixed)", md_str)
+        self.assertIn("1 unverifiable", md_str)
+        self.assertIn("[UNVERIFIABLE — N/A]", md_str)
+        self.assertIn("**Change summary:** iOS 18 and iOS 26 superseded iOS 17", md_str)
+        self.assertIn("**Effective date:** 2026-09-15", md_str)
+        self.assertIn("**Stale since:** 2024-09", md_str)
+
+        # When ALL claims are unverifiable, overall score is None and overall_tier is "Unverifiable".
+        all_unverifiable_payload = reporting.build_report_payload(
+            mode="Audit pasted answer",
+            original_answer="Internal claim.",
+            verification_results=[results[2]],
+        )
+        self.assertIsNone(all_unverifiable_payload["summary"]["overall_score"])
+        self.assertEqual(all_unverifiable_payload["summary"]["overall_tier"], "Unverifiable")
+        self.assertIn("Overall freshness score:** Unverifiable", reporting.format_report_markdown(all_unverifiable_payload))
+
+    def test_evidence_layer_fields_in_json_and_markdown(self):
+        long_snippet = " ".join(f"tok{i}" for i in range(1, 40))
+        results = [
+            {
+                "claim": "Acme SDK costs $50/month.",
+                "category": "price",
+                "risk_level": "critical",
+                "status": "outdated",
+                "score": 15,
+                "confidence": "high",
+                "current_info": "Acme SDK costs $99/month.",
+                "current_value": "$99/month",
+                "stale_since": "2026-05-01",
+                "stale_for_months": 6,
+                "stale_duration_label": "stale for ~6 months",
+                "entity_domains": ["acme.dev"],
+                "sources_agreeing": 2,
+                "sources_total": 3,
+                "agreement_summary": "2 of 3 sources agree",
+                "conflict_detected": False,
+                "conflict_note": None,
+                "reason": "Official pricing page increased to $99/month in May 2026.",
+                "sources": [
+                    {
+                        "title": "Acme Pricing",
+                        "url": "https://acme.dev/pricing",
+                        "source_type": "Primary",
+                        "published_date": "2026-05-01",
+                        "snippet": long_snippet,
+                    },
+                    {
+                        "title": "Reuters Tech",
+                        "url": "https://www.reuters.com/technology/acme-price",
+                        "published_date": "2026-05-03",
+                        "snippet": "Acme raised SDK tier pricing.",
+                    },
+                ],
+            },
+            {
+                "claim": "Acme CEO is Jordan Lee.",
+                "category": "company",
+                "risk_level": "moderate",
+                "status": "uncertain",
+                "score": 52,
+                "confidence": "low",
+                "current_info": "Sources disagree on Acme CEO.",
+                "sources_agreeing": 1,
+                "sources_total": 2,
+                "agreement_summary": "1 of 2 sources agree",
+                "conflict_detected": True,
+                "conflict_note": "Sources disagree on the current fact (1 of 2 sources agree).",
+                "reason": "Sources disagree between two reports.",
+                "sources": [
+                    {
+                        "title": "Tech Forum",
+                        "url": "https://www.reddit.com/r/tech/comments/1",
+                        "source_type": "Forum",
+                        "published_date": "2026-11-02",
+                        "snippet": "Mixed reports on leadership.",
+                    }
+                ],
+            },
+        ]
+
+        payload = reporting.build_report_payload(
+            mode="Audit pasted answer",
+            original_answer="Acme SDK costs $50/month and CEO is Jordan Lee.",
+            verification_results=results,
+        )
+        c0 = payload["claims"][0]
+        self.assertEqual(c0["stale_for_months"], 6)
+        self.assertEqual(c0["stale_duration_label"], "stale for ~6 months")
+        self.assertEqual(c0["entity_domains"], ["acme.dev"])
+        self.assertEqual(c0["agreement_summary"], "2 of 3 sources agree")
+        self.assertEqual(c0["sources"][0]["source_type"], "Primary")
+        self.assertEqual(c0["sources"][0]["published_date"], "2026-05-01")
+        self.assertLessEqual(len(c0["sources"][0]["snippet"].split()), 25)
+        self.assertEqual(c0["sources"][1]["source_type"], "News")
+
+        c1 = payload["claims"][1]
+        self.assertTrue(c1["conflict_detected"])
+        self.assertIn("Sources disagree", c1["conflict_note"])
+        self.assertEqual(c1["sources"][0]["source_type"], "Forum")
+
+        md_str = reporting.format_report_markdown(payload)
+        self.assertIn("stale for ~6 months", md_str)
+        self.assertIn("2 of 3 sources agree", md_str)
+        self.assertIn("1 of 2 sources agree", md_str)
+        self.assertIn("[Primary]", md_str)
+        self.assertIn("[News]", md_str)
+        self.assertIn("[Forum]", md_str)
+        self.assertIn("2026-05-01", md_str)
+
+    def test_dual_judge_and_session_latency_fallback_metrics(self):
+        extract_meta = {
+            "operation": "Extract claims",
+            "task": "extract",
+            "timestamp": "15:00:00",
+            "primary_model": "gemini/gemini-2.5-flash-lite",
+            "model_used": "gemini/gemini-2.5-flash-lite",
+            "fallback_used": False,
+            "latency_ms": 90.0,
+            "prompt_tokens": 40,
+            "completion_tokens": 15,
+            "total_tokens": 55,
+        }
+        results = [
+            {
+                "claim": "Acme SDK costs $50/month.",
+                "category": "price",
+                "risk_level": "critical",
+                "status": "uncertain",
+                "score": 55,
+                "confidence": "low",
+                "current_info": "Judges disagreed on exact plan tier.",
+                "reason": "Models disagree across billing pages.",
+                "dual_judge_used": True,
+                "judge_models": ["openai/gpt-4o-mini", "anthropic/claude-3-5-sonnet-20241022"],
+                "judge_verdicts": [
+                    {"model": "openai/gpt-4o-mini", "status": "fresh", "score": 88, "current_info": "$50"},
+                    {"model": "anthropic/claude-3-5-sonnet-20241022", "status": "outdated", "score": 22, "current_info": "$79"},
+                ],
+                "model_disagreement": True,
+                "model_agreement_summary": "Models disagree",
+                "judge_telemetry": [
+                    {
+                        "operation": "Verify claim (Judge 1)",
+                        "task": "judge",
+                        "timestamp": "15:00:01",
+                        "primary_model": "openai/gpt-4o-mini",
+                        "model_used": "groq/llama-3.3-70b-versatile",
+                        "fallback_used": True,
+                        "latency_ms": 150.0,
+                        "prompt_tokens": 80,
+                        "completion_tokens": 20,
+                        "total_tokens": 100,
+                    },
+                    {
+                        "operation": "Verify claim (Judge 2)",
+                        "task": "judge",
+                        "timestamp": "15:00:02",
+                        "primary_model": "anthropic/claude-3-5-sonnet-20241022",
+                        "model_used": "anthropic/claude-3-5-sonnet-20241022",
+                        "fallback_used": False,
+                        "latency_ms": 210.0,
+                        "prompt_tokens": 90,
+                        "completion_tokens": 30,
+                        "total_tokens": 120,
+                    },
+                ],
+                "sources": [{"title": "Acme Pricing", "url": "https://acme.dev/pricing"}],
+            }
+        ]
+
+        payload = reporting.build_report_payload(
+            mode="Audit pasted answer",
+            original_answer="Acme SDK costs $50/month.",
+            verification_results=results,
+            extract_model="gemini/gemini-2.5-flash-lite",
+            extract_meta=extract_meta,
+            audit_duration_ms=950.0,
+        )
+
+        self.assertEqual(payload["tokens_used"]["requests_count"], 3)
+        self.assertEqual(payload["tokens_used"]["fallback_count"], 1)
+        self.assertEqual(payload["tokens_used"]["avg_latency_ms"], 150.0)
+        self.assertEqual(payload["tokens_used"]["audit_duration_ms"], 950.0)
+        self.assertEqual(payload["tokens_used"]["total_tokens"], 275)
+        self.assertTrue(payload["claims"][0]["dual_judge_used"])
+        self.assertEqual(payload["claims"][0]["model_agreement_summary"], "Models disagree")
+
+        md_str = reporting.format_report_markdown(payload)
+        self.assertIn("Dual-judge consensus:** Models disagree", md_str)
+        self.assertIn("avg latency 150 ms", md_str)
+        self.assertIn("audit time 950 ms", md_str)
+        self.assertIn("1 fallback(s)", md_str)
+
 
 if __name__ == "__main__":
     unittest.main()

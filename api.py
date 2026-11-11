@@ -8,6 +8,7 @@ Run locally with:
     uvicorn api:app --host 0.0.0.0 --port 8000
 """
 
+import time
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -48,6 +49,10 @@ class VerifyRequest(BaseModel):
         default=True,
         description="Whether to reuse the 6-hour on-disk SQLite Tavily cache.",
     )
+    dual_judge: bool = Field(
+        default=False,
+        description="When true, two distinct judge models evaluate each claim through Bifrost.",
+    )
 
     @field_validator("answer")
     @classmethod
@@ -60,6 +65,17 @@ class VerifyRequest(BaseModel):
 class SourceLink(BaseModel):
     title: str
     url: str
+    source_type: str | None = None
+    published_date: str | None = None
+    snippet: str | None = None
+
+
+class JudgeVerdict(BaseModel):
+    model: str
+    status: str
+    score: int | None = None
+    current_info: str = ""
+    reason: str = ""
 
 
 class ClaimTokens(BaseModel):
@@ -71,13 +87,31 @@ class ClaimTokens(BaseModel):
 class VerifiedClaim(BaseModel):
     index: int
     claim: str
+    span: str | None = None
     category: str
     search_query: str
     status: str
-    score: int
+    score: int | None = None
     confidence: str
     risk_level: str
     current_info: str
+    current_value: str | None = None
+    effective_date: str | None = None
+    change_summary: str | None = None
+    stale_since: str | None = None
+    stale_for_months: int | None = None
+    stale_duration_label: str | None = None
+    entity_domains: list[str] = Field(default_factory=list)
+    sources_agreeing: int | None = None
+    sources_total: int | None = None
+    agreement_summary: str | None = None
+    conflict_detected: bool = False
+    conflict_note: str | None = None
+    dual_judge_used: bool = False
+    judge_models: list[str] = Field(default_factory=list)
+    judge_verdicts: list[JudgeVerdict] = Field(default_factory=list)
+    model_disagreement: bool = False
+    model_agreement_summary: str | None = None
     reason: str
     why_this_score: str
     score_breakdown: dict[str, Any] | None = None
@@ -102,6 +136,7 @@ class VerifySummary(BaseModel):
     fresh: int
     uncertain: int
     outdated: int
+    unverifiable: int = 0
     tavily_credits_used: float
 
 
@@ -110,7 +145,10 @@ class TokenUsageSummary(BaseModel):
     completion_tokens: int
     total_tokens: int
     requests_count: int
+    fallback_count: int = 0
     total_latency_ms: float
+    avg_latency_ms: float = 0.0
+    audit_duration_ms: float = 0.0
 
 
 class VerifyResponse(BaseModel):
@@ -227,22 +265,30 @@ def verify_answer(request: VerifyRequest) -> dict[str, Any]:
     Extract time-sensitive claims from `request.answer`, verify each claim against
     live Tavily sources, and return the structured claims + freshness score JSON.
     """
+    audit_t0 = time.perf_counter()
     try:
         # Step 1: Extract claims via configured LLM (Bifrost or Direct Gemini).
         claims, extract_model = extract_claims(request.answer)
         extract_meta = get_extract_metrics()
 
         # Step 2: Verify each claim using Tavily Search/Extract (only when claims exist).
-        results = verify_claims(claims, use_cache=request.use_cache) if claims else []
+        if not claims:
+            results = []
+        elif request.dual_judge:
+            results = verify_claims(claims, use_cache=request.use_cache, dual_judge=True)
+        else:
+            results = verify_claims(claims, use_cache=request.use_cache)
     except Exception as exc:
         raise _map_exception_to_http(exc) from exc
 
+    audit_duration_ms = round((time.perf_counter() - audit_t0) * 1000.0, 1)
     payload = build_report_payload(
         mode="REST API",
         original_answer=request.answer,
         verification_results=results,
         extract_model=extract_model or None,
         extract_meta=extract_meta,
+        audit_duration_ms=audit_duration_ms,
     )
     payload["routing_mode"] = "bifrost" if is_use_bifrost() else "direct_gemini"
     return payload

@@ -1,8 +1,8 @@
 .env
+.streamlit/secrets.toml
 __pycache__/
 *.pyc
 .venv/
 venv/
 .agents/
 .tavily_cache.db*
-

@@ -2,19 +2,24 @@
 llm.py - Bifrost-aware OpenAI-compatible LLM client wrapper.
 
 Reads USE_BIFROST, LLM_BASE_URL, LLM_API_KEY (or GEMINI_API_KEY when direct),
-LLM_MODEL, LLM_MODEL_FALLBACKS, and optional LLM_VIRTUAL_KEY from .env (or
-Streamlit Secrets) so requests can either:
+LLM_MODEL, LLM_MODEL_EXTRACT, LLM_MODEL_JUDGE, optional LLM_MODEL_JUDGE_2,
+LLM_MODEL_FALLBACKS (cross-provider `provider/model` format), and optional
+LLM_VIRTUAL_KEY from .env (or Streamlit Secrets) so requests can either:
 - Route through a Bifrost AI gateway (`USE_BIFROST=true`, default), or
 - Call Gemini's OpenAI-compatible endpoint directly (`USE_BIFROST=false`) for
   deployments such as Streamlit Community Cloud where no local Bifrost runs.
 
 Bifrost Gateway features (`USE_BIFROST=true`):
-- Sends native per-request fallbacks via `extra_body={"fallbacks": [...]}` and
-  virtual key auth via `default_headers={"x-bf-vk": ...}`.
+- Task-based routing: cheap/fast `LLM_MODEL_EXTRACT` for claim extraction and
+  stronger `LLM_MODEL_JUDGE` for freshness judging (falling back to `LLM_MODEL`).
+- Dual-judge support: resolves two distinct judge models across configured providers.
+- Sends native cross-provider per-request fallbacks (`provider/model`, e.g.
+  `anthropic/claude-3-5-sonnet-20241022`, `groq/llama-3.3-70b-versatile`) via
+  `extra_body={"fallbacks": [...]}` and virtual key auth via `x-bf-vk`.
 - Keeps an app-level single retry ONLY as a safety net when the gateway is
   unreachable (connection/timeout errors), plus simulated-outage testing.
-- Records per-request telemetry (model answered, latency ms, prompt/completion
-  tokens, fallback status) from Bifrost's `extra_fields` / `x-bifrost-*` headers.
+- Records per-request telemetry (task, model answered, latency ms, tokens,
+  fallback status) from Bifrost's `extra_fields` / `x-bifrost-*` headers.
 - Checks Bifrost gateway health via `GET /health`.
 """
 
@@ -104,39 +109,43 @@ def _is_gemini_model(model: str) -> bool:
     return _normalize_gemini_model(model).lower().startswith("gemini")
 
 
-def get_llm_config() -> tuple[str, str | None, list[str]]:
+def _extract_model_provider(model: str | None) -> str:
+    """Return the provider prefix from a `provider/model` string (or empty string)."""
+    cleaned = str(model or "").strip().lower()
+    if "/" not in cleaned:
+        return ""
+    return cleaned.split("/", 1)[0].strip()
+
+
+def _parse_fallback_list(raw_fallbacks: str) -> list[str]:
+    """Parse comma-separated `LLM_MODEL_FALLBACKS`, preserving `provider/model` format."""
+    seen: list[str] = []
+    for item in str(raw_fallbacks or "").split(","):
+        cleaned = item.strip()
+        if cleaned and cleaned not in seen:
+            seen.append(cleaned)
+    return seen
+
+
+def _resolve_task_models_from_env(
+    task: str | None = None,
+    model_override: str | None = None,
+) -> tuple[bool, str | None, list[str]]:
     """
-    Read LLM settings from environment variables (.env) or Streamlit Secrets.
-
-    When `USE_BIFROST=false`, routes directly to Gemini's OpenAI-compatible
-    endpoint (`https://generativelanguage.googleapis.com/v1beta/openai/`),
-    accepting `LLM_API_KEY` or `GEMINI_API_KEY` and normalizing Gemini model names.
-
-    Returns:
-        A tuple of (api_key, base_url, model_chain), where model_chain starts
-        with the primary model followed by any deduplicated fallback models.
-
-    Raises:
-        ValueError: If the required API key is missing.
+    Resolve `(use_bifrost, resolved_base_url, model_chain)` for
+    `task` (`"extract"`, `"judge"`, or default) without requiring API key presence.
     """
-    # Reload .env in case the user edited it while the app is running.
-    load_dotenv(override=False)
-
     use_bifrost = is_use_bifrost()
     raw_base_url = _get_config_value("LLM_BASE_URL")
-    raw_primary = _get_config_value("LLM_MODEL")
-    raw_fallbacks = _get_config_value("LLM_MODEL_FALLBACKS")
-    fallback_models = [m.strip() for m in raw_fallbacks.split(",") if m.strip()]
+    raw_default = _get_config_value("LLM_MODEL")
+    raw_extract = _get_config_value("LLM_MODEL_EXTRACT")
+    raw_judge = _get_config_value("LLM_MODEL_JUDGE")
+    fallback_models = _parse_fallback_list(_get_config_value("LLM_MODEL_FALLBACKS"))
+
+    norm_task = str(task or "").strip().lower() or None
+    override_clean = str(model_override or "").strip()
 
     if not use_bifrost:
-        api_key = _get_config_value("LLM_API_KEY") or _get_config_value("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "LLM_API_KEY (or GEMINI_API_KEY) is not set. Please add your Gemini API key "
-                "to your .env file or Streamlit Secrets when USE_BIFROST=false."
-            )
-
-        # Point directly at Google's OpenAI-compatible endpoint (ignoring localhost/Bifrost URLs).
         if raw_base_url and "generativelanguage.googleapis.com" in raw_base_url.lower():
             base_url = raw_base_url if raw_base_url.endswith("/") else raw_base_url + "/"
         else:
@@ -147,8 +156,18 @@ def get_llm_config() -> tuple[str, str | None, list[str]]:
             _normalize_gemini_model(m) for m in fallback_models if _is_gemini_model(m)
         ]
 
-        if raw_primary and _is_gemini_model(raw_primary):
-            primary_model = _normalize_gemini_model(raw_primary)
+        task_raw = ""
+        if override_clean:
+            task_raw = override_clean
+        elif norm_task == "extract":
+            task_raw = raw_extract
+        elif norm_task == "judge":
+            task_raw = raw_judge
+
+        if task_raw and _is_gemini_model(task_raw):
+            primary_model = _normalize_gemini_model(task_raw)
+        elif raw_default and _is_gemini_model(raw_default):
+            primary_model = _normalize_gemini_model(raw_default)
         elif gemini_override:
             primary_model = _normalize_gemini_model(gemini_override)
         elif gemini_fallbacks:
@@ -156,22 +175,176 @@ def get_llm_config() -> tuple[str, str | None, list[str]]:
         else:
             primary_model = DEFAULT_GEMINI_MODEL
 
+        # If override picked one of the fallback models, still keep default primary as backup.
+        candidates = [primary_model, *gemini_fallbacks]
+        if override_clean and raw_default and _is_gemini_model(raw_default):
+            candidates.append(_normalize_gemini_model(raw_default))
+
         model_chain: list[str] = []
-        for candidate in [primary_model, *gemini_fallbacks]:
+        for candidate in candidates:
             if candidate and candidate not in model_chain:
                 model_chain.append(candidate)
 
-        return api_key, base_url, model_chain
+        return False, base_url, model_chain
 
-    api_key = _get_config_value("LLM_API_KEY")
+    # Bifrost Gateway mode (USE_BIFROST=true): preserve all cross-provider `provider/model` strings.
     base_url = raw_base_url or None
-    primary_model = raw_primary or "gpt-4o-mini"
+    default_primary = raw_default or "gpt-4o-mini"
+
+    if override_clean:
+        primary_model = override_clean
+    elif norm_task == "extract" and raw_extract:
+        primary_model = raw_extract
+    elif norm_task == "judge" and raw_judge:
+        primary_model = raw_judge
+    else:
+        primary_model = default_primary
+
+    candidates = [primary_model, *fallback_models]
+    if override_clean:
+        # Ensure secondary judge override still has a backup if all fallbacks matched override.
+        if raw_judge and raw_judge != primary_model:
+            candidates.append(raw_judge)
+        elif default_primary and default_primary != primary_model:
+            candidates.append(default_primary)
 
     model_chain = []
-    for candidate in [primary_model, *fallback_models]:
+    for candidate in candidates:
         if candidate and candidate not in model_chain:
             model_chain.append(candidate)
 
+    return True, base_url, model_chain
+
+
+def get_task_routing_summary() -> dict[str, Any]:
+    """
+    Return the active per-task routing configuration (extract, judge, dual-judge pair,
+    default model, and cross-provider fallbacks) without raising if API keys are missing.
+    """
+    load_dotenv(override=False)
+    use_bifrost, _, default_chain = _resolve_task_models_from_env(task=None)
+    _, _, extract_chain = _resolve_task_models_from_env(task="extract")
+    _, _, judge_chain = _resolve_task_models_from_env(task="judge")
+
+    default_model = default_chain[0]
+    extract_model = extract_chain[0]
+    judge_primary = judge_chain[0]
+    fallbacks = list(default_chain[1:])
+    # Include judge_chain fallbacks in case primary judge differed from default.
+    for fb in judge_chain[1:]:
+        if fb not in fallbacks and fb != default_model:
+            fallbacks.append(fb)
+
+    # Resolve second judge model for Dual-Judge mode.
+    raw_judge_second = (
+        _get_config_value("LLM_MODEL_JUDGE_SECOND")
+        or _get_config_value("LLM_MODEL_JUDGE_2")
+        or _get_config_value("LLM_MODEL_DUAL_JUDGE")
+    )
+    primary_provider = _extract_model_provider(judge_primary)
+    dual_judge_secondary: str | None = None
+    dual_judge_configured = False
+
+    if raw_judge_second:
+        candidate = raw_judge_second.strip()
+        if not use_bifrost:
+            candidate = _normalize_gemini_model(candidate) if _is_gemini_model(candidate) else ""
+        if candidate and not _models_refer_to_same(candidate, judge_primary):
+            dual_judge_secondary = candidate
+            dual_judge_configured = True
+
+    if dual_judge_secondary is None:
+        all_candidates = [*judge_chain[1:], *default_chain, *extract_chain]
+        # Prefer a model from a genuinely different provider first (e.g., openai vs anthropic/gemini/groq).
+        for cand in all_candidates:
+            if not cand or _models_refer_to_same(cand, judge_primary):
+                continue
+            cand_prov = _extract_model_provider(cand)
+            if primary_provider and cand_prov and cand_prov != primary_provider:
+                dual_judge_secondary = cand
+                dual_judge_configured = True
+                break
+
+    if dual_judge_secondary is None:
+        all_candidates = [*judge_chain[1:], *default_chain, *extract_chain]
+        for cand in all_candidates:
+            if cand and not _models_refer_to_same(cand, judge_primary):
+                dual_judge_secondary = cand
+                dual_judge_configured = True
+                break
+
+    if dual_judge_secondary is None:
+        if not use_bifrost:
+            dual_judge_secondary = (
+                "gemini-2.5-flash-lite"
+                if "flash-lite" not in judge_primary.lower()
+                else "gemini-2.5-flash"
+            )
+        elif primary_provider == "anthropic":
+            dual_judge_secondary = "openai/gpt-4o-mini"
+        elif primary_provider:
+            dual_judge_secondary = "anthropic/claude-3-5-sonnet-20241022"
+        else:
+            dual_judge_secondary = "anthropic/claude-3-5-sonnet-20241022"
+
+    return {
+        "routing_mode": "bifrost" if use_bifrost else "direct_gemini",
+        "default_model": default_model,
+        "extract_model": extract_model,
+        "judge_model": judge_primary,
+        "dual_judge_primary": judge_primary,
+        "dual_judge_secondary": dual_judge_secondary,
+        "dual_judge_configured": dual_judge_configured,
+        "fallbacks": fallbacks,
+    }
+
+
+def get_dual_judge_models() -> tuple[str, str]:
+    """Return `(judge_1_model, judge_2_model)` for Dual-judge mode."""
+    summary = get_task_routing_summary()
+    return str(summary["dual_judge_primary"]), str(summary["dual_judge_secondary"])
+
+
+def get_llm_config(
+    task: str | None = None,
+    model_override: str | None = None,
+) -> tuple[str, str | None, list[str]]:
+    """
+    Read LLM settings from environment variables (.env) or Streamlit Secrets.
+
+    Supports task-based routing (`task="extract"` reads `LLM_MODEL_EXTRACT`,
+    `task="judge"` reads `LLM_MODEL_JUDGE`, falling back to `LLM_MODEL`) as well
+    as cross-provider `provider/model` fallbacks in `LLM_MODEL_FALLBACKS`.
+
+    When `USE_BIFROST=false`, routes directly to Gemini's OpenAI-compatible
+    endpoint (`https://generativelanguage.googleapis.com/v1beta/openai/`),
+    accepting `LLM_API_KEY` or `GEMINI_API_KEY` and normalizing Gemini model names.
+
+    Returns:
+        A tuple of (api_key, base_url, model_chain), where model_chain starts
+        with the resolved task/primary model followed by deduplicated fallbacks.
+
+    Raises:
+        ValueError: If the required API key is missing.
+    """
+    # Reload .env in case the user edited it while the app is running.
+    load_dotenv(override=False)
+
+    use_bifrost, base_url, model_chain = _resolve_task_models_from_env(
+        task=task,
+        model_override=model_override,
+    )
+
+    if not use_bifrost:
+        api_key = _get_config_value("LLM_API_KEY") or _get_config_value("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "LLM_API_KEY (or GEMINI_API_KEY) is not set. Please add your Gemini API key "
+                "to your .env file or Streamlit Secrets when USE_BIFROST=false."
+            )
+        return api_key, base_url, model_chain
+
+    api_key = _get_config_value("LLM_API_KEY")
     if not api_key:
         raise ValueError(
             "LLM_API_KEY is not set. Please add it to your .env file "
@@ -181,14 +354,20 @@ def get_llm_config() -> tuple[str, str | None, list[str]]:
     return api_key, base_url, model_chain
 
 
-def get_llm_client() -> tuple[OpenAI, list[str], str | None]:
+def get_llm_client(
+    task: str | None = None,
+    model_override: str | None = None,
+) -> tuple[OpenAI, list[str], str | None]:
     """
     Create and return an OpenAI SDK client configured from .env / Secrets.
 
     Returns:
         A tuple of (OpenAI client, model_chain list, base_url).
     """
-    api_key, base_url, model_chain = get_llm_config()
+    api_key, base_url, model_chain = get_llm_config(
+        task=task,
+        model_override=model_override,
+    )
 
     # Optional Bifrost virtual key; sent via x-bf-vk only when routing via Bifrost.
     virtual_key = _get_config_value("LLM_VIRTUAL_KEY") if is_use_bifrost() else ""
@@ -433,8 +612,8 @@ def format_llm_error(
     ):
         if "virtual key" in lower or "x-bf-vk" in lower:
             return (
-                "Invalid Bifrost virtual key (LLM_VIRTUAL_KEY / x-bf-vk). "
-                "Please double-check the value in your .env file."
+                "Invalid or restricted Bifrost virtual key (LLM_VIRTUAL_KEY / x-bf-vk). "
+                "Verify the key and ensure this provider is allowed under Virtual Keys in the Bifrost dashboard."
             )
         if not bifrost_enabled:
             return (
@@ -483,6 +662,14 @@ def _models_refer_to_same(configured: str, returned: str) -> bool:
     r_norm = returned.strip().lower()
     if c_norm == r_norm:
         return True
+    if c_norm.endswith("/" + r_norm) or r_norm.endswith("/" + c_norm):
+        return True
+
+    # If both carry an explicit provider prefix (e.g. openai/ vs azure/), they must agree.
+    if "/" in c_norm and "/" in r_norm:
+        if _extract_model_provider(c_norm) != _extract_model_provider(r_norm):
+            return False
+
     c_base = c_norm.split("/", 1)[-1]
     r_base = r_norm.split("/", 1)[-1]
     if c_base == r_base:
@@ -511,6 +698,7 @@ def _extract_response_metadata(
     forced_fallback_used: bool = False,
     fallback_target: str | None = None,
     routing_mode: str | None = None,
+    task: str | None = None,
 ) -> dict:
     """
     Build per-request gateway telemetry from OpenAI response fields plus Bifrost's
@@ -558,7 +746,11 @@ def _extract_response_metadata(
     # Prefer exact configured name from model_chain when it matches the returned model.
     model_used = qualified_candidate
     for configured in [original_primary, *fallback_models]:
-        if _models_refer_to_same(configured, qualified_candidate) or _models_refer_to_same(
+        if _models_refer_to_same(configured, qualified_candidate):
+            model_used = configured
+            break
+        cfg_provider = _extract_model_provider(configured)
+        if (not answering_provider or not cfg_provider or cfg_provider == answering_provider.lower()) and _models_refer_to_same(
             configured, candidate_model
         ):
             model_used = configured
@@ -576,7 +768,7 @@ def _extract_response_metadata(
     )
 
     matched_fallback = any(
-        _models_refer_to_same(fb, model_used) or _models_refer_to_same(fb, candidate_model)
+        _models_refer_to_same(fb, model_used) or _models_refer_to_same(fb, qualified_candidate)
         for fb in fallback_models
     ) and not _models_refer_to_same(original_primary, model_used)
 
@@ -601,6 +793,7 @@ def _extract_response_metadata(
             pass
 
     return {
+        "task": (task or "default"),
         "primary_model": original_primary,
         "requested_model": requested_model,
         "model_used": model_used,
@@ -664,6 +857,8 @@ def call_llm_with_meta(
     user_prompt: str,
     temperature: float = 0.1,
     simulate_outage: bool | None = None,
+    task: str | None = None,
+    model_override: str | None = None,
 ) -> tuple[str, dict]:
     """
     Send a chat completion request (via Bifrost native fallbacks or Direct Gemini
@@ -671,16 +866,31 @@ def call_llm_with_meta(
     `(response_text, telemetry_meta)`.
 
     Behavior:
-    1. When USE_BIFROST=true, sends `model=primary_model` with
-       `extra_body={"fallbacks": fallback_models}` so Bifrost fails over natively.
-    2. When USE_BIFROST=false, calls Gemini's OpenAI-compatible endpoint directly
+    1. Resolves task-based model selection (`task="extract"` uses `LLM_MODEL_EXTRACT`,
+       `task="judge"` uses `LLM_MODEL_JUDGE`, `model_override` selects an explicit
+       model such as the secondary judge in Dual-judge mode).
+    2. When USE_BIFROST=true, sends `model=primary_model` with
+       `extra_body={"fallbacks": fallback_models}` so Bifrost fails over natively
+       across cross-provider `provider/model` chains.
+    3. When USE_BIFROST=false, calls Gemini's OpenAI-compatible endpoint directly
        and walks `fallback_models` explicitly on recoverable status codes.
-    3. Keeps a single safety-net retry ONLY when the endpoint is unreachable
+    4. Keeps a single safety-net retry ONLY when the endpoint is unreachable
        (connection failure, timeout, or 502/503/504).
-    4. If `simulate_outage` is True, forces the primary model to fail on purpose so
+    5. If `simulate_outage` is True, forces the primary model to fail on purpose so
        Bifrost (or the fallback path) switches cleanly to the next fallback model.
     """
-    client, model_chain, base_url = get_llm_client()
+    if task is None and model_override is None:
+        client, model_chain, base_url = get_llm_client()
+    else:
+        try:
+            client, model_chain, base_url = get_llm_client(
+                task=task,
+                model_override=model_override,
+            )
+        except TypeError:
+            # Preserve compatibility when get_llm_client is mocked with a 0-arg callable.
+            client, model_chain, base_url = get_llm_client()
+
     original_primary = model_chain[0]
     fallback_models = model_chain[1:]
     messages = [
@@ -723,6 +933,7 @@ def call_llm_with_meta(
                 elapsed_ms=elapsed_ms,
                 simulated_outage=outage,
                 routing_mode=routing_mode,
+                task=task,
             )
             _record_gateway_metrics(meta)
             return content, meta
@@ -777,6 +988,7 @@ def call_llm_with_meta(
                     forced_fallback_used=True,
                     fallback_target=fb_model,
                     routing_mode=routing_mode,
+                    task=task,
                 )
                 _record_gateway_metrics(meta)
                 return content, meta
@@ -802,19 +1014,23 @@ def call_llm(
     user_prompt: str,
     temperature: float = 0.1,
     simulate_outage: bool | None = None,
+    task: str | None = None,
+    model_override: str | None = None,
 ) -> tuple[str, str]:
     """
     Send a chat completion request using Bifrost native fallbacks and return
     `(response_text, model_that_answered)`.
 
     Per-request telemetry is also stored via `pop_last_gateway_metrics()` so callers
-    can read latency, token usage, and fallback status without breaking 2-tuple unpacking.
+    can read latency, token usage, task, and fallback status without breaking 2-tuple unpacking.
     """
     content, meta = call_llm_with_meta(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         temperature=temperature,
         simulate_outage=simulate_outage,
+        task=task,
+        model_override=model_override,
     )
     return content, meta["model_used"]
 
@@ -866,6 +1082,7 @@ def ask_question(question: str, temperature: float = 0.3) -> tuple[str, dict]:
             "timestamp": time.strftime("%H:%M:%S"),
         }
     meta["operation"] = "Ask & Audit Q&A"
+    meta["task"] = meta.get("task") or "qa"
     return answer_text, meta
 
 

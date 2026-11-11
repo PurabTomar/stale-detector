@@ -1,0 +1,122 @@
+[
+  {
+    "claim": "Apple sells the iPhone 15 Pro Max as its latest flagship model at a starting US price of $1,199.",
+    "category": "price",
+    "expected_status": "outdated",
+    "note": "Outdated: Apple released the iPhone 18 Pro Max (starting at $1,299) and iPhone 18 Pro (starting at $1,199) in 2026."
+  },
+  {
+    "claim": "Netflix's ad-free Standard monthly plan in the United States costs $15.49 per month.",
+    "category": "price",
+    "expected_status": "outdated",
+    "note": "Outdated: Netflix's ad-free Standard US monthly plan increased to $19.99 per month."
+  },
+  {
+    "claim": "OpenAI's GPT-4o API standard pricing is $2.50 per million input tokens and $10.00 per million output tokens.",
+    "category": "price",
+    "expected_status": "fresh",
+    "note": "Fresh: OpenAI's GPT-4o standard API rate remains $2.50 per million input tokens and $10.00 per million output tokens."
+  },
+  {
+    "claim": "OpenAI's ChatGPT Plus consumer subscription costs $20 per month in the United States.",
+    "category": "price",
+    "expected_status": "fresh",
+    "note": "Fresh: ChatGPT Plus remains priced at $20 USD per month."
+  },
+  {
+    "claim": "Python 3.11 is the latest stable release series of the Python programming language.",
+    "category": "version",
+    "expected_status": "outdated",
+    "note": "Outdated: Python 3.15 (latest stable release 3.15.2) is the current stable Python 3 series."
+  },
+  {
+    "claim": "React 18 is the latest major stable release of the React JavaScript library.",
+    "category": "version",
+    "expected_status": "outdated",
+    "note": "Outdated: React 19 (including 19.3) is the latest major stable release of React."
+  },
+  {
+    "claim": "Node.js 26 (Lithium) is the latest Active LTS release of Node.js as of late 2026.",
+    "category": "version",
+    "expected_status": "fresh",
+    "note": "Fresh: Node.js 26 (Lithium) entered Active LTS in October 2026 with support through April 2029."
+  },
+  {
+    "claim": "Go 1.27 is the current stable major release series of the Go programming language in November 2026.",
+    "category": "version",
+    "expected_status": "fresh",
+    "note": "Fresh: Go 1.27 (latest patch 1.27.4 released November 2026) is the current stable Go release series."
+  },
+  {
+    "claim": "India's Goods and Services Tax (GST) currently charges five main tax slabs including 12% and 28%.",
+    "category": "regulation",
+    "expected_status": "outdated",
+    "note": "Outdated: Effective September 22, 2025, India's GST 2.0 reform removed the 12% and 28% slabs in favor of 0%, 5%, 18%, and 40%."
+  },
+  {
+    "claim": "Under India's new income tax regime, the basic tax-free exemption limit is ₹3 lakh.",
+    "category": "regulation",
+    "expected_status": "outdated",
+    "note": "Outdated: India raised the basic exemption limit under the new tax regime to ₹4 lakh (with Section 87A rebate up to ₹12 lakh)."
+  },
+  {
+    "claim": "The European Union's USB-C common charger mandate took effect for laptops sold in the EU in April 2026.",
+    "category": "regulation",
+    "expected_status": "fresh",
+    "note": "Fresh: The EU Radio Equipment Directive common USB-C charging requirement for laptops entered into effect on April 28, 2026."
+  },
+  {
+    "claim": "U.S. securities broker-dealer trades settle on a T+1 cycle (one business day) under SEC rules.",
+    "category": "regulation",
+    "expected_status": "fresh",
+    "note": "Fresh: SEC rules moved U.S. equities and corporate/municipal bonds to T+1 settlement in May 2024 and remain in effect."
+  },
+  {
+    "claim": "Tim Cook is currently serving as the Chief Executive Officer (CEO) of Apple Inc.",
+    "category": "company",
+    "expected_status": "outdated",
+    "note": "Outdated: Tim Cook transitioned to Executive Chairman on September 1, 2026, succeeded as Apple CEO by John Ternus."
+  },
+  {
+    "claim": "Linda Yaccarino is currently serving as the CEO of X (formerly Twitter).",
+    "category": "company",
+    "expected_status": "outdated",
+    "note": "Outdated: Linda Yaccarino stepped down as CEO of X in July 2025."
+  },
+  {
+    "claim": "Josh D'Amaro serves as the Chief Executive Officer of The Walt Disney Company.",
+    "category": "company",
+    "expected_status": "fresh",
+    "note": "Fresh: Josh D'Amaro succeeded Bob Iger as CEO of The Walt Disney Company in March 2026."
+  },
+  {
+    "claim": "Brian Niccol serves as the Chief Executive Officer of Starbucks Corporation.",
+    "category": "company",
+    "expected_status": "fresh",
+    "note": "Fresh: Brian Niccol has served as Starbucks CEO since September 2024."
+  },
+  {
+    "claim": "The Reserve Bank of India (RBI) policy repo rate is currently held at 6.50%.",
+    "category": "statistic",
+    "expected_status": "outdated",
+    "note": "Outdated: Following its October 2026 policy decision, the RBI policy repo rate stands at 5.50% rather than 6.50%."
+  },
+  {
+    "claim": "The U.S. Federal Reserve target range for the federal funds rate is currently 5.25% to 5.50%.",
+    "category": "statistic",
+    "expected_status": "outdated",
+    "note": "Outdated: As of late October 2026, the FOMC target range for the federal funds rate is 3.75% to 4.00%."
+  },
+  {
+    "claim": "According to UN estimates, the global human population stands at approximately 8.3 billion people in 2026.",
+    "category": "statistic",
+    "expected_status": "fresh",
+    "note": "Fresh: United Nations demographic projections place world population at approximately 8.3 billion in 2026."
+  },
+  {
+    "claim": "According to the ITU 2026 report, roughly 6.3 billion people (about 76% of the world population) use the internet.",
+    "category": "statistic",
+    "expected_status": "fresh",
+    "note": "Fresh: The International Telecommunication Union Facts and Figures 2026 report estimates 6.3 billion internet users (76%)."
+  }
+]

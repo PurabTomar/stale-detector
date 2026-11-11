@@ -129,6 +129,106 @@ class TestExtractionJSONParsing(unittest.TestCase):
                 extractor.extract_claims("Some claim text.")
         self.assertIn("JSON", str(ctx.exception))
 
+    def test_extract_claims_routes_with_extract_task(self):
+        captured_kwargs: dict = {}
+
+        def task_aware_call_llm(system_prompt, user_prompt, temperature=0.1, task=None):
+            captured_kwargs["task"] = task
+            llm._record_gateway_metrics(
+                {
+                    "primary_model": "gemini/gemini-2.5-flash-lite",
+                    "model_used": "gemini/gemini-2.5-flash-lite",
+                    "fallback_used": False,
+                    "latency_ms": 48.0,
+                    "prompt_tokens": 30,
+                    "completion_tokens": 12,
+                    "total_tokens": 42,
+                    "task": task,
+                }
+            )
+            return (
+                '[{"claim": "Python 3.14 is latest.", "category": "version", "search_query": "Python latest"}]',
+                "gemini/gemini-2.5-flash-lite",
+            )
+
+        with patch("extractor.call_llm", side_effect=task_aware_call_llm):
+            claims, model_used = extractor.extract_claims("Python 3.14 is latest.")
+
+        self.assertEqual(captured_kwargs.get("task"), "extract")
+        self.assertEqual(model_used, "gemini/gemini-2.5-flash-lite")
+        self.assertEqual(len(claims), 1)
+        metrics = extractor.get_last_gateway_metrics()
+        self.assertEqual(metrics["task"], "extract")
+        self.assertEqual(metrics["operation"], "Extract claims")
+
+    def test_span_extraction_normalization_and_locate_span_in_text(self):
+        source = (
+            "Apple currently charges $1,199 for the flagship iPhone Pro Max. "
+            "Meanwhile, Python 3.13 is available, and Python 3.13 supports free-threaded builds."
+        )
+
+        # 1. Exact literal match returns exact slice
+        loc1 = extractor.locate_span_in_text(
+            source,
+            span_text="$1,199 for the flagship iPhone Pro Max",
+            claim_text="Apple charges $1,199 for iPhone Pro Max.",
+        )
+        self.assertIsNotNone(loc1)
+        self.assertEqual(source[loc1[0]:loc1[1]], "$1,199 for the flagship iPhone Pro Max")
+
+        # 2. Whitespace-collapsed & case-insensitive span variant resolves exact slice in source
+        loc_ws = extractor.locate_span_in_text(
+            "Line one has   Python\n3.13   in production.",
+            span_text="python 3.13 in production",
+        )
+        self.assertIsNotNone(loc_ws)
+        self.assertEqual(
+            "Line one has   Python\n3.13   in production."[loc_ws[0]:loc_ws[1]],
+            "Python\n3.13   in production",
+        )
+
+        # 3. Duplicate occurrence avoids occupied_ranges and finds second match
+        dup_text = "Tier A costs $20 per month, and Tier B costs $20 per month."
+        first = extractor.locate_span_in_text(dup_text, span_text="costs $20 per month")
+        self.assertIsNotNone(first)
+        second = extractor.locate_span_in_text(
+            dup_text,
+            span_text="costs $20 per month",
+            occupied_ranges=[(first[0], first[1])],
+        )
+        self.assertIsNotNone(second)
+        self.assertGreater(second[0], first[1])
+        self.assertEqual(dup_text[second[0]:second[1]], "costs $20 per month")
+
+        # 4. _normalize_claims with source_text recovers verbatim spans and respects occupied ranges
+        raw = [
+            {
+                "claim": "Tier A costs $20/mo.",
+                "span": "Tier A costs $20 per month",
+                "category": "price",
+                "search_query": "Tier A price",
+            },
+            {
+                "claim": "Tier B costs $20/mo.",
+                "span": "costs $20 per month",
+                "category": "price",
+                "search_query": "Tier B price",
+            },
+        ]
+        norm = extractor._normalize_claims(raw, source_text=dup_text)
+        self.assertEqual(norm[0]["span"], "Tier A costs $20 per month")
+        self.assertEqual(norm[1]["span"], "costs $20 per month")
+
+        # 5. extract_claims attaches exact verbatim span from source input
+        fake_json = (
+            '[{"claim": "iPhone Pro Max costs $1,199", '
+            '"span": "charges $1,199 for the flagship iPhone Pro Max", '
+            '"category": "price", "search_query": "iPhone Pro Max price"}]'
+        )
+        with patch("extractor.call_llm", return_value=(fake_json, "gemini/gemini-2.5-flash-lite")):
+            extracted, _ = extractor.extract_claims(source)
+        self.assertEqual(extracted[0]["span"], "charges $1,199 for the flagship iPhone Pro Max")
+
 
 if __name__ == "__main__":
     unittest.main()

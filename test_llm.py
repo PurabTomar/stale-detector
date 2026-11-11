@@ -458,6 +458,149 @@ class TestBifrostLLMClient(unittest.TestCase):
         self.assertNotIn("Traceback", cleaned_msg)
         self.assertNotIn('File "app.py"', cleaned_msg)
 
+    def test_task_based_routing_cross_provider_fallbacks_and_dual_judge_resolution(self):
+        with patch("llm.load_dotenv"), patch.dict(
+            os.environ,
+            {
+                "USE_BIFROST": "true",
+                "LLM_API_KEY": "bifrost-local",
+                "LLM_BASE_URL": "http://localhost:8080/v1",
+                "LLM_MODEL": "gemini/gemini-2.5-flash",
+                "LLM_MODEL_EXTRACT": "gemini/gemini-2.5-flash-lite",
+                "LLM_MODEL_JUDGE": "openai/gpt-4o-mini",
+                "LLM_MODEL_JUDGE_2": "",
+                "LLM_MODEL_JUDGE_SECOND": "",
+                "LLM_MODEL_DUAL_JUDGE": "",
+                "LLM_MODEL_FALLBACKS": "anthropic/claude-3-5-sonnet-20241022, groq/llama-3.3-70b-versatile",
+                "LLM_VIRTUAL_KEY": "bf-vk-cross",
+            },
+            clear=False,
+        ):
+            _, _, extract_chain = llm.get_llm_config(task="extract")
+            _, _, judge_chain = llm.get_llm_config(task="judge")
+            _, _, default_chain = llm.get_llm_config()
+
+            self.assertEqual(
+                extract_chain,
+                [
+                    "gemini/gemini-2.5-flash-lite",
+                    "anthropic/claude-3-5-sonnet-20241022",
+                    "groq/llama-3.3-70b-versatile",
+                ],
+            )
+            self.assertEqual(
+                judge_chain,
+                [
+                    "openai/gpt-4o-mini",
+                    "anthropic/claude-3-5-sonnet-20241022",
+                    "groq/llama-3.3-70b-versatile",
+                ],
+            )
+            self.assertEqual(default_chain[0], "gemini/gemini-2.5-flash")
+
+            summary = llm.get_task_routing_summary()
+            self.assertEqual(summary["extract_model"], "gemini/gemini-2.5-flash-lite")
+            self.assertEqual(summary["judge_model"], "openai/gpt-4o-mini")
+            self.assertTrue(summary["dual_judge_configured"])
+            self.assertEqual(
+                llm.get_dual_judge_models(),
+                ("openai/gpt-4o-mini", "anthropic/claude-3-5-sonnet-20241022"),
+            )
+
+            # Real HTTP transport check verifying x-bf-vk + cross-provider fallbacks + task routing.
+            seen_bodies: list[dict] = []
+
+            def handler(request: httpx.Request) -> httpx.Response:
+                seen_bodies.append(json.loads(request.content.decode("utf-8")))
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "id": "chatcmpl-task",
+                        "object": "chat.completion",
+                        "created": 1700000001,
+                        "model": seen_bodies[-1]["model"],
+                        "choices": [
+                            {"index": 0, "message": {"role": "assistant", "content": "[]"}, "finish_reason": "stop"}
+                        ],
+                        "usage": {"prompt_tokens": 12, "completion_tokens": 4, "total_tokens": 16},
+                    },
+                )
+
+            http_client = httpx.Client(transport=httpx.MockTransport(handler))
+            _, _, _ = llm.get_llm_client(task="extract")
+
+            def _mock_task_client(task=None, model_override=None):
+                _, b_url, ch = llm.get_llm_config(task=task, model_override=model_override)
+                c = openai.OpenAI(
+                    api_key="bifrost-local",
+                    base_url=b_url,
+                    default_headers={"x-bf-vk": "bf-vk-cross"},
+                    http_client=http_client,
+                    max_retries=0,
+                )
+                return c, ch, b_url
+
+            with patch("llm.get_llm_client", side_effect=_mock_task_client):
+                _, meta_ext = llm.call_llm_with_meta("sys", "usr", task="extract")
+                _, meta_jdg = llm.call_llm_with_meta("sys", "usr", task="judge")
+
+            self.assertEqual(seen_bodies[0]["model"], "gemini/gemini-2.5-flash-lite")
+            self.assertEqual(seen_bodies[1]["model"], "openai/gpt-4o-mini")
+            self.assertEqual(
+                seen_bodies[1]["fallbacks"],
+                ["anthropic/claude-3-5-sonnet-20241022", "groq/llama-3.3-70b-versatile"],
+            )
+            self.assertEqual(meta_ext["task"], "extract")
+            self.assertEqual(meta_jdg["task"], "judge")
+
+        # Same bare model across two providers must NOT be collapsed as identical.
+        self.assertFalse(llm._models_refer_to_same("openai/gpt-4o-mini", "azure/gpt-4o-mini"))
+        self.assertTrue(llm._models_refer_to_same("anthropic/claude-3-5-sonnet", "claude-3-5-sonnet"))
+
+    def test_streamlit_secrets_use_bifrost_false_cloud_config(self):
+        import sys
+        import types
+        import verifier
+
+        fake_st = types.SimpleNamespace(
+            secrets={
+                "USE_BIFROST": "false",
+                "GEMINI_API_KEY": "AIza-cloud-secret-key",
+                "LLM_MODEL": "gemini-2.5-flash",
+                "LLM_MODEL_EXTRACT": "gemini/gemini-2.5-flash-lite",
+                "LLM_MODEL_JUDGE": "gemini/gemini-2.5-flash",
+                "LLM_MODEL_FALLBACKS": "openai/gpt-4o-mini, gemini-2.5-flash-lite",
+                "TAVILY_API_KEY": "tvly-cloud-secret-key",
+            }
+        )
+        cleared_env = {
+            "USE_BIFROST": "",
+            "LLM_API_KEY": "",
+            "GEMINI_API_KEY": "",
+            "LLM_BASE_URL": "",
+            "LLM_MODEL": "",
+            "LLM_MODEL_EXTRACT": "",
+            "LLM_MODEL_JUDGE": "",
+            "LLM_MODEL_FALLBACKS": "",
+            "LLM_VIRTUAL_KEY": "",
+            "TAVILY_API_KEY": "",
+        }
+        with patch("llm.load_dotenv"), patch("verifier.load_dotenv"):
+            with patch.dict(os.environ, cleared_env, clear=False):
+                with patch.dict(sys.modules, {"streamlit": fake_st}):
+                    self.assertFalse(llm.is_use_bifrost())
+                    api_key, base_url, chain = llm.get_llm_config()
+                    self.assertEqual(api_key, "AIza-cloud-secret-key")
+                    self.assertEqual(base_url, llm.GEMINI_OPENAI_BASE_URL)
+                    self.assertEqual(chain, ["gemini-2.5-flash", "gemini-2.5-flash-lite"])
+
+                    _, _, extract_chain = llm.get_llm_config(task="extract")
+                    self.assertEqual(extract_chain, ["gemini-2.5-flash-lite"])
+
+                    with patch("verifier.TavilyClient") as mock_tavily_cls:
+                        verifier.get_tavily_client()
+                        mock_tavily_cls.assert_called_once_with(api_key="tvly-cloud-secret-key")
+
 
 if __name__ == "__main__":
     unittest.main()

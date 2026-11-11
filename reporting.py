@@ -18,6 +18,36 @@ import json
 import re
 from urllib.parse import urlparse
 
+from verifier import (
+    classify_source_type,
+    compute_risk_weighted_overall_score,
+    truncate_snippet_words,
+)
+
+
+def _normalize_source_entry(
+    src: dict,
+    entity_domains: list[str] | None = None,
+) -> dict:
+    """Normalize a verified source dict, keeping source_type, published_date, and <=25w snippet."""
+    url = str(src.get("url", "")).strip()
+    title = str(src.get("title", "")).strip() or extract_source_domain(url)
+    raw_type = str(src.get("source_type") or "").strip()
+    if raw_type in {"Primary", "News", "Blog", "Forum"}:
+        src_type = raw_type
+    else:
+        src_type = classify_source_type(url, entity_domains=entity_domains)
+    pub_date = src.get("published_date")
+    pub_date_str = str(pub_date).strip() if pub_date else None
+    snippet = truncate_snippet_words(src.get("snippet") or "")
+    return {
+        "title": title,
+        "url": url,
+        "source_type": src_type,
+        "published_date": pub_date_str,
+        "snippet": snippet,
+    }
+
 
 # Tokenize text into whitespace, atomic numbers/currencies/versions, words, and punctuation.
 _DIFF_TOKEN_RE = re.compile(
@@ -151,19 +181,27 @@ def build_side_by_side_word_diff(original_text: str, corrected_text: str) -> dic
 def build_change_log(verification_results: list[dict] | None) -> list[dict]:
     """
     Build a structured list of what changed during answer correction and why,
-    including supporting sources from verified claims (outdated first, then uncertain).
+    including supporting sources from verified claims (outdated, uncertain, unverifiable).
     """
     changes: list[dict] = []
-    priority_order = {"outdated": 0, "uncertain": 1}
+    priority_order = {"outdated": 0, "uncertain": 1, "unverifiable": 2}
+    action_labels = {
+        "outdated": "Replaced",
+        "uncertain": "Qualified",
+        "unverifiable": "Flagged (unverifiable)",
+    }
 
     for idx, item in enumerate(verification_results or [], start=1):
         status = str(item.get("status", "uncertain")).strip().lower()
         if status not in priority_order:
             continue
 
-        action = "Replaced" if status == "outdated" else "Qualified"
-        sources: list[dict[str, str]] = []
+        raw_score = item.get("score")
+        score_val = None if (raw_score is None or status == "unverifiable") else max(0, min(100, int(raw_score)))
+
+        sources: list[dict] = []
         seen_urls: set[str] = set()
+        entity_doms = item.get("entity_domains") if isinstance(item.get("entity_domains"), list) else None
         for src in item.get("sources") or []:
             if not isinstance(src, dict):
                 continue
@@ -171,19 +209,27 @@ def build_change_log(verification_results: list[dict] | None) -> list[dict]:
             if not url or url in seen_urls:
                 continue
             seen_urls.add(url)
-            title = str(src.get("title", "")).strip() or extract_source_domain(url)
-            sources.append({"title": title, "url": url})
+            sources.append(_normalize_source_entry(src, entity_domains=entity_doms))
 
         changes.append(
             {
                 "claim_index": idx,
                 "status": status,
-                "action": action,
+                "action": action_labels[status],
                 "category": str(item.get("category", "other")).lower(),
                 "risk_level": str(item.get("risk_level", "moderate")).lower(),
-                "score": max(0, min(100, int(item.get("score", 50)))),
+                "score": score_val,
                 "original_claim": str(item.get("claim", "")).strip(),
                 "updated_to": str(item.get("current_info", "")).strip(),
+                "current_value": item.get("current_value"),
+                "effective_date": item.get("effective_date"),
+                "change_summary": item.get("change_summary"),
+                "stale_since": item.get("stale_since"),
+                "stale_for_months": item.get("stale_for_months"),
+                "stale_duration_label": item.get("stale_duration_label"),
+                "agreement_summary": item.get("agreement_summary"),
+                "conflict_detected": bool(item.get("conflict_detected", False)),
+                "conflict_note": item.get("conflict_note"),
                 "why": str(item.get("reason", "")).strip(),
                 "sources": sources,
             }
@@ -191,6 +237,112 @@ def build_change_log(verification_results: list[dict] | None) -> list[dict]:
 
     changes.sort(key=lambda c: (priority_order.get(c["status"], 9), c["claim_index"]))
     return changes
+
+
+def build_draft_corrected_answer(
+    original_answer: str,
+    verification_results: list[dict] | None,
+    matched_spans: list[dict] | None = None,
+) -> str:
+    """
+    Build a deterministic draft preview of the corrected answer without making an
+    extra LLM call, so a side-by-side comparison and word diff can be shown
+    immediately after any audit finishes.
+    """
+    text = str(original_answer or "")
+    results = list(verification_results or [])
+    if not text.strip() or not results:
+        return text
+
+    outdated_entries = [
+        (idx, item)
+        for idx, item in enumerate(results)
+        if isinstance(item, dict) and str(item.get("status", "")).lower() == "outdated"
+    ]
+    if not outdated_entries:
+        return text
+
+    def _ensure_sentence(val: str) -> str:
+        clean = str(val or "").strip()
+        if not clean:
+            return ""
+        if clean[-1] not in ".!?":
+            clean += "."
+        return clean
+
+    # Group outdated updates by matched character span when span positions are available.
+    span_updates: dict[tuple[int, int], list[str]] = {}
+    unmatched_updates: list[str] = []
+
+    if matched_spans:
+        span_by_claim_idx = {
+            int(sp["claim_index"]): (int(sp["start"]), int(sp["end"]))
+            for sp in matched_spans
+            if isinstance(sp, dict) and "claim_index" in sp and "start" in sp and "end" in sp
+        }
+    else:
+        span_by_claim_idx = {}
+
+    sentence_ranges = [
+        (m.start(), m.end())
+        for m in re.finditer(r"[^\n.!?]+(?:[.!?]+|$)", text)
+        if m.group(0).strip()
+    ]
+    stop = {"the", "and", "for", "with", "that", "this", "from", "are", "was", "is", "in", "on", "of", "to"}
+
+    def _fallback_sentence_span(claim_text: str) -> tuple[int, int] | None:
+        c_tokens = {
+            tok for tok in re.findall(r"[a-z0-9]+(?:\.[a-z0-9]+)*", claim_text.lower())
+            if (len(tok) >= 3 or any(ch.isdigit() for ch in tok)) and tok not in stop
+        }
+        if not c_tokens or not sentence_ranges:
+            return None
+        best_span = None
+        best_ratio = 0.0
+        for s_start, s_end in sentence_ranges:
+            s_tokens = set(re.findall(r"[a-z0-9]+(?:\.[a-z0-9]+)*", text[s_start:s_end].lower()))
+            overlap = len(c_tokens & s_tokens)
+            ratio = overlap / len(c_tokens)
+            if overlap >= 2 and ratio > best_ratio:
+                best_ratio = ratio
+                best_span = (s_start, s_end)
+        return best_span if best_ratio >= 0.35 else None
+
+    for claim_idx, item in outdated_entries:
+        replacement_text = _ensure_sentence(
+            item.get("current_info") or item.get("current_value") or ""
+        )
+        if not replacement_text:
+            continue
+
+        span = span_by_claim_idx.get(claim_idx) or _fallback_sentence_span(str(item.get("claim", "")))
+        if span and 0 <= span[0] < span[1] <= len(text):
+            span_updates.setdefault(span, []).append(replacement_text)
+        else:
+            unmatched_updates.append(replacement_text)
+
+    if not span_updates and not unmatched_updates:
+        return text
+
+    # Apply span replacements from left to right (skipping any overlapping spans).
+    parts: list[str] = []
+    cursor = 0
+    for (start, end), updates in sorted(span_updates.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+        if start < cursor:
+            unmatched_updates.extend(u for u in updates if u not in unmatched_updates)
+            continue
+        parts.append(text[cursor:start])
+        # Preserve unique update sentences for that span.
+        dedup_updates = list(dict.fromkeys(updates))
+        parts.append(" ".join(dedup_updates))
+        cursor = end
+    parts.append(text[cursor:])
+
+    updated_text = "".join(parts).strip()
+    if unmatched_updates:
+        extra = " ".join(dict.fromkeys(unmatched_updates))
+        updated_text = f"{updated_text}\n\n{extra}".strip() if updated_text else extra
+    return updated_text
 
 
 def _score_tier_label(score: int) -> str:
@@ -217,6 +369,7 @@ def _normalize_gateway_record(
         m_used = str(raw_metrics.get("model_used") or fallback_model or "Unknown")
         return {
             "operation": str(raw_metrics.get("operation") or operation),
+            "task": str(raw_metrics.get("task") or "default"),
             "timestamp": str(raw_metrics.get("timestamp") or ""),
             "primary_model": str(raw_metrics.get("primary_model") or primary_model or m_used),
             "model_used": m_used,
@@ -233,6 +386,7 @@ def _normalize_gateway_record(
     m_used = str(fallback_model)
     return {
         "operation": operation,
+        "task": "default",
         "timestamp": "",
         "primary_model": str(primary_model or m_used),
         "model_used": m_used,
@@ -251,6 +405,7 @@ def collect_report_telemetry(
     extract_meta: dict | None = None,
     corrected_model: str | None = None,
     corrected_meta: dict | None = None,
+    audit_duration_ms: float | None = None,
 ) -> dict:
     """
     Aggregate models used, fallback routes, timestamps, latency, and token usage
@@ -271,16 +426,38 @@ def collect_report_telemetry(
         requests.append(extract_rec)
 
     for idx, item in enumerate(results or [], start=1):
-        gw = item.get("gateway_metrics") if isinstance(item.get("gateway_metrics"), dict) else None
-        claim_rec = _normalize_gateway_record(
-            f"Verify claim #{idx}",
-            gw,
-            fallback_model=item.get("model"),
-            fallback_used=bool(item.get("fallback_used", False)),
-            primary_model=item.get("primary_model"),
-        )
-        if claim_rec:
-            requests.append(claim_rec)
+        judge_tel = [
+            entry
+            for entry in (item.get("judge_telemetry") or [])
+            if isinstance(entry, dict)
+        ]
+        if judge_tel:
+            for j_idx, j_meta in enumerate(judge_tel, start=1):
+                default_op = (
+                    f"Verify claim #{idx}"
+                    if len(judge_tel) == 1
+                    else f"Verify claim #{idx} (Judge {j_idx})"
+                )
+                j_rec = _normalize_gateway_record(
+                    default_op,
+                    j_meta,
+                    fallback_model=j_meta.get("model_used") or item.get("model"),
+                    fallback_used=bool(j_meta.get("fallback_used", False)),
+                    primary_model=j_meta.get("primary_model") or item.get("primary_model"),
+                )
+                if j_rec:
+                    requests.append(j_rec)
+        else:
+            gw = item.get("gateway_metrics") if isinstance(item.get("gateway_metrics"), dict) else None
+            claim_rec = _normalize_gateway_record(
+                f"Verify claim #{idx}",
+                gw,
+                fallback_model=item.get("model"),
+                fallback_used=bool(item.get("fallback_used", False)),
+                primary_model=item.get("primary_model"),
+            )
+            if claim_rec:
+                requests.append(claim_rec)
 
     rewrite_rec = _normalize_gateway_record(
         "Rewrite answer",
@@ -314,6 +491,13 @@ def collect_report_telemetry(
     total_completion = sum(r["completion_tokens"] for r in requests)
     total_tokens = sum(r["total_tokens"] for r in requests)
     total_latency_ms = round(sum(r["latency_ms"] for r in requests), 1)
+    avg_latency_ms = round(total_latency_ms / len(requests), 1) if requests else 0.0
+    fallback_count = sum(1 for r in requests if r["fallback_used"])
+    resolved_audit_ms = (
+        round(float(audit_duration_ms), 1)
+        if audit_duration_ms is not None
+        else total_latency_ms
+    )
 
     return {
         "models_used": models_used,
@@ -323,7 +507,10 @@ def collect_report_telemetry(
             "completion_tokens": total_completion,
             "total_tokens": total_tokens,
             "requests_count": len(requests),
+            "fallback_count": fallback_count,
             "total_latency_ms": total_latency_ms,
+            "avg_latency_ms": avg_latency_ms,
+            "audit_duration_ms": resolved_audit_ms,
         },
         "request_timestamps": request_timestamps,
         "gateway_requests": requests,
@@ -335,6 +522,7 @@ def build_report_payload(
     original_answer: str,
     verification_results: list[dict] | None,
     question: str | None = None,
+    source_url: str | None = None,
     corrected_answer: str | None = None,
     ask_meta: dict | None = None,
     extract_model: str | None = None,
@@ -343,6 +531,7 @@ def build_report_payload(
     corrected_meta: dict | None = None,
     tavily_credits_used: float | None = None,
     generated_at: datetime | None = None,
+    audit_duration_ms: float | None = None,
 ) -> dict:
     """
     Build a complete JSON-serializable audit report dictionary containing claims,
@@ -353,8 +542,12 @@ def build_report_payload(
     ts_iso = ts_dt.isoformat(timespec="seconds")
 
     if results:
-        overall_score = round(sum(int(r.get("score", 50)) for r in results) / len(results))
-        overall_tier = _score_tier_label(overall_score)
+        overall_score = compute_risk_weighted_overall_score(results)
+        overall_tier = (
+            _score_tier_label(overall_score)
+            if overall_score is not None
+            else "Unverifiable"
+        )
     else:
         overall_score = None
         overall_tier = "No claims checked"
@@ -362,6 +555,7 @@ def build_report_payload(
     fresh_count = sum(1 for r in results if r.get("status") == "fresh")
     uncertain_count = sum(1 for r in results if r.get("status") == "uncertain")
     outdated_count = sum(1 for r in results if r.get("status") == "outdated")
+    unverifiable_count = sum(1 for r in results if r.get("status") == "unverifiable")
 
     if tavily_credits_used is None:
         credits_total = round(
@@ -378,33 +572,84 @@ def build_report_payload(
         extract_meta=extract_meta,
         corrected_model=corrected_model,
         corrected_meta=corrected_meta,
+        audit_duration_ms=audit_duration_ms,
     )
 
     claims_payload: list[dict] = []
     for idx, item in enumerate(results, start=1):
         gw = item.get("gateway_metrics") if isinstance(item.get("gateway_metrics"), dict) else {}
-        p_tok = int(gw.get("prompt_tokens") or 0)
-        c_tok = int(gw.get("completion_tokens") or 0)
-        t_tok = int(gw.get("total_tokens") or (p_tok + c_tok))
+        judge_tel = [
+            entry
+            for entry in (item.get("judge_telemetry") or [])
+            if isinstance(entry, dict)
+        ]
+        if judge_tel:
+            p_tok = sum(int(j.get("prompt_tokens") or 0) for j in judge_tel)
+            c_tok = sum(int(j.get("completion_tokens") or 0) for j in judge_tel)
+            t_tok = sum(
+                int(j.get("total_tokens") or (int(j.get("prompt_tokens") or 0) + int(j.get("completion_tokens") or 0)))
+                for j in judge_tel
+            )
+            claim_latency_ms = round(sum(float(j.get("latency_ms") or 0.0) for j in judge_tel), 1)
+        else:
+            p_tok = int(gw.get("prompt_tokens") or 0)
+            c_tok = int(gw.get("completion_tokens") or 0)
+            t_tok = int(gw.get("total_tokens") or (p_tok + c_tok))
+            claim_latency_ms = round(float(gw.get("latency_ms") or 0.0), 1)
+
+        status_str = str(item.get("status", "uncertain")).strip().lower()
+        raw_score = item.get("score")
+        score_val = (
+            None
+            if (raw_score is None or status_str == "unverifiable")
+            else max(0, min(100, int(raw_score)))
+        )
+        entity_doms = item.get("entity_domains") if isinstance(item.get("entity_domains"), list) else None
+        judge_verdicts = [
+            {
+                "model": str(v.get("model") or ""),
+                "status": str(v.get("status") or ""),
+                "score": v.get("score"),
+                "current_info": str(v.get("current_info") or ""),
+                "reason": str(v.get("reason") or ""),
+            }
+            for v in (item.get("judge_verdicts") or [])
+            if isinstance(v, dict)
+        ]
         claims_payload.append(
             {
                 "index": idx,
                 "claim": str(item.get("claim", "")),
+                "span": item.get("span"),
                 "category": str(item.get("category", "other")),
                 "search_query": str(item.get("search_query", "")),
-                "status": str(item.get("status", "uncertain")),
-                "score": max(0, min(100, int(item.get("score", 50)))),
-                "confidence": str(item.get("confidence", "medium")),
+                "status": status_str,
+                "score": score_val,
+                "confidence": str(item.get("confidence", "low")),
                 "risk_level": str(item.get("risk_level", "moderate")),
                 "current_info": str(item.get("current_info", "")),
+                "current_value": item.get("current_value"),
+                "effective_date": item.get("effective_date"),
+                "change_summary": item.get("change_summary"),
+                "stale_since": item.get("stale_since"),
+                "stale_for_months": item.get("stale_for_months"),
+                "stale_duration_label": item.get("stale_duration_label"),
+                "entity_domains": list(entity_doms or []),
+                "sources_agreeing": item.get("sources_agreeing"),
+                "sources_total": item.get("sources_total"),
+                "agreement_summary": item.get("agreement_summary"),
+                "conflict_detected": bool(item.get("conflict_detected", False)),
+                "conflict_note": item.get("conflict_note"),
+                "dual_judge_used": bool(item.get("dual_judge_used", False)),
+                "judge_models": [str(m) for m in (item.get("judge_models") or []) if m],
+                "judge_verdicts": judge_verdicts,
+                "model_disagreement": bool(item.get("model_disagreement", False)),
+                "model_agreement_summary": item.get("model_agreement_summary"),
                 "reason": str(item.get("reason", "")),
                 "why_this_score": str(item.get("why_this_score", "")),
                 "score_breakdown": item.get("score_breakdown"),
                 "sources": [
-                    {
-                        "title": str(s.get("title", "")),
-                        "url": str(s.get("url", "")),
-                    }
+                    _normalize_source_entry(s, entity_domains=entity_doms)
                     for s in (item.get("sources") or [])
                     if isinstance(s, dict) and s.get("url")
                 ],
@@ -420,7 +665,7 @@ def build_report_payload(
                     "completion_tokens": c_tok,
                     "total_tokens": t_tok,
                 },
-                "latency_ms": round(float(gw.get("latency_ms") or 0.0), 1),
+                "latency_ms": claim_latency_ms,
                 "timestamp": gw.get("timestamp") or None,
                 "error": item.get("error"),
             }
@@ -443,6 +688,7 @@ def build_report_payload(
             "request_timestamps": telemetry["request_timestamps"],
         },
         "question": (question or "").strip() or None,
+        "source_url": (source_url or "").strip() or None,
         "original_answer": original_answer or "",
         "corrected_answer": corrected_answer,
         "diff_summary": diff_stats,
@@ -453,6 +699,7 @@ def build_report_payload(
             "fresh": fresh_count,
             "uncertain": uncertain_count,
             "outdated": outdated_count,
+            "unverifiable": unverifiable_count,
             "tavily_credits_used": credits_total,
         },
         "models_used": telemetry["models_used"],
@@ -478,11 +725,10 @@ def format_report_markdown(payload: dict) -> str:
     timestamps = payload.get("timestamps") or {}
 
     overall_score = summary.get("overall_score")
-    score_display = (
-        f"{overall_score}/100 ({summary.get('overall_tier', '')})"
-        if overall_score is not None
-        else "No claims checked"
-    )
+    if overall_score is not None:
+        score_display = f"{overall_score}/100 ({summary.get('overall_tier', '')}) — risk-weighted"
+    else:
+        score_display = summary.get("overall_tier") or "No claims checked"
 
     lines: list[str] = [
         "# Stale-Answer Detector Report",
@@ -491,12 +737,16 @@ def format_report_markdown(payload: dict) -> str:
         f"- **Mode:** {payload.get('mode', '')}",
         f"- **Overall freshness score:** {score_display}",
         f"- **Claims summary:** {summary.get('claims_checked', 0)} checked "
-        f"({summary.get('fresh', 0)} fresh, {summary.get('uncertain', 0)} uncertain, {summary.get('outdated', 0)} outdated)",
+        f"({summary.get('fresh', 0)} fresh, {summary.get('uncertain', 0)} uncertain, "
+        f"{summary.get('outdated', 0)} outdated, {summary.get('unverifiable', 0)} unverifiable)",
         f"- **Models used:** {', '.join(models) if models else 'None'}",
         f"- **Fallback routes:** {', '.join(fallbacks) if fallbacks else 'None (primary only)'}",
         f"- **Tokens used:** {int(tokens.get('total_tokens', 0)):,} total "
         f"({int(tokens.get('prompt_tokens', 0)):,} prompt / {int(tokens.get('completion_tokens', 0)):,} completion) "
-        f"across {int(tokens.get('requests_count', 0))} request(s)",
+        f"across {int(tokens.get('requests_count', 0))} request(s) "
+        f"(avg latency {float(tokens.get('avg_latency_ms', 0.0)):.0f} ms, "
+        f"audit time {float(tokens.get('audit_duration_ms', 0.0)):.0f} ms, "
+        f"{int(tokens.get('fallback_count', 0))} fallback(s))",
         f"- **Tavily credits used:** {summary.get('tavily_credits_used', 0)}",
         "",
     ]
@@ -507,6 +757,16 @@ def format_report_markdown(payload: dict) -> str:
                 "## Question",
                 "",
                 payload["question"],
+                "",
+            ]
+        )
+
+    if payload.get("source_url"):
+        lines.extend(
+            [
+                "## Source URL",
+                "",
+                payload["source_url"],
                 "",
             ]
         )
@@ -539,34 +799,82 @@ def format_report_markdown(payload: dict) -> str:
     lines.extend(["## What Changed & Why", ""])
     if changes:
         for ch in changes:
+            ch_score_str = "score N/A" if ch.get("score") is None else f"score {ch['score']}/100"
             lines.append(
                 f"### Claim #{ch['claim_index']} — {ch['action']} "
-                f"({ch['category']}, score {ch['score']}/100)"
+                f"({ch['category']}, {ch_score_str})"
             )
             lines.append(f"- **Original claim:** {ch['original_claim']}")
             lines.append(f"- **Updated info:** {ch['updated_to']}")
+            if ch.get("current_value"):
+                lines.append(f"- **Current value:** {ch['current_value']}")
+            if ch.get("change_summary"):
+                lines.append(f"- **Change summary:** {ch['change_summary']}")
+            if ch.get("effective_date"):
+                lines.append(f"- **Effective date:** {ch['effective_date']}")
+            if ch.get("stale_since") or ch.get("stale_duration_label"):
+                stale_raw = str(ch.get("stale_since") or "").strip()
+                dur_raw = str(ch.get("stale_duration_label") or "").strip()
+                if stale_raw and dur_raw and dur_raw.lower() not in stale_raw.lower():
+                    stale_display = f"{stale_raw} ({dur_raw})"
+                else:
+                    stale_display = stale_raw or dur_raw
+                lines.append(f"- **Stale since:** {stale_display}")
+            if ch.get("agreement_summary"):
+                conflict_txt = f" — {ch['conflict_note']}" if ch.get("conflict_note") else ""
+                lines.append(f"- **Source agreement:** {ch['agreement_summary']}{conflict_txt}")
             lines.append(f"- **Why:** {ch['why']}")
             srcs = ch.get("sources") or []
             if srcs:
-                src_md = ", ".join(f"[{s['title']}]({s['url']})" for s in srcs)
-                lines.append(f"- **Sources:** {src_md}")
+                src_parts = []
+                for s in srcs:
+                    tag = f"[{s.get('source_type')}] " if s.get("source_type") else ""
+                    date_str = f" ({s['published_date']})" if s.get("published_date") else ""
+                    src_parts.append(f"{tag}[{s['title']}]({s['url']}){date_str}")
+                lines.append(f"- **Sources:** {', '.join(src_parts)}")
             lines.append("")
     else:
-        lines.extend(["No outdated or uncertain claims needed modification.", ""])
+        lines.extend(["No outdated, uncertain, or unverifiable claims needed modification.", ""])
 
     claims = payload.get("claims") or []
     lines.extend(["## Verified Claims", ""])
     if claims:
         for c in claims:
             c_tok = c.get("tokens") or {}
+            c_score_str = "N/A" if c.get("score") is None else f"{c['score']}/100"
             lines.append(
                 f"### {c['index']}. {c['claim']} "
-                f"[{str(c['status']).upper()} — {c['score']}/100]"
+                f"[{str(c['status']).upper()} — {c_score_str}]"
             )
             lines.append(
                 f"- **Category / Risk / Confidence:** {c['category']} / {c['risk_level']} / {c['confidence']}"
             )
+            if c.get("agreement_summary"):
+                conflict_txt = f" — {c['conflict_note']}" if c.get("conflict_note") else ""
+                lines.append(f"- **Source agreement:** {c['agreement_summary']}{conflict_txt}")
+            if c.get("model_agreement_summary"):
+                verdict_bits = [
+                    f"`{v['model']}` → {str(v['status']).upper()}"
+                    for v in (c.get("judge_verdicts") or [])
+                    if isinstance(v, dict) and v.get("model")
+                ]
+                verdict_detail = f" ({'; '.join(verdict_bits)})" if verdict_bits else ""
+                lines.append(f"- **Dual-judge consensus:** {c['model_agreement_summary']}{verdict_detail}")
             lines.append(f"- **Current info:** {c['current_info']}")
+            if c.get("current_value"):
+                lines.append(f"- **Current value:** {c['current_value']}")
+            if c.get("change_summary"):
+                lines.append(f"- **Change summary:** {c['change_summary']}")
+            if c.get("effective_date"):
+                lines.append(f"- **Effective date:** {c['effective_date']}")
+            if c.get("stale_since") or c.get("stale_duration_label"):
+                stale_raw = str(c.get("stale_since") or "").strip()
+                dur_raw = str(c.get("stale_duration_label") or "").strip()
+                if stale_raw and dur_raw and dur_raw.lower() not in stale_raw.lower():
+                    stale_display = f"{stale_raw} ({dur_raw})"
+                else:
+                    stale_display = stale_raw or dur_raw
+                lines.append(f"- **Stale since:** {stale_display}")
             lines.append(f"- **Reason:** {c['reason']}")
             if c.get("why_this_score"):
                 lines.append(f"- **Why this score:** {c['why_this_score']}")
@@ -581,9 +889,15 @@ def format_report_markdown(payload: dict) -> str:
                 lines.append(f"- **Timestamp:** {c['timestamp']}")
             srcs = c.get("sources") or []
             if srcs:
-                lines.append(
-                    "- **Sources:** " + ", ".join(f"[{s['title']}]({s['url']})" for s in srcs)
-                )
+                src_parts = []
+                for s in srcs:
+                    tag = f"[{s.get('source_type')}] " if s.get("source_type") else ""
+                    date_str = f" ({s['published_date']})" if s.get("published_date") else ""
+                    src_parts.append(f"{tag}[{s['title']}]({s['url']}){date_str}")
+                lines.append("- **Sources:** " + ", ".join(src_parts))
+                for s in srcs:
+                    if s.get("snippet"):
+                        lines.append(f"  - _{s.get('source_type') or 'Source'}_ ({extract_source_domain(s['url'])}): \"{s['snippet']}\"")
             if c.get("error"):
                 lines.append(f"- **Error:** {c['error']}")
             lines.append("")
