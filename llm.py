@@ -72,11 +72,16 @@ def get_llm_client() -> tuple[OpenAI, list[str], str | None]:
     """
     api_key, base_url, model_chain = get_llm_config()
 
+    # Optional Bifrost virtual key; sent via the x-bf-vk header only if set.
+    virtual_key = os.getenv("LLM_VIRTUAL_KEY", "").strip()
+    default_headers = {"x-bf-vk": virtual_key} if virtual_key else None
+
     # max_retries=0 disables the SDK's hidden retry loop so our explicit
     # 1-retry-per-model + fallback chain behaves predictably.
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
+        default_headers=default_headers,
         max_retries=0,
     )
     return client, model_chain, base_url
