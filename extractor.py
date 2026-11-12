@@ -32,17 +32,23 @@ VALID_CATEGORIES = (
 )
 
 EXTRACTION_SYSTEM_PROMPT = """You are a careful fact-checking assistant.
-Your job is to inspect an LLM-generated answer or article and extract specific factual
-claims that could become outdated over time (for example: prices, API/software versions,
-laws or regulations, company info like CEO/funding/acquisitions, and statistics).
+Your job is to inspect an LLM-generated answer or article and extract specific,
+independently verifiable factual claims that could become outdated over time
+(for example: prices, API/software versions, laws or regulations, company info
+like CEO/funding/acquisitions, and statistics).
+
+Skip conversational filler, greetings, disclaimers, purely subjective opinions,
+vague recommendations without concrete facts, and duplicate paraphrases of a
+claim already extracted. Do not split one compound figure unnecessarily, and do
+not invent details absent from the input text.
 
 Return ONLY a valid JSON array (no markdown explanation, no extra text).
 Each element in the JSON array must be an object with these exact keys:
 - "claim": A clear, self-contained statement of the factual claim (replace pronouns
   like "it" or "their" with the actual entity name so the claim makes sense on its own).
 - "span": The exact verbatim substring copied character-for-character from the input
-  text that states this claim (preserve exact casing, numbers, punctuation, and currency
-  symbols so it can be located with a string match).
+  text that states this claim (preserve exact casing, numbers, punctuation, version
+  dots, and currency symbols so it can be located with a string match).
 - "category": Must be one of: "price", "version", "regulation", "company", "statistic", "other".
 - "search_query": A concise, targeted web search query to check the current truth of this claim.
 
@@ -189,6 +195,7 @@ def _normalize_claims(
 
     cleaned_claims: list[dict[str, str]] = []
     occupied_ranges: list[tuple[int, int]] = []
+    seen_claim_keys: set[tuple[str, str]] = set()
 
     for item in parsed_data:
         if not isinstance(item, dict):
@@ -200,6 +207,11 @@ def _normalize_claims(
 
         raw_category = str(item.get("category", "other")).strip().lower()
         category = raw_category if raw_category in VALID_CATEGORIES else "other"
+
+        norm_claim_key = (" ".join(claim_text.lower().split()).rstrip(".!?"), category)
+        if norm_claim_key in seen_claim_keys:
+            continue
+        seen_claim_keys.add(norm_claim_key)
 
         search_query = str(item.get("search_query", "")).strip() or claim_text
         raw_span = str(item.get("span") or "").strip()

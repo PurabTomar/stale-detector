@@ -32,7 +32,7 @@ import tempfile
 import threading
 import time
 from typing import Callable
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 from dotenv import load_dotenv
 import requests
@@ -452,16 +452,20 @@ these exact keys:
 - "reason": A brief 1-2 sentence explanation comparing the claim to the live sources.
 """
 
-REWRITE_SYSTEM_PROMPT = """You are a helpful editor updating an outdated AI answer.
-Rewrite the original answer so that all outdated facts are replaced with the
-verified current information provided below.
+REWRITE_SYSTEM_PROMPT = """You are a precise editor tasked with updating an AI-generated answer to reflect verified, current facts.
 
-Guidelines:
-- Preserve the helpful tone, clarity, and structure of the original answer.
-- Keep claims marked "fresh" intact.
-- Replace claims marked "outdated" using the verified "current_info", "current_value", and "change_summary".
-- For claims marked "uncertain" or "unverifiable", qualify them carefully (note what could not be confirmed) without inventing unverified facts.
-- Return ONLY the rewritten answer text (no preamble like "Here is the updated answer:").
+Your job is to rewrite the ORIGINAL ANSWER so that every outdated claim is replaced with the verified current information supplied in the FINDINGS section below.
+
+STRICT RULES:
+1. Output ONLY the rewritten answer — no preamble, no "Here is the updated answer:", no metadata, no commentary.
+2. Preserve the COMPLETE original answer structure, tone, and all "fresh" claims word-for-word.
+3. For each claim marked "outdated": replace ONLY the specific outdated fact with the verified "current_info" / "current_value" / "effective_date". Rewrite the full containing sentence naturally so it reads grammatically — do NOT splice fragments mid-sentence.
+4. For claims marked "uncertain": add a concise verification qualifier (e.g., "— unconfirmed; live sources disagree" or "pending verification") without inventing new figures or names.
+5. For claims marked "unverifiable": NEVER invent replacement facts, numbers, dates, or names — keep the statement intact or briefly note that it could not be verified.
+6. Do NOT merge unrelated sentences into one, do NOT drop intact context, and do NOT duplicate noun phrases.
+7. Never start the output with "Here", "Sure", "Certainly", "Updated", or any acknowledgement phrase, and do NOT wrap prose in JSON or markdown fences.
+8. Preserve paragraph breaks, line breaks, and bullet points from the original answer.
+9. Every sentence in the final output must be grammatical, complete, and faithful to verified evidence.
 """
 
 
@@ -982,6 +986,72 @@ def classify_source_type(
     return "News"
 
 
+_TRACKING_QUERY_PARAMS = {
+    "fbclid",
+    "gclid",
+    "dclid",
+    "mc_cid",
+    "mc_eid",
+    "ref",
+    "ref_src",
+    "source",
+    "spm",
+    "si",
+    "igshid",
+}
+
+
+def _canonicalize_source_url(url: object) -> str:
+    """
+    Canonicalize a URL for deduplication and URL-set lookups by normalizing
+    scheme/host casing, stripping ``www.``, fragments, trailing slashes, and
+    common tracking query params (``utm_*``, ``fbclid``, ``gclid``, etc.).
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if not parsed.netloc:
+        return raw.rstrip("/").lower()
+    host = (parsed.netloc or "").split(":")[0].lower().strip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    path = (parsed.path or "").rstrip("/").lower()
+    kept_params = sorted(
+        (k, v)
+        for k, v in parse_qsl(parsed.query, keep_blank_values=False)
+        if not k.lower().startswith("utm_") and k.lower() not in _TRACKING_QUERY_PARAMS
+    )
+    query_str = urlencode(kept_params)
+    return f"{host}{path}{'?' + query_str if query_str else ''}"
+
+
+def _canonicalize_url_set(urls: set[str] | None) -> set[str]:
+    """Normalize a set of URL strings (both canonical and raw lower keys) for safe matching."""
+    out: set[str] = set()
+    for u in urls or set():
+        raw_norm = str(u or "").strip().rstrip("/").lower()
+        if raw_norm:
+            out.add(raw_norm)
+        canon = _canonicalize_source_url(u)
+        if canon:
+            out.add(canon)
+    return out
+
+
+def _normalized_content_fingerprint(item: dict) -> str:
+    """
+    Return a lowercase whitespace-collapsed fingerprint ONLY for substantial
+    result snippets (>=60 chars and >=10 words) so identical syndicated mirrors
+    are deduplicated without collapsing brief snippets or test fixtures.
+    """
+    raw = str(item.get("content") or item.get("raw_content") or "")
+    cleaned = " ".join(raw.split()).lower()
+    if len(cleaned) < 60 or len(cleaned.split()) < 10:
+        return ""
+    return cleaned[:400]
+
+
 def _merge_search_results(
     primary_results: list[dict],
     secondary_results: list[dict],
@@ -989,25 +1059,35 @@ def _merge_search_results(
     prioritize_primary: bool = False,
 ) -> list[dict]:
     """
-    Merge and deduplicate results from two Tavily searches.
+    Merge and deduplicate results from two Tavily searches using canonical URLs
+    and exact substantial mirror-snippet deduplication.
     When `prioritize_primary=True`, keep primary-domain hits ahead of general results
     while still filling up to `limit` with non-primary sources for corroboration/conflict checks.
     """
     merged: list[dict] = []
     seen_urls: set[str] = set()
+    seen_contents: set[str] = set()
+
+    def _try_append(item: object) -> bool:
+        if not isinstance(item, dict):
+            return False
+        url = str(item.get("url", "")).strip()
+        dedupe_key = _canonicalize_source_url(url) if url else f"no-url-{len(merged)}"
+        if dedupe_key in seen_urls:
+            return False
+        fp = _normalized_content_fingerprint(item)
+        if fp and fp in seen_contents:
+            return False
+        seen_urls.add(dedupe_key)
+        if fp:
+            seen_contents.add(fp)
+        merged.append(item)
+        return len(merged) >= limit
 
     if prioritize_primary:
         for group in (primary_results, secondary_results):
             for item in group:
-                if not isinstance(item, dict):
-                    continue
-                url = str(item.get("url", "")).strip()
-                dedupe_key = url.rstrip("/").lower() if url else f"no-url-{len(merged)}"
-                if dedupe_key in seen_urls:
-                    continue
-                seen_urls.add(dedupe_key)
-                merged.append(item)
-                if len(merged) >= limit:
+                if _try_append(item):
                     return merged
         return merged
 
@@ -1016,16 +1096,7 @@ def _merge_search_results(
         for group in (primary_results, secondary_results):
             if idx >= len(group):
                 continue
-            item = group[idx]
-            if not isinstance(item, dict):
-                continue
-            url = str(item.get("url", "")).strip()
-            dedupe_key = url.rstrip("/").lower() if url else f"no-url-{len(merged)}"
-            if dedupe_key in seen_urls:
-                continue
-            seen_urls.add(dedupe_key)
-            merged.append(item)
-            if len(merged) >= limit:
+            if _try_append(group[idx]):
                 return merged
 
     return merged
@@ -1263,13 +1334,16 @@ def select_best_source_url(
     prioritizing Primary / official entity domains highest and breaking ties by Tavily rank.
     """
     candidates: list[tuple[int, int, str]] = []
+    canon_primary = _canonicalize_url_set(primary_urls)
     for idx, result in enumerate(search_results):
         if not isinstance(result, dict):
             continue
         url = str(result.get("url", "")).strip()
         if not url.startswith(("http://", "https://")):
             continue
-        is_prim = url.rstrip("/").lower() in (primary_urls or set())
+        norm_key = url.rstrip("/").lower()
+        canon_key = _canonicalize_source_url(url)
+        is_prim = norm_key in canon_primary or canon_key in canon_primary
         src_type = classify_source_type(
             url,
             entity_domains=entity_domains,
@@ -1575,18 +1649,21 @@ def _extract_top_sources(
     """
     sources: list[dict] = []
     seen_urls: set[str] = set()
+    canon_primary = _canonicalize_url_set(primary_urls)
+    canon_news = _canonicalize_url_set(news_urls)
 
     for result in search_results:
         if not isinstance(result, dict):
             continue
         url = str(result.get("url", "")).strip()
+        canon_key = _canonicalize_source_url(url)
         norm_key = url.rstrip("/").lower()
-        if not url or norm_key in seen_urls:
+        if not url or not canon_key or canon_key in seen_urls:
             continue
-        seen_urls.add(norm_key)
+        seen_urls.add(canon_key)
         title = str(result.get("title", "")).strip() or url
-        is_prim = norm_key in (primary_urls or set())
-        res_topic = "news" if norm_key in (news_urls or set()) else None
+        is_prim = norm_key in canon_primary or canon_key in canon_primary
+        res_topic = "news" if (norm_key in canon_news or canon_key in canon_news) else None
         src_type = classify_source_type(
             url,
             entity_domains=entity_domains,
@@ -1626,15 +1703,18 @@ def _format_search_results(
         return "No web search results were returned."
 
     formatted_blocks: list[str] = []
+    canon_primary = _canonicalize_url_set(primary_urls)
+    canon_news = _canonicalize_url_set(news_urls)
     for idx, result in enumerate(search_results, start=1):
         title = str(result.get("title", "Untitled")).strip()
         url = str(result.get("url", "")).strip()
         norm_key = url.rstrip("/").lower()
+        canon_key = _canonicalize_source_url(url)
         src_type = classify_source_type(
             url,
             entity_domains=entity_domains,
-            retrieved_from_primary=norm_key in (primary_urls or set()),
-            result_topic="news" if norm_key in (news_urls or set()) else None,
+            retrieved_from_primary=(norm_key in canon_primary or canon_key in canon_primary),
+            result_topic="news" if (norm_key in canon_news or canon_key in canon_news) else None,
         )
         published_date = str(result.get("published_date", "") or "").strip()
         content = str(result.get("content", "")).strip()
@@ -2311,6 +2391,39 @@ def get_confidence_level(
     return "medium"
 
 
+_DISAGREEMENT_PATTERNS = (
+    re.compile(r"\b(?:sources?|reports?|outlets?|references?|experts?)\s+(?:actively\s+)?disagree\b"),
+    re.compile(r"\b(?:sources?|reports?|outlets?)\s+(?:actively\s+)?conflict\b"),
+    re.compile(
+        r"\bconflicting\s+(?:sources?|reports?|evidence|figures?|information|numbers?|accounts?)\b"
+    ),
+    re.compile(
+        r"\bcontradictory\s+(?:sources?|reports?|evidence|figures?|information|accounts?)\b"
+    ),
+    re.compile(r"\bconflict\s+(?:between|among)\s+(?:the\s+)?(?:sources?|reports?|outlets?)\b"),
+    re.compile(r"\b(?:sources?|reports?|outlets?)\s+contradict\s+(?:each\s+other|one\s+another)\b"),
+    re.compile(r"\bmixed\s+signals\b"),
+    re.compile(r"\binconsistent\s+(?:sources?|reports?|evidence|figures?|numbers?)\b"),
+)
+_NEGATION_LOOKBACK_RE = re.compile(
+    r"(?:\bno|\bnot|\bwithout|\bnever|\bneither|\bdo\s+not|\bdoes\s+not|\bdon't|\bdidn't|\baren't)\s+$"
+)
+
+
+def _has_unnegated_disagreement_phrase(text: object) -> bool:
+    """Return True when prose describes genuine source-vs-source disagreement."""
+    blob = " ".join(str(text or "").lower().split())
+    if not blob:
+        return False
+    for pattern in _DISAGREEMENT_PATTERNS:
+        for match in pattern.finditer(blob):
+            prefix = blob[max(0, match.start() - 24) : match.start()]
+            if _NEGATION_LOOKBACK_RE.search(prefix):
+                continue
+            return True
+    return False
+
+
 def _detect_source_disagreement(
     normalized_status: str,
     current_info: str,
@@ -2331,16 +2444,7 @@ def _detect_source_disagreement(
     if llm_conflicting:
         return True
 
-    text_blob = f"{current_info} {reason}".lower()
-    conflict_phrases = (
-        "sources disagree",
-        "conflict",
-        "contradict",
-        "inconsistent",
-        "mixed signals",
-        "disagree",
-    )
-    if any(phrase in text_blob for phrase in conflict_phrases):
+    if _has_unnegated_disagreement_phrase(f"{current_info} {reason}"):
         return True
 
     total = len(search_results)
@@ -2569,6 +2673,14 @@ def compute_freshness_score(
             f"Score {final_score}/100 ({effective_status} band {status_band}): "
             f"Sources disagree ({agreement_summary}, {independent_sources_cnt} independent domain(s)); "
             f"evidence strength {evidence_strength}/100 (recency {recency_score}/100, authority {authority_score}/100)."
+        )
+    elif effective_status == "outdated":
+        why_this_score = (
+            f"Score {final_score}/100 ({effective_status} band {status_band}): "
+            f"Claim is refuted — LLM judged '{effective_status}' ({clamped_llm}/100), and "
+            f"{agreeing_cnt}/{total} sources ({independent_agreeing_cnt} independent domain(s); "
+            f"evidence strength {evidence_strength}/100, recency {recency_score}/100, authority {authority_score}/100) "
+            f"confirm the claim is outdated."
         )
     else:
         why_this_score = (
@@ -3534,6 +3646,76 @@ def verify_claims(
     return [res for res in verified_results if res is not None]
 
 
+def _clean_and_validate_rewrite(
+    raw_text: str,
+    original_answer: str,
+    verification_results: list[dict] | None = None,
+) -> str:
+    """
+    Sanitize and validate the LLM-rewritten answer so malformed outputs (empty
+    responses, JSON dumps, prompt leakage, refusals, or severe truncation) fail
+    cleanly instead of corrupting the corrected-answer UI.
+    """
+    cleaned = str(raw_text or "").strip()
+    if not cleaned:
+        raise ValueError("The rewrite model returned an empty answer.")
+
+    # Unwrap accidental outer markdown fence around the entire response.
+    fence_match = re.fullmatch(r"```(?:[a-zA-Z0-9_-]+)?\s*\n([\s\S]*?)\n?```", cleaned)
+    if fence_match and fence_match.group(1).strip():
+        cleaned = fence_match.group(1).strip()
+
+    # Strip a single leading conversational preamble line when real body text follows.
+    preamble_match = re.match(
+        r"^(?:"
+        r"here(?:'s| is)\s+(?:the\s+)?(?:updated|corrected|revised|rewritten)\s+(?:answer|response|text|version)[^:\n]*:"
+        r"|(?:sure|certainly|of course)[,!]?\s+(?:here(?:'s| is)\s+(?:the\s+)?(?:updated|corrected|revised|rewritten)[^:\n]*:)"
+        r"|(?:updated|corrected|revised)\s+answer\s*:"
+        r")\s*(?:\n+|\s+)",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if preamble_match:
+        candidate = cleaned[preamble_match.end() :].strip()
+        if candidate:
+            cleaned = candidate
+
+    if not cleaned:
+        raise ValueError("The rewrite model returned an empty answer.")
+
+    # Reject raw JSON structures echoed instead of natural language prose.
+    if cleaned[0] in "{[":
+        try:
+            json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+        else:
+            raise ValueError("The rewrite model returned JSON instead of rewritten prose.")
+
+    lower = cleaned.lower()
+    if "verified claim findings:" in lower and "original answer:" in lower:
+        raise ValueError("The rewrite output echoed prompt instructions instead of prose.")
+
+    orig_clean = str(original_answer or "").strip()
+    orig_lower = orig_clean.lower()
+    refusal_pattern = re.compile(
+        r"^(?:i'?m\s+sorry,?\s+but\s+i\s+(?:can(?:not|'t)|am\s+unable)|as\s+an\s+ai\b|i\s+cannot\s+rewrite\b)"
+    )
+    if refusal_pattern.match(lower) and not refusal_pattern.match(orig_lower):
+        raise ValueError("The rewrite model declined to rewrite the answer.")
+
+    # Guard against severe truncation on multi-sentence answers while allowing
+    # concise answers or brief replacements when the original text itself was short.
+    if len(orig_clean) >= 120:
+        min_expected = max(30, int(len(orig_clean) * 0.25))
+        if len(cleaned) < min_expected:
+            raise ValueError(
+                "The rewritten answer appeared truncated relative to the original answer."
+            )
+
+    return cleaned
+
+
 def generate_corrected_answer(
     original_answer: str,
     verification_results: list[dict],
@@ -3600,4 +3782,9 @@ def generate_corrected_answer(
         (time.perf_counter() - llm_t0) * 1000.0,
         task="rewrite",
     )
-    return rewritten, model_used
+    cleaned_rewrite = _clean_and_validate_rewrite(
+        rewritten,
+        original_answer=original_answer,
+        verification_results=verification_results,
+    )
+    return cleaned_rewrite, model_used

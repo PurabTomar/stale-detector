@@ -1890,6 +1890,121 @@ class TestParallelAndURLExtraction(unittest.TestCase):
             ],
         )
 
+    def test_no_false_conflict_on_negated_or_claim_contradiction_text(self):
+        today = date(2026, 11, 11)
+        sources = [
+            {
+                "title": "GST Council Notification",
+                "url": "https://gstcouncil.gov.in/rates",
+                "published_date": "2026-10-15",
+                "content": "Standard GST rate updated to 5% and 18% slabs with 40% demerit slab.",
+            },
+            {
+                "title": "CBIC Circular",
+                "url": "https://www.cbic.gov.in/circular",
+                "published_date": "2026-10-16",
+                "content": "Official GST rates are 5% and 18% slabs with 40% demerit rate.",
+            },
+        ]
+        # Phrases like "no conflict" or "official sources contradict the outdated claim"
+        # must keep status='outdated' and conflict_detected=False.
+        scoring = verifier.compute_freshness_score(
+            status="outdated",
+            llm_score=10,
+            current_info="Current GST rates are 5% and 18% slabs with 40% demerit slab.",
+            search_results=sources,
+            llm_agreeing_count=2,
+            reason="No conflict among official notices: current publications directly contradict the outdated 4-tier claim.",
+            entity_domains=["gstcouncil.gov.in", "cbic.gov.in"],
+            today=today,
+        )
+        self.assertFalse(scoring["conflict_detected"])
+        self.assertEqual(scoring["resolved_status"], "outdated")
+        self.assertLessEqual(scoring["score"], 39)
+        self.assertIn("confirm the claim is outdated", scoring["why_this_score"])
+
+    def test_canonical_url_and_long_mirror_snippet_deduplication(self):
+        r1 = [
+            {
+                "title": "OpenAI Pricing (tracking link)",
+                "url": "https://www.openai.com/api/pricing/?utm_source=news&utm_medium=referral#models",
+                "content": "OpenAI API GPT-4o standard pricing is $2.50 per 1M input tokens and $10.00 per 1M output tokens across tiers.",
+            }
+        ]
+        r2 = [
+            {
+                "title": "OpenAI Pricing (clean http)",
+                "url": "http://openai.com/api/pricing",
+                "content": "OpenAI API GPT-4o standard pricing is $2.50 per 1M input tokens and $10.00 per 1M output tokens across tiers.",
+            },
+            {
+                "title": "Mirror Syndication",
+                "url": "https://syndicated-mirror.example/repost",
+                "content": "OpenAI API GPT-4o standard pricing is $2.50 per 1M input tokens and $10.00 per 1M output tokens across tiers.",
+            },
+            {
+                "title": "Independent Tech News",
+                "url": "https://www.reuters.com/tech/openai-api-rates",
+                "content": "Reuters confirms OpenAI maintains its $2.50 input and $10 output API rates for GPT-4o.",
+            },
+        ]
+        merged = verifier._merge_search_results(r1, r2, limit=5, prioritize_primary=True)
+        urls = [m["url"] for m in merged]
+        self.assertEqual(len(merged), 2)
+        self.assertTrue(urls[0].startswith("https://www.openai.com/api/pricing"))
+        self.assertEqual(urls[1], "https://www.reuters.com/tech/openai-api-rates")
+
+        top = verifier._extract_top_sources(
+            merged,
+            primary_urls={"http://openai.com/api/pricing/"},
+            entity_domains=["openai.com"],
+        )
+        self.assertEqual(len(top), 2)
+        self.assertEqual(top[0]["source_type"], "Primary")
+
+    def test_generate_corrected_answer_sanitizes_and_rejects_malformed_outputs(self):
+        long_original = (
+            "Apple sells the iPhone 15 Pro Max as its flagship phone for $1,199. "
+            "OpenAI GPT-4 Turbo costs $10 per million input tokens. "
+            "Python 3.11 is currently the latest stable release series."
+        )
+        findings = [
+            {
+                "claim": "Apple sells iPhone 15 Pro Max",
+                "status": "outdated",
+                "score": 15,
+                "current_info": "Apple now sells iPhone 18 Pro Max.",
+                "reason": "Newer flagship launched.",
+            }
+        ]
+
+        # 1. Strips accidental outer code fence + preamble line cleanly
+        wrapped = (
+            "```markdown\n"
+            "Here is the updated answer:\n\n"
+            "Apple now sells the iPhone 18 Pro Max. OpenAI GPT-4 Turbo costs $10 per million input tokens. "
+            "Python 3.15 is the latest stable release series.\n"
+            "```"
+        )
+        with patch("verifier.call_llm", return_value=(wrapped, "openai/gpt-4o-mini")):
+            cleaned, model = verifier.generate_corrected_answer(long_original, findings)
+        self.assertEqual(model, "openai/gpt-4o-mini")
+        self.assertFalse(cleaned.startswith("Here is"))
+        self.assertNotIn("```", cleaned)
+        self.assertIn("iPhone 18 Pro Max", cleaned)
+
+        # 2. Rejects empty, JSON, prompt leakage, refusal, and severely truncated outputs
+        for bad_output in (
+            "   ",
+            '{"corrected": "oops"}',
+            "Original answer:\nfoo\n\nVerified claim findings:\nbar",
+            "I'm sorry, but I cannot rewrite this content.",
+            "Too short.",
+        ):
+            with patch("verifier.call_llm", return_value=(bad_output, "openai/gpt-4o-mini")):
+                with self.assertRaises(ValueError):
+                    verifier.generate_corrected_answer(long_original, findings)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -248,6 +248,13 @@ def build_draft_corrected_answer(
     Build a deterministic draft preview of the corrected answer without making an
     extra LLM call, so a side-by-side comparison and word diff can be shown
     immediately after any audit finishes.
+
+    - Fresh claims are left unchanged.
+    - Outdated claims replace their full enclosing sentence/bullet with the
+      verified ``current_info`` text so the result is grammatically coherent.
+    - Uncertain/conflicting claims add a concise verification qualifier without
+      inventing unverified facts.
+    - Unverifiable claims never receive fabricated replacements.
     """
     text = str(original_answer or "")
     results = list(verification_results or [])
@@ -259,7 +266,12 @@ def build_draft_corrected_answer(
         for idx, item in enumerate(results)
         if isinstance(item, dict) and str(item.get("status", "")).lower() == "outdated"
     ]
-    if not outdated_entries:
+    uncertain_entries = [
+        (idx, item)
+        for idx, item in enumerate(results)
+        if isinstance(item, dict) and str(item.get("status", "")).lower() == "uncertain"
+    ]
+    if not outdated_entries and not uncertain_entries:
         return text
 
     def _ensure_sentence(val: str) -> str:
@@ -270,7 +282,7 @@ def build_draft_corrected_answer(
             clean += "."
         return clean
 
-    # Group outdated updates by matched character span when span positions are available.
+    # Group span updates by enclosing sentence / line span.
     span_updates: dict[tuple[int, int], list[str]] = {}
     unmatched_updates: list[str] = []
 
@@ -283,11 +295,105 @@ def build_draft_corrected_answer(
     else:
         span_by_claim_idx = {}
 
-    sentence_ranges = [
-        (m.start(), m.end())
-        for m in re.finditer(r"[^\n.!?]+(?:[.!?]+|$)", text)
-        if m.group(0).strip()
-    ]
+    _non_split_abbrevs = {
+        "mr",
+        "mrs",
+        "ms",
+        "dr",
+        "prof",
+        "sr",
+        "jr",
+        "vs",
+        "inc",
+        "corp",
+        "ltd",
+        "co",
+        "no",
+        "fig",
+        "approx",
+        "etc",
+        "e.g",
+        "i.e",
+        "st",
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "jun",
+        "jul",
+        "aug",
+        "sep",
+        "sept",
+        "oct",
+        "nov",
+        "dec",
+    }
+
+    def _build_sentence_ranges(src: str) -> list[tuple[int, int]]:
+        """
+        Return ``(start, end)`` pairs covering each sentence or bullet line in *src*.
+        Handles:
+        - hard line breaks / bullet lists (never merges bullets without periods)
+        - version numbers & decimals (``Python 3.11``, ``$1,299.99``) via ``(?!\\d)``
+        - sentences ending with numbers (``iOS 17. Apple...`` DOES split)
+        - numbered list prefixes (``1. Item``) and common abbreviations (``Mr.``, ``e.g.``)
+        """
+        ranges: list[tuple[int, int]] = []
+        for line_match in re.finditer(r"[^\r\n]+", src):
+            line_start, line_end = line_match.start(), line_match.end()
+            line = line_match.group(0)
+            if not line.strip():
+                continue
+
+            prev_rel = 0
+            for m in re.finditer(r"[.!?]+(?!\d)(?=\s+|$)", line):
+                rel_punct_end = m.end()
+                before = line[: m.start()]
+
+                # Do not split right after a leading numbered list prefix (e.g. "1. Item").
+                if line[m.start() : m.start() + 1] == "." and re.fullmatch(r"\s*\d{1,3}", before):
+                    continue
+
+                # Avoid splitting on common abbreviations or mid-sentence initialisms (e.g., "U.S. market").
+                if line[m.start() : rel_punct_end] == ".":
+                    tok_m = re.search(r"([A-Za-z]+(?:\.[A-Za-z]+)*)$", before)
+                    if tok_m:
+                        word = tok_m.group(1).lower()
+                        if word in _non_split_abbrevs:
+                            continue
+                        if re.fullmatch(r"(?:[a-z]\.)+[a-z]", word):
+                            after_ws = line[rel_punct_end:].lstrip()
+                            if after_ws and (after_ws[0].islower() or after_ws[0] in ",;:)]"):
+                                continue
+
+                seg = line[prev_rel:rel_punct_end]
+                if seg.strip():
+                    l_trim = len(seg) - len(seg.lstrip())
+                    r_trim = len(seg) - len(seg.rstrip())
+                    ranges.append((line_start + prev_rel + l_trim, line_start + rel_punct_end - r_trim))
+
+                # Skip intervening horizontal spaces to start next sentence cleanly.
+                next_rel = rel_punct_end
+                while next_rel < len(line) and line[next_rel].isspace():
+                    next_rel += 1
+                prev_rel = next_rel
+
+            tail = line[prev_rel:]
+            if tail.strip():
+                l_trim = len(tail) - len(tail.lstrip())
+                r_trim = len(tail) - len(tail.rstrip())
+                ranges.append((line_start + prev_rel + l_trim, line_end - r_trim))
+
+        return ranges
+
+    def _split_list_prefix(segment: str) -> tuple[str, str]:
+        """Preserve a leading Markdown bullet or list index when replacing a list line."""
+        m = re.match(r"^((?:[-*•]|(?:\d{1,3}\.))\s+)", segment)
+        if m:
+            return m.group(1), segment[m.end() :]
+        return "", segment
+
+    sentence_ranges = _build_sentence_ranges(text)
     stop = {"the", "and", "for", "with", "that", "this", "from", "are", "was", "is", "in", "on", "of", "to"}
 
     def _fallback_sentence_span(claim_text: str) -> tuple[int, int] | None:
@@ -308,6 +414,92 @@ def build_draft_corrected_answer(
                 best_span = (s_start, s_end)
         return best_span if best_ratio >= 0.35 else None
 
+    def _expand_to_sentence(char_start: int, char_end: int) -> tuple[int, int]:
+        """
+        Expand a character span to the nearest enclosing sentence boundary so the
+        replacement text substitutes a whole sentence and never leaves a dangling
+        sentence fragment in front of or behind it.
+        """
+        for s_start, s_end in sentence_ranges:
+            if s_start <= char_start and char_end <= s_end:
+                return s_start, s_end
+        enclosing_start = char_start
+        enclosing_end = char_end
+        for s_start, s_end in sentence_ranges:
+            if s_start <= char_start < s_end or s_start < char_end <= s_end:
+                enclosing_start = min(enclosing_start, s_start)
+                enclosing_end = max(enclosing_end, s_end)
+        return enclosing_start, enclosing_end
+
+    # Collect known spans for ALL verified claims (from matched_spans or verbatim "span")
+    # so an outdated clause inside a compound sentence does not wipe out an intact
+    # fresh sibling clause in the same sentence.
+    all_claim_spans: dict[int, tuple[int, int]] = dict(span_by_claim_idx)
+    occupied_init = list(all_claim_spans.values())
+    for idx, item in enumerate(results):
+        if idx in all_claim_spans or not isinstance(item, dict):
+            continue
+        raw_sp = str(item.get("span") or "").strip()
+        if len(raw_sp) >= 4:
+            pos = text.find(raw_sp)
+            if pos != -1:
+                cand = (pos, pos + len(raw_sp))
+                if not any(cand[0] < pe and cand[1] > ps for ps, pe in occupied_init):
+                    all_claim_spans[idx] = cand
+                    occupied_init.append(cand)
+
+    _clause_sep_re = re.compile(
+        r"(?:\s*;\s*|,\s+(?:and|while|whereas|but)\s+|\s+(?:and|while|whereas|but)\s+|,\s+(?!\d)|\s+[—–-]\s+)",
+        re.IGNORECASE,
+    )
+
+    def _expand_preserving_siblings(
+        claim_idx: int, char_start: int, char_end: int
+    ) -> tuple[int, int]:
+        sent_s, sent_e = _expand_to_sentence(char_start, char_end)
+        siblings = [
+            (s, e)
+            for sib_idx, (s, e) in all_claim_spans.items()
+            if sib_idx != claim_idx
+            and s >= sent_s
+            and e <= sent_e
+            and not (s < char_end and e > char_start)
+        ]
+        if not siblings:
+            return sent_s, sent_e
+
+        sent_slice = text[sent_s:sent_e]
+        clause_start = sent_s
+        clause_end = sent_e
+
+        left_sibs = [(s, e) for s, e in siblings if e <= char_start]
+        if left_sibs:
+            max_left_e = max(e for _, e in left_sibs)
+            for sep in _clause_sep_re.finditer(sent_slice):
+                abs_sep_s = sent_s + sep.start()
+                abs_sep_e = sent_s + sep.end()
+                if max_left_e <= abs_sep_s and abs_sep_e <= char_start:
+                    clause_start = max(clause_start, abs_sep_e)
+            if clause_start == sent_s:
+                clause_start = char_start
+
+        right_sibs = [(s, e) for s, e in siblings if char_end <= s]
+        if right_sibs:
+            min_right_s = min(s for s, _ in right_sibs)
+            for sep in _clause_sep_re.finditer(sent_slice):
+                abs_sep_s = sent_s + sep.start()
+                abs_sep_e = sent_s + sep.end()
+                if char_end <= abs_sep_s and abs_sep_e <= min_right_s:
+                    clause_end = min(clause_end, abs_sep_s)
+                    break
+            if clause_end == sent_e:
+                clause_end = char_end
+
+        if clause_end <= clause_start:
+            return char_start, char_end
+        return clause_start, clause_end
+
+    replaced_spans: list[tuple[int, int]] = []
     for claim_idx, item in outdated_entries:
         replacement_text = _ensure_sentence(
             item.get("current_info") or item.get("current_value") or ""
@@ -315,11 +507,45 @@ def build_draft_corrected_answer(
         if not replacement_text:
             continue
 
-        span = span_by_claim_idx.get(claim_idx) or _fallback_sentence_span(str(item.get("claim", "")))
-        if span and 0 <= span[0] < span[1] <= len(text):
+        raw_span = all_claim_spans.get(claim_idx) or _fallback_sentence_span(str(item.get("claim", "")))
+        if raw_span and 0 <= raw_span[0] < raw_span[1] <= len(text):
+            span = _expand_preserving_siblings(claim_idx, *raw_span)
             span_updates.setdefault(span, []).append(replacement_text)
+            replaced_spans.append(span)
         else:
             unmatched_updates.append(replacement_text)
+
+    def _span_overlaps(cand: tuple[int, int], existing: list[tuple[int, int]]) -> bool:
+        return any(cand[0] < e_end and cand[1] > e_start for e_start, e_end in existing)
+
+    for claim_idx, item in uncertain_entries:
+        raw_span = all_claim_spans.get(claim_idx) or _fallback_sentence_span(str(item.get("claim", "")))
+        if not (raw_span and 0 <= raw_span[0] < raw_span[1] <= len(text)):
+            continue
+        span = _expand_preserving_siblings(claim_idx, *raw_span)
+        if span in span_updates or _span_overlaps(span, replaced_spans):
+            continue
+        orig_sent = text[span[0] : span[1]].strip()
+        lower_sent = orig_sent.lower()
+        if any(
+            q in lower_sent
+            for q in ("unconfirmed", "needs verification", "sources disagree", "pending verification", "disputed")
+        ):
+            continue
+        qualifier = (
+            "(needs verification — live sources disagree)"
+            if item.get("conflict_detected")
+            else "(unconfirmed — verify against latest sources)"
+        )
+        m_end = re.search(r"([.!?]+)$", orig_sent)
+        if m_end:
+            body = orig_sent[: m_end.start()].rstrip()
+            qualified_sent = f"{body} {qualifier}{m_end.group(1)}"
+        else:
+            tail_after = text[span[1] :].lstrip()
+            suffix = "" if tail_after.startswith((",", ";", " and ", " while ")) else "."
+            qualified_sent = f"{orig_sent} {qualifier}{suffix}"
+        span_updates[span] = [qualified_sent]
 
     if not span_updates and not unmatched_updates:
         return text
@@ -332,13 +558,27 @@ def build_draft_corrected_answer(
             unmatched_updates.extend(u for u in updates if u not in unmatched_updates)
             continue
         parts.append(text[cursor:start])
-        # Preserve unique update sentences for that span.
         dedup_updates = list(dict.fromkeys(updates))
-        parts.append(" ".join(dedup_updates))
+        bullet_prefix, _ = _split_list_prefix(text[start:end])
+        replacement_block = " ".join(dedup_updates)
+        tail_after = text[end:].lstrip()
+        if tail_after.startswith((",", ";", " and ", " while ", " whereas ")):
+            replacement_block = replacement_block.rstrip(".")
+        if bullet_prefix and not re.match(r"^(?:[-*•]|(?:\d{1,3}\.))\s+", replacement_block):
+            replacement_block = f"{bullet_prefix}{replacement_block}"
+        if parts and parts[-1] and not parts[-1][-1].isspace() and not replacement_block[0:1].isspace():
+            replacement_block = " " + replacement_block
+        parts.append(replacement_block)
         cursor = end
-    parts.append(text[cursor:])
+
+    remainder = text[cursor:]
+    if remainder and parts and parts[-1] and not parts[-1][-1].isspace() and not remainder[0].isspace():
+        remainder = " " + remainder
+    parts.append(remainder)
 
     updated_text = "".join(parts).strip()
+    # Collapse accidental multiple spaces while preserving newlines/indentation.
+    updated_text = re.sub(r"[^\S\r\n]{2,}", " ", updated_text)
     if unmatched_updates:
         extra = " ".join(dict.fromkeys(unmatched_updates))
         updated_text = f"{updated_text}\n\n{extra}".strip() if updated_text else extra

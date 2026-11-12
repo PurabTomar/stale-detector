@@ -485,5 +485,244 @@ class TestReporting(unittest.TestCase):
         self.assertIn("1 fallback(s)", md_str)
 
 
+    def test_draft_corrected_answer_no_broken_sentence_splicing(self):
+        """Regression: replacing a sub-sentence span must not leave dangling fragments.
+
+        The original bug produced text like:
+            "Goods and services fall under The GST structure has been simplified..."
+        because the replacement was spliced mid-sentence.  The fix expands every
+        outdated span to its full enclosing sentence boundary before substituting.
+        """
+        # --- Case 1: sub-sentence span (the original bug) ---
+        original = (
+            "Goods and services fall under four GST tax slabs."
+            " The government taxes luxury goods at 28%."
+        )
+        results = [
+            {
+                "claim": "Goods and services fall under four GST tax slabs",
+                "status": "outdated",
+                "score": 10,
+                "current_info": "The GST structure has been simplified to three slabs: 5%, 12%, and 18%.",
+            }
+        ]
+        draft = reporting.build_draft_corrected_answer(original, results)
+        # Dangling fragment must be gone.
+        self.assertNotIn("fall under The GST", draft)
+        # Replacement text must be present.
+        self.assertIn("three slabs", draft)
+        # Second sentence must be preserved verbatim.
+        self.assertIn("The government taxes luxury goods at 28%.", draft)
+        # No double spaces.
+        self.assertNotIn("  ", draft)
+
+        # --- Case 2: version numbers must not cause mis-splits ---
+        original2 = (
+            "Sam Altman is CEO of OpenAI."
+            " Python 3.11 is the latest release."
+            " iOS 17 is the latest iOS."
+        )
+        results2 = [
+            {
+                "claim": "Sam Altman is CEO of OpenAI.",
+                "status": "fresh",
+                "score": 92,
+                "current_info": "Sam Altman remains CEO of OpenAI.",
+            },
+            {
+                "claim": "Python 3.11 is the latest release.",
+                "status": "outdated",
+                "score": 10,
+                "current_info": "Python 3.14 is the latest stable release.",
+            },
+            {
+                "claim": "iOS 17 is the latest iOS.",
+                "status": "outdated",
+                "score": 5,
+                "current_info": "iOS 26 is the current release.",
+            },
+        ]
+        draft2 = reporting.build_draft_corrected_answer(original2, results2)
+        self.assertIn("Sam Altman is CEO of OpenAI.", draft2)
+        self.assertIn("Python 3.14", draft2)
+        self.assertIn("iOS 26", draft2)
+        self.assertNotIn("Python 3.11", draft2)
+        self.assertNotIn("iOS 17", draft2)
+        # No broken splicing (the mis-split "3.Python" bug).
+        self.assertNotIn("3.Python", draft2)
+        self.assertNotIn("  ", draft2)
+
+        # --- Case 3: exact bug from user report (GST bracket) ---
+        original3 = (
+            "India uses a 4-tier GST structure with slabs of 5%, 12%, 18%, and 28%."
+            " Many household goods are exempt from GST."
+        )
+        results3 = [
+            {
+                "claim": "India uses a 4-tier GST structure with slabs of 5%, 12%, 18%, and 28%.",
+                "status": "outdated",
+                "score": 15,
+                "current_info": "The GST Council has rationalised slabs to 5%, 12%, and 18%.",
+            }
+        ]
+        draft3 = reporting.build_draft_corrected_answer(original3, results3)
+        self.assertNotIn("uses a 4-tier GST", draft3)
+        self.assertIn("rationalised slabs", draft3)
+        self.assertIn("Many household goods are exempt from GST.", draft3)
+        self.assertNotIn("  ", draft3)
+
+    def test_draft_corrected_answer_edge_cases(self):
+        """Edge cases: empty inputs, all-fresh claims, missing current_info."""
+        any_outdated = [
+            {
+                "claim": "X is Y.",
+                "status": "outdated",
+                "score": 5,
+                "current_info": "X is now Z.",
+            }
+        ]
+        # Empty original
+        self.assertEqual(reporting.build_draft_corrected_answer("", any_outdated), "")
+        # No results
+        self.assertEqual(reporting.build_draft_corrected_answer("Some text.", []), "Some text.")
+        # All fresh — text unchanged
+        fresh_only = [{"claim": "Sam is CEO.", "status": "fresh", "current_info": "Sam is CEO."}]
+        self.assertEqual(
+            reporting.build_draft_corrected_answer("Sam is CEO.", fresh_only), "Sam is CEO."
+        )
+        # Outdated but no current_info — text unchanged (no replacement to make)
+        no_info = [{"claim": "Old fact.", "status": "outdated", "current_info": ""}]
+        self.assertEqual(reporting.build_draft_corrected_answer("Old fact.", no_info), "Old fact.")
+
+    def test_draft_corrected_answer_numeric_endings_bullets_compound_and_mixed_statuses(self):
+        # 1. Sentence ending with a number splits cleanly without affecting decimals like 3.11
+        num_orig = "Our stack runs Python 3.11. It targets iOS 17. OpenAI GPT-4o API costs $2.50 per million input tokens."
+        num_results = [
+            {
+                "claim": "Our stack runs Python 3.11.",
+                "status": "outdated",
+                "score": 15,
+                "current_info": "Our stack runs Python 3.15.",
+            },
+            {
+                "claim": "It targets iOS 17.",
+                "status": "outdated",
+                "score": 10,
+                "current_info": "It targets iOS 26.",
+            },
+            {
+                "claim": "OpenAI GPT-4o API costs $2.50 per million input tokens.",
+                "status": "fresh",
+                "score": 92,
+                "current_info": "Verified fresh.",
+            },
+        ]
+        num_draft = reporting.build_draft_corrected_answer(num_orig, num_results)
+        self.assertIn("Our stack runs Python 3.15.", num_draft)
+        self.assertIn("It targets iOS 26.", num_draft)
+        self.assertIn("OpenAI GPT-4o API costs $2.50 per million input tokens.", num_draft)
+        self.assertNotIn("3.11", num_draft)
+        self.assertNotIn("iOS 17", num_draft)
+
+        # 2. Multiline bullet lists stay separated and keep bullets
+        bullet_orig = "- Python 3.11 is the latest release\n- iOS 17 is the newest version\n- ChatGPT Plus costs $20 per month"
+        bullet_results = [
+            {
+                "claim": "Python 3.11 is the latest release",
+                "span": "Python 3.11 is the latest release",
+                "status": "outdated",
+                "score": 12,
+                "current_info": "Python 3.15 is the latest stable release.",
+            },
+            {
+                "claim": "iOS 17 is the newest version",
+                "span": "iOS 17 is the newest version",
+                "status": "outdated",
+                "score": 10,
+                "current_info": "iOS 26 is the current version.",
+            },
+            {
+                "claim": "ChatGPT Plus costs $20 per month",
+                "span": "ChatGPT Plus costs $20 per month",
+                "status": "fresh",
+                "score": 95,
+                "current_info": "Remains $20/month.",
+            },
+        ]
+        bullet_draft = reporting.build_draft_corrected_answer(bullet_orig, bullet_results)
+        self.assertIn("- Python 3.15 is the latest stable release.", bullet_draft)
+        self.assertIn("- iOS 26 is the current version.", bullet_draft)
+        self.assertIn("- ChatGPT Plus costs $20 per month", bullet_draft)
+        self.assertEqual(len(bullet_draft.splitlines()), 3)
+
+        # 3. Compound sentence preserves fresh sibling clause while fixing outdated clause
+        comp_orig = "Sam Altman is CEO of OpenAI, and Python 3.11 is the latest release."
+        comp_results = [
+            {
+                "claim": "Sam Altman is CEO of OpenAI",
+                "span": "Sam Altman is CEO of OpenAI",
+                "status": "fresh",
+                "score": 95,
+                "current_info": "Confirmed.",
+            },
+            {
+                "claim": "Python 3.11 is the latest release",
+                "span": "Python 3.11 is the latest release",
+                "status": "outdated",
+                "score": 10,
+                "current_info": "Python 3.15 is the latest stable release.",
+            },
+        ]
+        comp_draft = reporting.build_draft_corrected_answer(comp_orig, comp_results)
+        self.assertIn("Sam Altman is CEO of OpenAI", comp_draft)
+        self.assertIn("Python 3.15 is the latest stable release", comp_draft)
+        self.assertNotIn("Python 3.11", comp_draft)
+
+        # 4. Mixed fresh + outdated + uncertain (conflict) + unverifiable + abbreviations (Mr., U.S.)
+        mixed_orig = (
+            "Mr. Altman leads OpenAI in the U.S. market. "
+            "iOS 17 is Apple's newest OS. "
+            "Acme Plan X costs $49 per seat. "
+            "Project Orion launched internally on Mars."
+        )
+        mixed_results = [
+            {
+                "claim": "Sam Altman leads OpenAI in the U.S. market.",
+                "span": "Mr. Altman leads OpenAI in the U.S. market",
+                "status": "fresh",
+                "score": 93,
+                "current_info": "Confirmed.",
+            },
+            {
+                "claim": "iOS 17 is Apple's newest OS.",
+                "span": "iOS 17 is Apple's newest OS",
+                "status": "outdated",
+                "score": 12,
+                "current_info": "iOS 26 is Apple's newest OS.",
+            },
+            {
+                "claim": "Acme Plan X costs $49 per seat.",
+                "span": "Acme Plan X costs $49 per seat",
+                "status": "uncertain",
+                "conflict_detected": True,
+                "score": 52,
+                "current_info": "Sources disagree on Acme Plan X pricing.",
+            },
+            {
+                "claim": "Project Orion launched internally on Mars.",
+                "span": "Project Orion launched internally on Mars",
+                "status": "unverifiable",
+                "score": None,
+                "current_info": "No authoritative public sources found.",
+            },
+        ]
+        mixed_draft = reporting.build_draft_corrected_answer(mixed_orig, mixed_results)
+        self.assertIn("Mr. Altman leads OpenAI in the U.S. market.", mixed_draft)
+        self.assertIn("iOS 26 is Apple's newest OS.", mixed_draft)
+        self.assertIn("Acme Plan X costs $49 per seat (needs verification — live sources disagree).", mixed_draft)
+        self.assertIn("Project Orion launched internally on Mars.", mixed_draft)
+        self.assertNotIn("No authoritative public sources found", mixed_draft)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -235,9 +235,10 @@ TAVILY_API_KEY = "tvly-your-tavily-api-key"
 
 ### 5. Run the REST API (`api.py`)
 
-External AI pipelines can call the detector over HTTP via FastAPI:
+External AI pipelines can call the detector over HTTP via FastAPI (optional local/service dependencies not needed for Streamlit Community Cloud):
 
 ```bash
+pip install fastapi uvicorn
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 

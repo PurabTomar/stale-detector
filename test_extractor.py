@@ -229,6 +229,35 @@ class TestExtractionJSONParsing(unittest.TestCase):
             extracted, _ = extractor.extract_claims(source)
         self.assertEqual(extracted[0]["span"], "charges $1,199 for the flagship iPhone Pro Max")
 
+    def test_normalize_claims_deduplicates_duplicate_claims_while_preserving_distinct(self):
+        raw = [
+            {
+                "claim": "Python 3.11 is the latest release.",
+                "span": "Python 3.11 is the latest release",
+                "category": "version",
+                "search_query": "latest Python version",
+            },
+            {
+                "claim": "  python   3.11 is the latest release ",
+                "span": "Python 3.11 is the latest release",
+                "category": "version",
+                "search_query": "Python newest",
+            },
+            {
+                "claim": "iOS 17 is the latest iOS.",
+                "span": "iOS 17 is the latest iOS",
+                "category": "version",
+                "search_query": "latest iOS",
+            },
+        ]
+        norm = extractor._normalize_claims(
+            raw,
+            source_text="Python 3.11 is the latest release. iOS 17 is the latest iOS.",
+        )
+        self.assertEqual(len(norm), 2)
+        self.assertEqual(norm[0]["claim"], "Python 3.11 is the latest release.")
+        self.assertEqual(norm[1]["claim"], "iOS 17 is the latest iOS.")
+
 
 if __name__ == "__main__":
     unittest.main()

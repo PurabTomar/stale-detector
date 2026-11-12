@@ -320,7 +320,7 @@ html {
 }
 .sad-ring-denom {
     font-size: 0.75rem;
-    color: #64748B;
+    color: #94A3B8;
     margin-top: 2px;
 }
 .sad-ring-tier {
@@ -621,11 +621,20 @@ html {
     border: 1px solid rgba(99, 102, 241, 0.3);
     border-radius: 999px;
     padding: 0.2rem 0.62rem;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition:
+        transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 180ms ease,
+        border-color 180ms ease,
+        box-shadow 180ms ease;
 }
 .sad-source-chip:hover {
+    transform: translateY(-1px);
     background: rgba(99, 102, 241, 0.24);
     border-color: #6366F1;
+    box-shadow: 0 3px 10px rgba(11, 15, 25, 0.35);
+}
+.sad-source-chip:active {
+    transform: translateY(0) scale(0.975);
 }
 .sad-src-type {
     display: inline-flex;
@@ -694,7 +703,7 @@ html {
 .sad-card-footer {
     margin-top: 0.55rem;
     font-size: 0.75rem;
-    color: #64748B;
+    color: #94A3B8;
 }
 
 /* Empty state card on tabs */
@@ -797,12 +806,28 @@ html {
     padding-top: 0.4rem;
 }
 .sad-gw-details summary {
+    display: inline-block;
     cursor: pointer;
     font-size: 0.74rem;
     font-weight: 600;
     color: #A5B4FC;
     list-style: none;
     user-select: none;
+    padding: 0.18rem 0.45rem;
+    margin: -0.1rem 0 -0.1rem -0.35rem;
+    border-radius: 6px;
+    transition:
+        transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 180ms ease,
+        color 180ms ease;
+}
+.sad-gw-details summary:hover {
+    background-color: rgba(99, 102, 241, 0.12);
+    color: #E0E7FF;
+}
+.sad-gw-details summary:active {
+    transform: scale(0.98);
+    background-color: rgba(99, 102, 241, 0.20);
 }
 .sad-gw-details summary::-webkit-details-marker {
     display: none;
@@ -1121,18 +1146,19 @@ a.sad-hl-link[data-tooltip]:hover::after {
     left: 0;
     bottom: calc(100% + 7px);
     z-index: 9999;
-    min-width: 210px;
-    max-width: 340px;
-    padding: 0.48rem 0.68rem;
+    width: max-content;
+    max-width: min(300px, 75vw);
+    padding: 0.5rem 0.72rem;
     border-radius: 8px;
     background: #0B1120;
     border: 1px solid #3B4C73;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.6);
     color: #F8FAFC;
     font-size: 0.78rem;
     font-weight: 500;
-    line-height: 1.4;
+    line-height: 1.42;
     white-space: normal;
+    overflow-wrap: anywhere;
     pointer-events: none;
 }
 .sad-hl-outdated,
@@ -1299,6 +1325,311 @@ a.sad-hl-link.sad-hl-unverifiable:visited {
     grid-template-columns: 1fr 1fr;
     gap: 0.65rem;
     margin-bottom: 0.55rem;
+}
+
+/* Centralized interactive button, export, navigation & expander animations */
+:root {
+    --sad-btn-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --sad-btn-duration: 180ms;
+}
+
+[data-testid="stButton"] button,
+[data-testid="stDownloadButton"] button {
+    transition:
+        transform var(--sad-btn-duration) var(--sad-btn-ease),
+        background-color var(--sad-btn-duration) ease,
+        border-color var(--sad-btn-duration) ease,
+        color var(--sad-btn-duration) ease,
+        box-shadow 200ms var(--sad-btn-ease),
+        opacity 150ms ease;
+    will-change: transform;
+}
+
+[data-testid="stButton"] button:focus-visible,
+[data-testid="stDownloadButton"] button:focus-visible,
+[data-testid="stTabs"] [data-testid="stTab"]:focus-visible,
+[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:focus-visible,
+[data-testid="stExpander"] details > summary:focus-visible,
+.sad-gw-details summary:focus-visible,
+[data-testid="stCode"] button:focus-visible,
+[data-testid="stElementToolbarButton"] button:focus-visible,
+[data-testid="stSidebarCollapseButton"] button:focus-visible,
+[data-testid="stExpandSidebarButton"] button:focus-visible,
+a.sad-source-chip:focus-visible,
+a.sad-gw-link:focus-visible {
+    outline: 2px solid #A5B4FC;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.24);
+}
+
+/* Primary action buttons: Check Freshness, Ask & Audit, Audit URL,
+   Generate/Regenerate corrected answer, Re-run benchmark */
+[data-testid="stButton"] button[data-testid="stBaseButton-primary"] {
+    background-color: #6366F1;
+    border: 1px solid #6366F1;
+    color: #F8FAFC;
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(11, 15, 25, 0.38), 0 0 0 1px rgba(129, 140, 248, 0.22);
+}
+[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:hover:not(:disabled) {
+    transform: translateY(-2px);
+    background-color: #7073F7;
+    border-color: #818CF8;
+    color: #FFFFFF;
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.30), 0 2px 6px rgba(11, 15, 25, 0.45);
+}
+[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:active:not(:disabled) {
+    transform: translateY(0) scale(0.985);
+    background-color: #5457E0;
+    border-color: #6366F1;
+    color: #F8FAFC;
+    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.22);
+}
+
+/* Export Audit Report & Benchmark Download buttons */
+[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"] {
+    background-color: rgba(99, 102, 241, 0.14);
+    border: 1px solid rgba(99, 102, 241, 0.42);
+    color: #E0E7FF;
+    font-weight: 600;
+    box-shadow: 0 2px 5px rgba(11, 15, 25, 0.30);
+}
+[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:hover:not(:disabled) {
+    transform: translateY(-2px);
+    background-color: rgba(99, 102, 241, 0.22);
+    border-color: #818CF8;
+    color: #F8FAFC;
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.24), 0 2px 6px rgba(11, 15, 25, 0.38);
+}
+[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:active:not(:disabled) {
+    transform: translateY(0) scale(0.985);
+    background-color: rgba(99, 102, 241, 0.28);
+    border-color: #6366F1;
+    color: #F8FAFC;
+    box-shadow: 0 2px 5px rgba(11, 15, 25, 0.32);
+}
+
+/* Secondary buttons: Clear, Sample examples, Clear Tavily cache, Demo recovery */
+[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {
+    background-color: #161F33;
+    border: 1px solid #2A3752;
+    color: #E2E8F0;
+    box-shadow: 0 1px 3px rgba(11, 15, 25, 0.28);
+}
+[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover:not(:disabled) {
+    transform: translateY(-2px);
+    background-color: #1E2942;
+    border-color: rgba(129, 140, 248, 0.55);
+    color: #F8FAFC;
+    box-shadow: 0 5px 14px rgba(11, 15, 25, 0.42), 0 0 0 1px rgba(99, 102, 241, 0.12);
+}
+[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:active:not(:disabled) {
+    transform: translateY(0) scale(0.985);
+    background-color: #253352;
+    border-color: #6366F1;
+    color: #F8FAFC;
+    box-shadow: 0 1px 3px rgba(11, 15, 25, 0.36);
+}
+
+/* Clear & unmistakable disabled state with zero lift or glow */
+[data-testid="stButton"] button:disabled,
+[data-testid="stButton"] button:disabled:hover,
+[data-testid="stButton"] button:disabled:active,
+[data-testid="stDownloadButton"] button:disabled,
+[data-testid="stDownloadButton"] button:disabled:hover,
+[data-testid="stDownloadButton"] button:disabled:active {
+    opacity: 0.62;
+    cursor: not-allowed;
+    background-color: rgba(26, 34, 54, 0.72);
+    border-color: #243047;
+    color: #94A3B8;
+    transform: none;
+    box-shadow: none;
+    filter: none;
+}
+[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:disabled,
+[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:disabled:hover,
+[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:disabled:active {
+    background-color: rgba(99, 102, 241, 0.26);
+    border-color: rgba(99, 102, 241, 0.36);
+    color: #E2E8F0;
+}
+
+/* Keep small top buffer inside expanders so 2px button hover lift is never clipped */
+[data-testid="stExpanderDetails"] {
+    padding-top: 0.35rem;
+}
+
+/* Copy buttons inside code blocks and element toolbars */
+[data-testid="stCode"] button,
+[data-testid="stElementToolbarButton"] button {
+    border-radius: 7px;
+    border: 1px solid transparent;
+    transition:
+        transform 150ms var(--sad-btn-ease),
+        background-color var(--sad-btn-duration) ease,
+        border-color var(--sad-btn-duration) ease,
+        color var(--sad-btn-duration) ease,
+        box-shadow 180ms ease;
+}
+[data-testid="stCode"] button:hover:not(:disabled),
+[data-testid="stElementToolbarButton"] button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    background-color: rgba(99, 102, 241, 0.18);
+    border-color: rgba(129, 140, 248, 0.45);
+    color: #F8FAFC;
+    box-shadow: 0 3px 10px rgba(11, 15, 25, 0.35);
+}
+[data-testid="stCode"] button:active:not(:disabled),
+[data-testid="stElementToolbarButton"] button:active:not(:disabled) {
+    transform: scale(0.94);
+    background-color: rgba(99, 102, 241, 0.26);
+    border-color: #6366F1;
+}
+[data-testid="stCode"] button[data-copy-state="copied"] {
+    color: #4ADE80;
+    background-color: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.38);
+}
+
+/* Workspace navigation tabs (smooth hover/active states without underline shift) */
+[data-testid="stTabs"] [data-testid="stTab"] {
+    border-radius: 8px 8px 0 0;
+    transition:
+        transform 150ms var(--sad-btn-ease),
+        background-color var(--sad-btn-duration) ease,
+        color var(--sad-btn-duration) ease;
+}
+[data-testid="stTabs"] [data-testid="stTab"]:not([data-selected]):hover:not([data-disabled]) {
+    background-color: rgba(99, 102, 241, 0.08);
+    color: #C7D2FE;
+}
+[data-testid="stTabs"] [data-testid="stTab"]:active:not([data-disabled]) {
+    transform: scale(0.985);
+}
+[data-testid="stTabs"] [data-testid="stTabsScrollLeft"],
+[data-testid="stTabs"] [data-testid="stTabsScrollRight"] {
+    transition:
+        background-color var(--sad-btn-duration) ease,
+        color var(--sad-btn-duration) ease,
+        transform 150ms var(--sad-btn-ease);
+}
+[data-testid="stTabs"] [data-testid="stTabsScrollLeft"]:hover,
+[data-testid="stTabs"] [data-testid="stTabsScrollRight"]:hover {
+    color: #C7D2FE;
+}
+[data-testid="stTabs"] [data-testid="stTabsScrollLeft"]:active,
+[data-testid="stTabs"] [data-testid="stTabsScrollRight"]:active {
+    transform: scale(0.94);
+}
+
+/* Benchmark filter segmented-control buttons (zero flush-border shift) */
+[data-testid="stButtonGroup"] button[data-variant="segmented_control"] {
+    transition:
+        transform 140ms var(--sad-btn-ease),
+        background-color var(--sad-btn-duration) ease,
+        border-color var(--sad-btn-duration) ease,
+        color var(--sad-btn-duration) ease;
+}
+[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:hover:not([data-disabled]) {
+    background-color: rgba(99, 102, 241, 0.14);
+    color: #F8FAFC;
+}
+[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:active:not([data-disabled]) {
+    transform: scale(0.98);
+}
+
+/* Expand / collapse controls */
+[data-testid="stExpander"] details {
+    transition:
+        border-color var(--sad-btn-duration) ease,
+        box-shadow 200ms var(--sad-btn-ease);
+}
+[data-testid="stExpander"] details:hover {
+    border-color: rgba(129, 140, 248, 0.42);
+    box-shadow: 0 4px 12px rgba(11, 15, 25, 0.32);
+}
+[data-testid="stExpander"] details > summary {
+    transition:
+        transform 150ms var(--sad-btn-ease),
+        background-color var(--sad-btn-duration) ease,
+        color var(--sad-btn-duration) ease;
+}
+[data-testid="stExpander"] details > summary:hover {
+    background-color: rgba(99, 102, 241, 0.08);
+    color: #F8FAFC;
+}
+[data-testid="stExpander"] details > summary:active {
+    transform: scale(0.995);
+    background-color: rgba(99, 102, 241, 0.14);
+}
+
+/* Sidebar collapse/expand icon controls */
+[data-testid="stSidebarCollapseButton"] button,
+[data-testid="stExpandSidebarButton"] button {
+    border-radius: 8px;
+    transition:
+        transform 150ms var(--sad-btn-ease),
+        background-color var(--sad-btn-duration) ease,
+        color var(--sad-btn-duration) ease;
+}
+[data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="stExpandSidebarButton"] button:hover {
+    transform: translateY(-1px);
+    background-color: rgba(99, 102, 241, 0.14);
+}
+[data-testid="stSidebarCollapseButton"] button:active,
+[data-testid="stExpandSidebarButton"] button:active {
+    transform: scale(0.95);
+}
+
+/* Respect reduced-motion accessibility settings */
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+    [data-testid="stButton"] button,
+    [data-testid="stDownloadButton"] button,
+    [data-testid="stCode"] button,
+    [data-testid="stElementToolbarButton"] button,
+    [data-testid="stTabs"] [data-testid="stTab"],
+    [data-testid="stTabs"] [data-testid="stTabsScrollLeft"],
+    [data-testid="stTabs"] [data-testid="stTabsScrollRight"],
+    [data-testid="stButtonGroup"] button[data-variant="segmented_control"],
+    [data-testid="stSidebarCollapseButton"] button,
+    [data-testid="stExpandSidebarButton"] button,
+    [data-testid="stExpander"] details,
+    [data-testid="stExpander"] details > summary,
+    .sad-gw-details summary,
+    .sad-source-chip,
+    .sad-skeleton-box {
+        transition: none !important;
+        animation: none !important;
+    }
+    [data-testid="stButton"] button:hover,
+    [data-testid="stButton"] button:active,
+    [data-testid="stDownloadButton"] button:hover,
+    [data-testid="stDownloadButton"] button:active,
+    [data-testid="stCode"] button:hover,
+    [data-testid="stCode"] button:active,
+    [data-testid="stElementToolbarButton"] button:hover,
+    [data-testid="stElementToolbarButton"] button:active,
+    [data-testid="stTabs"] [data-testid="stTab"]:hover,
+    [data-testid="stTabs"] [data-testid="stTab"]:active,
+    [data-testid="stTabs"] [data-testid="stTabsScrollLeft"]:active,
+    [data-testid="stTabs"] [data-testid="stTabsScrollRight"]:active,
+    [data-testid="stButtonGroup"] button[data-variant="segmented_control"]:hover,
+    [data-testid="stButtonGroup"] button[data-variant="segmented_control"]:active,
+    [data-testid="stSidebarCollapseButton"] button:hover,
+    [data-testid="stSidebarCollapseButton"] button:active,
+    [data-testid="stExpandSidebarButton"] button:hover,
+    [data-testid="stExpandSidebarButton"] button:active,
+    [data-testid="stExpander"] details > summary:active,
+    .sad-gw-details summary:active,
+    .sad-source-chip:hover,
+    .sad-source-chip:active {
+        transform: none !important;
+    }
 }
 
 /* Responsive adjustments */
@@ -1725,6 +2056,10 @@ def on_demo_mode_toggle() -> None:
         st.session_state["pasted_error"] = None
         st.session_state["ask_error"] = None
         st.session_state["url_error"] = None
+        st.session_state["benchmark_error"] = None
+        st.session_state["pasted_rewrite_error"] = None
+        st.session_state["ask_rewrite_error"] = None
+        st.session_state["url_rewrite_error"] = None
         if st.session_state.get("results") is None:
             try:
                 sample, _ = find_cached_pasted_audit(st.session_state.get("answer_input"))
@@ -1864,6 +2199,7 @@ def _render_stored_error_with_demo_recovery(
                     "Load Demo sample",
                     key=recover_key,
                     icon=":material/play_circle:",
+                    disabled=bool(st.session_state.get("busy_action")),
                     width="stretch",
                 ):
                     st.session_state[error_state_key] = None
@@ -1892,6 +2228,7 @@ def _render_stored_error_with_demo_recovery(
 def load_demo_example(example_text: str) -> None:
     """Sidebar button callback: populates input and clears prior results (or loads Demo cache if Demo mode is on)."""
     st.session_state["pasted_error"] = None
+    st.session_state["pasted_rewrite_error"] = None
     if example_text and st.session_state.get("demo_mode"):
         try:
             sample, exact = find_cached_pasted_audit(example_text)
@@ -1929,6 +2266,7 @@ def clear_workspace() -> None:
     st.session_state["demo_pasted_notice"] = ""
     st.session_state["demo_pasted_rewrite"] = None
     st.session_state["pasted_error"] = None
+    st.session_state["pasted_rewrite_error"] = None
 
 
 def clear_ask_workspace() -> None:
@@ -1949,6 +2287,7 @@ def clear_ask_workspace() -> None:
     st.session_state["demo_ask_notice"] = ""
     st.session_state["demo_ask_rewrite"] = None
     st.session_state["ask_error"] = None
+    st.session_state["ask_rewrite_error"] = None
 
 
 def clear_url_workspace() -> None:
@@ -1972,11 +2311,14 @@ def clear_url_workspace() -> None:
     st.session_state["demo_url_notice"] = ""
     st.session_state["demo_url_rewrite"] = None
     st.session_state["url_error"] = None
+    st.session_state["url_rewrite_error"] = None
 
 
 def init_session_state() -> None:
     """Initialize required keys in Streamlit session_state."""
     defaults = {
+        "busy_action": None,
+        "_busy_armed": False,
         "demo_mode": False,
         "demo_pasted_notice": "",
         "demo_pasted_rewrite": None,
@@ -1987,6 +2329,10 @@ def init_session_state() -> None:
         "pasted_error": None,
         "ask_error": None,
         "url_error": None,
+        "benchmark_error": None,
+        "pasted_rewrite_error": None,
+        "ask_rewrite_error": None,
+        "url_rewrite_error": None,
         "answer_input": "",
         "results": None,
         "checked_answer": "",
@@ -2173,6 +2519,8 @@ def find_claim_span(
     best_len = 10**9
 
     for s, e in _candidate_answer_spans(answer_text):
+        if occupied_ranges and any(s < pe and e > ps for ps, pe in occupied_ranges):
+            continue
         span_tokens = _extract_match_tokens(answer_text[s:e])
         if not span_tokens:
             continue
@@ -3312,6 +3660,7 @@ def render_claim_card(
                     st.progress(part_score / 100)
 
                 ev_strength = breakdown.get("evidence_strength")
+                raw_sum = breakdown.get("raw_weighted_score")
                 band_str = breakdown.get("status_band")
                 extra_caption_bits = [
                     f"Confidence: **{confidence.title()}**",
@@ -3323,6 +3672,20 @@ def render_claim_card(
                     extra_caption_bits.append(f"Band ({status}): **{band_str}**")
                 extra_caption_bits.append(f"Final score: **{score_display}**")
                 st.caption("  •  ".join(extra_caption_bits))
+                if status == "outdated":
+                    st.caption(
+                        "Outdated claims stay in the 0–39 Stale band: strong source recency, agreement, "
+                        "and authority confirm the refutation rather than increasing freshness."
+                    )
+                elif (
+                    status in {"fresh", "uncertain"}
+                    and raw_sum is not None
+                    and score is not None
+                    and int(raw_sum) != int(score)
+                ):
+                    st.caption(
+                        f"Weighted component sum ({raw_sum}/100) was clamped into the {status} status band ({band_str})."
+                    )
 
                 # Show Tavily strategy, cache status, and Extract URL metadata when available.
                 meta_parts: list[str] = []
@@ -3710,7 +4073,10 @@ def render_corrected_and_export_section(
     (side-by-side Original vs. Corrected with word diff, draft preview before AI
     rewrite click, 'What changed & why' changelog, and Markdown/JSON report exports).
     """
+    busy_tag = f"rewrite_{key_prefix}"
     if results is None:
+        if st.session_state.get("busy_action") == busy_tag:
+            st.session_state["busy_action"] = None
         return
 
     state_key_map = {
@@ -3721,6 +4087,7 @@ def render_corrected_and_export_section(
             "pasted_audit_at",
             "Rewrite answer",
             "generate_corrected_btn",
+            "pasted_rewrite_error",
         ),
         "ask": (
             "ask_corrected_answer",
@@ -3729,6 +4096,7 @@ def render_corrected_and_export_section(
             "ask_audit_at",
             "Rewrite Q&A answer",
             "ask_generate_corrected_btn",
+            "ask_rewrite_error",
         ),
         "url": (
             "url_corrected_answer",
@@ -3737,9 +4105,10 @@ def render_corrected_and_export_section(
             "url_audit_at",
             "Rewrite URL article",
             "url_generate_corrected_btn",
+            "url_rewrite_error",
         ),
     }
-    corr_ans_key, corr_mod_key, corr_meta_key, audit_at_key, rewrite_op, btn_key = state_key_map.get(
+    corr_ans_key, corr_mod_key, corr_meta_key, audit_at_key, rewrite_op, btn_key, rewrite_err_key = state_key_map.get(
         key_prefix,
         (
             f"{key_prefix}_corrected_answer",
@@ -3748,8 +4117,13 @@ def render_corrected_and_export_section(
             f"{key_prefix}_audit_at",
             "Rewrite answer",
             f"{key_prefix}_generate_corrected_btn",
+            f"{key_prefix}_rewrite_error",
         ),
     )
+
+    current_busy = st.session_state.get("busy_action")
+    is_any_busy = bool(current_busy)
+    is_rewriting_this = current_busy == busy_tag
 
     st.divider()
     hdr_col, action_col = st.columns([2.2, 1], vertical_alignment="center", gap="medium")
@@ -3764,13 +4138,15 @@ def render_corrected_and_export_section(
         generate_clicked = st.button(
             btn_label,
             key=btn_key,
-            icon=":material/auto_fix_high:",
-            disabled=(len(results) == 0),
+            type="primary",
+            icon=("spinner" if is_rewriting_this else ":material/auto_fix_high:"),
+            disabled=(len(results) == 0 or is_any_busy),
             width="stretch",
         )
 
     rewrite_skel_slot = st.empty()
-    if generate_clicked and results:
+    if generate_clicked and results and not is_any_busy:
+        st.session_state[rewrite_err_key] = None
         if st.session_state.get("demo_mode"):
             new_corrected, new_model = _resolve_cached_rewrite(
                 key_prefix=key_prefix,
@@ -3798,40 +4174,52 @@ def render_corrected_and_export_section(
             corrected_meta = rewrite_record
             audit_at = now_ts
         else:
-            try:
-                _show_skeleton_slot(rewrite_skel_slot, (180,))
-                with st.spinner("Rewriting answer with verified current info..."):
-                    new_corrected, new_model = generate_corrected_answer(
-                        original_answer,
-                        results,
-                    )
-                    st.session_state[corr_ans_key] = new_corrected
-                    st.session_state[corr_mod_key] = new_model
-                    rewrite_record = build_request_telemetry(
-                        rewrite_op,
-                        get_rewrite_metrics(),
-                        model_used=new_model,
-                    )
-                    st.session_state[corr_meta_key] = rewrite_record
-                    now_ts = datetime.now().astimezone()
-                    st.session_state[audit_at_key] = now_ts
-                    append_gateway_request(rewrite_record)
-                    if gateway_placeholder is not None:
-                        render_gateway_panel(
-                            gateway_placeholder,
-                            st.session_state["gateway_requests"],
-                        )
-                    corrected_answer = new_corrected
-                    corrected_model = new_model
-                    corrected_meta = rewrite_record
-                    audit_at = now_ts
-            except Exception as exc:
-                st.error(
-                    format_friendly_ui_error(exc, action="generating the corrected answer"),
-                    icon=":material/error:",
+            st.session_state["busy_action"] = busy_tag
+            st.session_state["_busy_armed"] = True
+            st.rerun()
+    elif is_rewriting_this and results:
+        rewrite_finished = False
+        try:
+            _show_skeleton_slot(rewrite_skel_slot, (180,))
+            with st.spinner("Rewriting answer with verified current info..."):
+                new_corrected, new_model = generate_corrected_answer(
+                    original_answer,
+                    results,
                 )
-            finally:
-                _clear_slot(rewrite_skel_slot)
+                st.session_state[corr_ans_key] = new_corrected
+                st.session_state[corr_mod_key] = new_model
+                rewrite_record = build_request_telemetry(
+                    rewrite_op,
+                    get_rewrite_metrics(),
+                    model_used=new_model,
+                )
+                st.session_state[corr_meta_key] = rewrite_record
+                now_ts = datetime.now().astimezone()
+                st.session_state[audit_at_key] = now_ts
+                append_gateway_request(rewrite_record)
+                if gateway_placeholder is not None:
+                    render_gateway_panel(
+                        gateway_placeholder,
+                        st.session_state["gateway_requests"],
+                    )
+            rewrite_finished = True
+        except Exception as exc:
+            st.session_state[rewrite_err_key] = format_friendly_ui_error(
+                exc, action="generating the corrected answer"
+            )
+            rewrite_finished = True
+        finally:
+            if st.session_state.get("busy_action") == busy_tag:
+                st.session_state["busy_action"] = None
+            _clear_slot(rewrite_skel_slot)
+        if rewrite_finished:
+            st.rerun()
+
+    if st.session_state.get(rewrite_err_key):
+        st.error(
+            str(st.session_state[rewrite_err_key]),
+            icon=":material/error:",
+        )
 
     matched_spans = match_claims_to_answer_spans(original_answer or "", results)
     is_ai_rewritten = bool(corrected_answer)
@@ -3986,6 +4374,10 @@ def render_corrected_and_export_section(
         fresh_kept = sum(1 for r in results if r.get("status") == "fresh")
         if fresh_kept > 0:
             st.caption(f"Kept {fresh_kept} verified fresh claim(s) unchanged.")
+        if not is_ai_rewritten:
+            st.caption(
+                "Comparing against instant claim-by-claim draft edits; click Generate corrected answer above for a full AI prose rewrite."
+            )
     else:
         st.info(
             "No outdated, uncertain, or unverifiable claims needed factual updates — all checked claims stayed fresh.",
@@ -3993,12 +4385,18 @@ def render_corrected_and_export_section(
         )
 
     # Report export buttons (available as soon as an audit completes, and automatically
-    # enriched with the diff/changelog/rewrite telemetry once a corrected answer is generated).
+    # reflect the visible corrected comparison / AI rewrite telemetry).
     report_time = audit_at or datetime.now().astimezone()
     total_report_credits = None
     if extra_tavily_credits:
         claim_credits_sum = sum(float(r.get("tavily_credits_used") or 0.0) for r in results)
         total_report_credits = round(claim_credits_sum + float(extra_tavily_credits), 2)
+
+    exported_corrected = (
+        corrected_answer
+        if is_ai_rewritten
+        else (display_corrected if display_corrected != (original_answer or "") else None)
+    )
 
     report_payload = build_report_payload(
         mode=mode,
@@ -4006,12 +4404,12 @@ def render_corrected_and_export_section(
         verification_results=results,
         question=question,
         source_url=source_url,
-        corrected_answer=corrected_answer,
+        corrected_answer=exported_corrected,
         ask_meta=ask_meta,
         extract_model=extract_model,
         extract_meta=extract_meta,
-        corrected_model=corrected_model,
-        corrected_meta=corrected_meta,
+        corrected_model=corrected_model if is_ai_rewritten else None,
+        corrected_meta=corrected_meta if is_ai_rewritten else None,
         tavily_credits_used=total_report_credits,
         generated_at=report_time,
     )
@@ -4040,6 +4438,7 @@ def render_corrected_and_export_section(
             mime="text/markdown",
             key=f"dl_md_{key_prefix}",
             icon=":material/download:",
+            disabled=is_any_busy,
             on_click="ignore",
             width="stretch",
         )
@@ -4051,6 +4450,7 @@ def render_corrected_and_export_section(
             mime="application/json",
             key=f"dl_json_{key_prefix}",
             icon=":material/data_object:",
+            disabled=is_any_busy,
             on_click="ignore",
             width="stretch",
         )
@@ -4164,6 +4564,13 @@ use_bifrost_mode = is_use_bifrost()
 set_simulate_outage(bool(st.session_state.get("simulate_outage", False)) and use_bifrost_mode)
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
+is_busy_armed = bool(st.session_state.pop("_busy_armed", False))
+current_busy = st.session_state.get("busy_action")
+if current_busy and not is_busy_armed:
+    st.session_state["busy_action"] = None
+    current_busy = None
+is_any_busy = bool(current_busy)
+
 # ---------------------------------------------------------------------------
 # Sidebar: Demo mode, 4 Sample examples, Gateway panel, Tavily credits, How it works, Settings
 # ---------------------------------------------------------------------------
@@ -4189,6 +4596,7 @@ with st.sidebar:
                 icon=demo["icon"],
                 on_click=load_demo_example,
                 args=(demo["text"],),
+                disabled=is_any_busy,
                 width="stretch",
             )
 
@@ -4356,7 +4764,12 @@ with st.sidebar:
         )
         st.toggle("Show search queries on cards", key="show_search_queries")
         st.toggle("Keep status log expanded", key="keep_status_expanded")
-        if st.button("Clear Tavily cache", key="clear_tavily_cache_btn", width="stretch"):
+        if st.button(
+            "Clear Tavily cache",
+            key="clear_tavily_cache_btn",
+            disabled=is_any_busy,
+            width="stretch",
+        ):
             removed = clear_tavily_cache()
             st.caption(f"Cleared {removed} cached Tavily entr{'y' if removed == 1 else 'ies'}.")
 
@@ -4402,6 +4815,7 @@ tab_pasted, tab_ask, tab_url, tab_benchmark = st.tabs(
 route_target = "Bifrost" if use_bifrost_mode else "Gemini"
 
 with tab_pasted:
+    is_pasted_running = current_busy == "pasted"
     left_col, right_col = st.columns([1, 1.35], gap="large")
 
     with left_col:
@@ -4423,7 +4837,8 @@ with tab_pasted:
                 "Check Freshness",
                 key="check_freshness_btn",
                 type="primary",
-                icon=":material/verified:",
+                icon=("spinner" if is_pasted_running else ":material/verified:"),
+                disabled=is_any_busy,
                 width="stretch",
             )
         with btn_col2:
@@ -4432,6 +4847,7 @@ with tab_pasted:
                 key="clear_workspace_btn",
                 icon=":material/delete_outline:",
                 on_click=clear_workspace,
+                disabled=is_any_busy,
                 width="stretch",
             )
 
@@ -4439,8 +4855,9 @@ with tab_pasted:
         st.subheader("Verification results", icon=":material/fact_check:")
         pasted_skel_slot = st.empty()
 
-        if check_clicked:
+        if check_clicked and not is_any_busy:
             st.session_state["pasted_error"] = None
+            st.session_state["pasted_rewrite_error"] = None
             answer_text = st.session_state["answer_input"].strip()
             if st.session_state.get("demo_mode"):
                 try:
@@ -4474,38 +4891,52 @@ with tab_pasted:
                 st.session_state["status_steps"] = []
                 st.session_state["demo_pasted_notice"] = ""
                 st.session_state["demo_pasted_rewrite"] = None
+                st.session_state["busy_action"] = "pasted"
+                st.session_state["_busy_armed"] = True
+                st.rerun()
 
-                status = None
-                try:
-                    _show_skeleton_slot(pasted_skel_slot, (128, 82, 165))
-                    with st.status("Extracting claims", expanded=True) as status:
-                        steps_log: list[str] = []
-                        extract_model, extract_record, verified_results = run_stale_audit(
-                            answer_text=answer_text,
-                            status_widget=status,
-                            steps_log=steps_log,
-                            credits_placeholder=credits_placeholder,
-                            gateway_placeholder=gateway_placeholder,
-                        )
-                        st.session_state["extract_model"] = extract_model
-                        st.session_state["extract_meta"] = extract_record
-                        st.session_state["results"] = verified_results
-                        st.session_state["checked_answer"] = answer_text
-                        st.session_state["pasted_audit_at"] = datetime.now().astimezone()
-                        st.session_state["status_steps"] = steps_log
-
-                except Exception as exc:
-                    if status is not None:
-                        status.update(label="Check failed", state="error", expanded=False)
-                    _set_tab_error(
-                        "pasted_error",
-                        exc,
-                        action="verifying your answer",
-                        recover_key="demo_recover_pasted",
-                        query_or_url=answer_text,
+        elif is_pasted_running:
+            answer_text = st.session_state.get("answer_input", "").strip()
+            if not answer_text:
+                st.session_state["busy_action"] = None
+                st.rerun()
+            pasted_finished = False
+            status = None
+            try:
+                _show_skeleton_slot(pasted_skel_slot, (128, 82, 165))
+                with st.status("Extracting claims", expanded=True) as status:
+                    steps_log: list[str] = []
+                    extract_model, extract_record, verified_results = run_stale_audit(
+                        answer_text=answer_text,
+                        status_widget=status,
+                        steps_log=steps_log,
+                        credits_placeholder=credits_placeholder,
+                        gateway_placeholder=gateway_placeholder,
                     )
-                finally:
-                    _clear_slot(pasted_skel_slot)
+                    st.session_state["extract_model"] = extract_model
+                    st.session_state["extract_meta"] = extract_record
+                    st.session_state["results"] = verified_results
+                    st.session_state["checked_answer"] = answer_text
+                    st.session_state["pasted_audit_at"] = datetime.now().astimezone()
+                    st.session_state["status_steps"] = steps_log
+                pasted_finished = True
+            except Exception as exc:
+                if status is not None:
+                    status.update(label="Check failed", state="error", expanded=False)
+                _set_tab_error(
+                    "pasted_error",
+                    exc,
+                    action="verifying your answer",
+                    recover_key="demo_recover_pasted",
+                    query_or_url=answer_text,
+                )
+                pasted_finished = True
+            finally:
+                if st.session_state.get("busy_action") == "pasted":
+                    st.session_state["busy_action"] = None
+                _clear_slot(pasted_skel_slot)
+            if pasted_finished:
+                st.rerun()
 
         # Render collapsed status trail on subsequent reruns (e.g., after rewriting answer).
         elif st.session_state.get("status_steps"):
@@ -4533,7 +4964,9 @@ with tab_pasted:
                 extract_model=st.session_state.get("extract_model"),
                 extract_meta=st.session_state.get("extract_meta"),
                 key_prefix="pasted",
-                just_clicked=bool(check_clicked and st.session_state.get("results") is not None),
+                just_clicked=bool(
+                    is_pasted_running or (check_clicked and st.session_state.get("results") is not None)
+                ),
                 empty_body=(
                     f"Paste an LLM answer on the left or choose a sidebar sample, then click "
                     f"<strong>Check Freshness</strong> ({route_target})."
@@ -4557,6 +4990,7 @@ with tab_pasted:
     )
 
 with tab_ask:
+    is_ask_running = current_busy == "ask"
     st.caption(
         f"Type a question below. The app fetches an answer via {route_target}, shows it, "
         "runs the live stale-claim audit automatically, and highlights outdated vs. fresh claims inline."
@@ -4579,7 +5013,8 @@ with tab_ask:
             "Ask & Audit",
             key="ask_and_audit_btn",
             type="primary",
-            icon=":material/send:",
+            icon=("spinner" if is_ask_running else ":material/send:"),
+            disabled=is_any_busy,
             width="stretch",
         )
     with ask_clr_col:
@@ -4588,6 +5023,7 @@ with tab_ask:
             key="ask_clear_btn",
             icon=":material/delete_outline:",
             on_click=clear_ask_workspace,
+            disabled=is_any_busy,
             width="stretch",
         )
 
@@ -4600,9 +5036,9 @@ with tab_ask:
         ask_left_skel = st.empty()
         ask_answer_slot = st.empty()
 
-        if ask_clicked and question_ready and not ask_is_demo:
+        if is_ask_running or (ask_clicked and question_ready and not ask_is_demo and not is_any_busy):
             _show_skeleton_slot(ask_left_skel, (150,))
-        elif not (ask_clicked and (question_ready or ask_is_demo)):
+        elif not (ask_clicked and ask_is_demo and not is_any_busy):
             saved_ask_answer = st.session_state.get("ask_answer", "")
             if saved_ask_answer:
                 render_ask_answer_card(
@@ -4612,6 +5048,10 @@ with tab_ask:
                     question_text=st.session_state.get("ask_question_asked"),
                     answer_model=st.session_state.get("ask_model"),
                     answer_meta=st.session_state.get("ask_meta"),
+                    audit_error=bool(
+                        st.session_state.get("ask_error")
+                        and st.session_state.get("ask_results") is None
+                    ),
                 )
             else:
                 ask_answer_slot.markdown(
@@ -4629,8 +5069,9 @@ with tab_ask:
         st.subheader("Verification audit", icon=":material/fact_check:")
         ask_right_skel = st.empty()
 
-        if ask_clicked:
+        if ask_clicked and not is_any_busy:
             st.session_state["ask_error"] = None
+            st.session_state["ask_rewrite_error"] = None
             question_text = st.session_state["ask_question_input"].strip()
             if ask_is_demo:
                 try:
@@ -4672,99 +5113,120 @@ with tab_ask:
                 st.session_state["ask_status_steps"] = []
                 st.session_state["demo_ask_notice"] = ""
                 st.session_state["demo_ask_rewrite"] = None
+                st.session_state["busy_action"] = "ask"
+                st.session_state["_busy_armed"] = True
+                st.rerun()
 
-                ask_status = None
-                try:
-                    _show_skeleton_slot(ask_right_skel, (128, 82, 165))
-                    with st.status(f"Asking LLM via {route_target}", expanded=True) as ask_status:
-                        ask_steps: list[str] = []
-                        st.write(f"Getting answer from LLM via {route_target}...")
+        elif is_ask_running:
+            question_text = str(
+                st.session_state.get("ask_question_asked")
+                or st.session_state.get("ask_question_input")
+                or ""
+            ).strip()
+            if not question_text:
+                _clear_slot(ask_left_skel)
+                st.session_state["busy_action"] = None
+                st.rerun()
 
-                        llm_answer, raw_ask_meta = ask_question(question_text)
-                        ask_record = build_request_telemetry(
-                            "Ask & Audit Q&A",
-                            raw_ask_meta,
-                            model_used=raw_ask_meta.get("model_used") if isinstance(raw_ask_meta, dict) else None,
-                        )
-                        ask_model = ask_record.get("model_used") if ask_record else None
+            ask_finished = False
+            ask_status = None
+            try:
+                _show_skeleton_slot(ask_right_skel, (128, 82, 165))
+                with st.status(f"Asking LLM via {route_target}", expanded=True) as ask_status:
+                    ask_steps: list[str] = []
+                    st.write(f"Getting answer from LLM via {route_target}...")
 
-                        st.session_state["ask_answer"] = llm_answer
-                        st.session_state["ask_model"] = ask_model
-                        st.session_state["ask_meta"] = ask_record
-                        append_gateway_request(ask_record)
-                        render_gateway_panel(gateway_placeholder, st.session_state["gateway_requests"])
-
-                        ask_msg = f"Answered via {route_target} ({ask_model})"
-                        if ask_record and ask_record.get("fallback_used"):
-                            fb_route = format_fallback_route(
-                                ask_record.get("primary_model"),
-                                ask_record.get("model_used"),
-                            )
-                            ask_msg += f" — Fallback used: {fb_route}"
-                        ask_steps.append(ask_msg)
-                        st.write(f":material/check: {ask_msg}")
-
-                        # Show the raw LLM answer immediately before the Tavily audit runs.
-                        _clear_slot(ask_left_skel)
-                        render_ask_answer_card(
-                            placeholder=ask_answer_slot,
-                            answer_text=llm_answer,
-                            verification_results=None,
-                            question_text=question_text,
-                            answer_model=ask_model,
-                            answer_meta=ask_record,
-                        )
-
-                        # Automatically run the stale-claim audit using existing extractor + verifier.
-                        ask_status.update(label="Extracting claims", state="running")
-                        ext_model, ext_record, ask_verified = run_stale_audit(
-                            answer_text=llm_answer,
-                            status_widget=ask_status,
-                            steps_log=ask_steps,
-                            credits_placeholder=credits_placeholder,
-                            gateway_placeholder=gateway_placeholder,
-                        )
-
-                        st.session_state["ask_extract_model"] = ext_model
-                        st.session_state["ask_extract_meta"] = ext_record
-                        st.session_state["ask_results"] = ask_verified
-                        st.session_state["ask_audit_at"] = datetime.now().astimezone()
-                        st.session_state["ask_status_steps"] = ask_steps
-
-                        # Re-render the answer card with inline red/green claim highlights!
-                        render_ask_answer_card(
-                            placeholder=ask_answer_slot,
-                            answer_text=llm_answer,
-                            verification_results=ask_verified,
-                            question_text=question_text,
-                            answer_model=ask_model,
-                            answer_meta=ask_record,
-                        )
-
-                except Exception as exc:
-                    _clear_slot(ask_left_skel)
-                    if ask_status is not None:
-                        ask_status.update(label="Ask & Audit failed", state="error", expanded=False)
-                    if st.session_state.get("ask_answer"):
-                        render_ask_answer_card(
-                            placeholder=ask_answer_slot,
-                            answer_text=st.session_state["ask_answer"],
-                            verification_results=None,
-                            question_text=st.session_state.get("ask_question_asked"),
-                            answer_model=st.session_state.get("ask_model"),
-                            answer_meta=st.session_state.get("ask_meta"),
-                            audit_error=True,
-                        )
-                    _set_tab_error(
-                        "ask_error",
-                        exc,
-                        action="running Ask & Audit",
-                        recover_key="demo_recover_ask",
-                        query_or_url=question_text,
+                    llm_answer, raw_ask_meta = ask_question(question_text)
+                    ask_record = build_request_telemetry(
+                        "Ask & Audit Q&A",
+                        raw_ask_meta,
+                        model_used=raw_ask_meta.get("model_used") if isinstance(raw_ask_meta, dict) else None,
                     )
-                finally:
+                    ask_model = ask_record.get("model_used") if ask_record else None
+
+                    st.session_state["ask_answer"] = llm_answer
+                    st.session_state["ask_model"] = ask_model
+                    st.session_state["ask_meta"] = ask_record
+                    append_gateway_request(ask_record)
+                    render_gateway_panel(gateway_placeholder, st.session_state["gateway_requests"])
+
+                    ask_msg = f"Answered via {route_target} ({ask_model})"
+                    if ask_record and ask_record.get("fallback_used"):
+                        fb_route = format_fallback_route(
+                            ask_record.get("primary_model"),
+                            ask_record.get("model_used"),
+                        )
+                        ask_msg += f" — Fallback used: {fb_route}"
+                    ask_steps.append(ask_msg)
+                    st.write(f":material/check: {ask_msg}")
+
+                    # Show the raw LLM answer immediately before the Tavily audit runs.
                     _clear_slot(ask_left_skel)
-                    _clear_slot(ask_right_skel)
+                    render_ask_answer_card(
+                        placeholder=ask_answer_slot,
+                        answer_text=llm_answer,
+                        verification_results=None,
+                        question_text=question_text,
+                        answer_model=ask_model,
+                        answer_meta=ask_record,
+                    )
+
+                    # Automatically run the stale-claim audit using existing extractor + verifier.
+                    ask_status.update(label="Extracting claims", state="running")
+                    ext_model, ext_record, ask_verified = run_stale_audit(
+                        answer_text=llm_answer,
+                        status_widget=ask_status,
+                        steps_log=ask_steps,
+                        credits_placeholder=credits_placeholder,
+                        gateway_placeholder=gateway_placeholder,
+                    )
+
+                    st.session_state["ask_extract_model"] = ext_model
+                    st.session_state["ask_extract_meta"] = ext_record
+                    st.session_state["ask_results"] = ask_verified
+                    st.session_state["ask_audit_at"] = datetime.now().astimezone()
+                    st.session_state["ask_status_steps"] = ask_steps
+
+                    # Re-render the answer card with inline red/green claim highlights!
+                    render_ask_answer_card(
+                        placeholder=ask_answer_slot,
+                        answer_text=llm_answer,
+                        verification_results=ask_verified,
+                        question_text=question_text,
+                        answer_model=ask_model,
+                        answer_meta=ask_record,
+                    )
+                ask_finished = True
+
+            except Exception as exc:
+                _clear_slot(ask_left_skel)
+                if ask_status is not None:
+                    ask_status.update(label="Ask & Audit failed", state="error", expanded=False)
+                if st.session_state.get("ask_answer"):
+                    render_ask_answer_card(
+                        placeholder=ask_answer_slot,
+                        answer_text=st.session_state["ask_answer"],
+                        verification_results=None,
+                        question_text=st.session_state.get("ask_question_asked"),
+                        answer_model=st.session_state.get("ask_model"),
+                        answer_meta=st.session_state.get("ask_meta"),
+                        audit_error=True,
+                    )
+                _set_tab_error(
+                    "ask_error",
+                    exc,
+                    action="running Ask & Audit",
+                    recover_key="demo_recover_ask",
+                    query_or_url=question_text,
+                )
+                ask_finished = True
+            finally:
+                if st.session_state.get("busy_action") == "ask":
+                    st.session_state["busy_action"] = None
+                _clear_slot(ask_left_skel)
+                _clear_slot(ask_right_skel)
+            if ask_finished:
+                st.rerun()
 
         elif st.session_state.get("ask_status_steps"):
             with st.status(
@@ -4790,7 +5252,9 @@ with tab_ask:
                 extract_model=st.session_state.get("ask_extract_model"),
                 extract_meta=st.session_state.get("ask_extract_meta"),
                 key_prefix="ask",
-                just_clicked=bool(ask_clicked and st.session_state.get("ask_results") is not None),
+                just_clicked=bool(
+                    is_ask_running or (ask_clicked and st.session_state.get("ask_results") is not None)
+                ),
                 empty_title="Ready to ask & audit",
                 empty_body=(
                     f"Type any question above and click <strong>Ask &amp; Audit</strong> to fetch "
@@ -4818,6 +5282,7 @@ with tab_ask:
     )
 
 with tab_url:
+    is_url_running = current_busy == "url"
     st.caption(
         "Paste an article or blog URL below. Tavily Extract pulls the clean text, audits the first "
         "8 time-sensitive claims in parallel, highlights facts inline, and exports the full report."
@@ -4840,7 +5305,8 @@ with tab_url:
             "Audit URL",
             key="audit_url_btn",
             type="primary",
-            icon=":material/travel_explore:",
+            icon=("spinner" if is_url_running else ":material/travel_explore:"),
+            disabled=is_any_busy,
             width="stretch",
         )
     with u_clr_col:
@@ -4849,13 +5315,15 @@ with tab_url:
             key="url_clear_btn",
             icon=":material/delete_outline:",
             on_click=clear_url_workspace,
+            disabled=is_any_busy,
             width="stretch",
         )
 
     url_skel_slot = st.empty()
 
-    if url_clicked:
+    if url_clicked and not is_any_busy:
         st.session_state["url_error"] = None
+        st.session_state["url_rewrite_error"] = None
         url_val = st.session_state["url_input"].strip()
         if st.session_state.get("demo_mode"):
             try:
@@ -4891,78 +5359,93 @@ with tab_url:
             st.session_state["url_status_steps"] = []
             st.session_state["demo_url_notice"] = ""
             st.session_state["demo_url_rewrite"] = None
+            st.session_state["busy_action"] = "url"
+            st.session_state["_busy_armed"] = True
+            st.rerun()
 
-            url_status = None
-            try:
-                _show_skeleton_slot(url_skel_slot, (68, 128, 165, 165))
-                with st.status("Extracting article via Tavily Extract", expanded=True) as url_status:
-                    url_steps: list[str] = []
-                    st.write("Fetching clean article text via Tavily Extract...")
-                    article_info = extract_article_from_url(url_val)
+    elif is_url_running:
+        url_val = st.session_state.get("url_input", "").strip()
+        if not url_val:
+            st.session_state["busy_action"] = None
+            st.rerun()
+        url_finished = False
+        url_status = None
+        try:
+            _show_skeleton_slot(url_skel_slot, (68, 128, 165, 165))
+            with st.status("Extracting article via Tavily Extract", expanded=True) as url_status:
+                url_steps: list[str] = []
+                st.write("Fetching clean article text via Tavily Extract...")
+                article_info = extract_article_from_url(url_val)
 
-                    ext_credits = float(article_info.get("credits_used") or 0.0)
-                    if ext_credits > 0:
-                        st.session_state["tavily_credits_used"] = round(
-                            float(st.session_state.get("tavily_credits_used", 0.0)) + ext_credits,
-                            2,
-                        )
-                        render_sidebar_credits(
-                            credits_placeholder,
-                            st.session_state["tavily_credits_used"],
-                        )
-
-                    resolved_url = str(article_info.get("url") or url_val).strip()
-                    article_text = str(article_info.get("content") or "")
-                    st.session_state["url_audited"] = resolved_url
-                    st.session_state["url_article_title"] = str(article_info.get("title") or "").strip()
-                    st.session_state["url_article_text"] = article_text
-                    st.session_state["url_article_truncated"] = bool(article_info.get("truncated"))
-                    st.session_state["url_extract_credits"] = ext_credits
-                    st.session_state["url_extract_cache_hit"] = bool(article_info.get("cache_hit"))
-
-                    if article_info.get("cache_hit"):
-                        ext_msg = f"Extracted article ({len(article_text):,} chars, 6h cache hit — 0 credits)"
-                    else:
-                        ext_msg = (
-                            f"Extracted article ({len(article_text):,} chars, "
-                            f"{format_credits(ext_credits)} Tavily credit)"
-                        )
-                    url_steps.append(ext_msg)
-                    st.write(f":material/check: {ext_msg}")
-
-                    url_status.update(label="Extracting claims", state="running")
-                    url_meta_out: dict = {}
-                    ext_model, ext_record, url_verified = run_stale_audit(
-                        answer_text=article_text,
-                        status_widget=url_status,
-                        steps_log=url_steps,
-                        credits_placeholder=credits_placeholder,
-                        gateway_placeholder=gateway_placeholder,
-                        max_claims=8,
-                        audit_meta_out=url_meta_out,
+                ext_credits = float(article_info.get("credits_used") or 0.0)
+                if ext_credits > 0:
+                    st.session_state["tavily_credits_used"] = round(
+                        float(st.session_state.get("tavily_credits_used", 0.0)) + ext_credits,
+                        2,
+                    )
+                    render_sidebar_credits(
+                        credits_placeholder,
+                        st.session_state["tavily_credits_used"],
                     )
 
-                    st.session_state["url_extract_model"] = ext_model
-                    st.session_state["url_extract_meta"] = ext_record
-                    st.session_state["url_results"] = url_verified
-                    st.session_state["url_total_claims_found"] = int(
-                        url_meta_out.get("total_claims_extracted") or len(url_verified)
-                    )
-                    st.session_state["url_audit_at"] = datetime.now().astimezone()
-                    st.session_state["url_status_steps"] = url_steps
+                resolved_url = str(article_info.get("url") or url_val).strip()
+                article_text = str(article_info.get("content") or "")
+                st.session_state["url_audited"] = resolved_url
+                st.session_state["url_article_title"] = str(article_info.get("title") or "").strip()
+                st.session_state["url_article_text"] = article_text
+                st.session_state["url_article_truncated"] = bool(article_info.get("truncated"))
+                st.session_state["url_extract_credits"] = ext_credits
+                st.session_state["url_extract_cache_hit"] = bool(article_info.get("cache_hit"))
 
-            except Exception as exc:
-                if url_status is not None:
-                    url_status.update(label="URL audit failed", state="error", expanded=False)
-                _set_tab_error(
-                    "url_error",
-                    exc,
-                    action="extracting the URL",
-                    recover_key="demo_recover_url",
-                    query_or_url=url_val,
+                if article_info.get("cache_hit"):
+                    ext_msg = f"Extracted article ({len(article_text):,} chars, 6h cache hit — 0 credits)"
+                else:
+                    ext_msg = (
+                        f"Extracted article ({len(article_text):,} chars, "
+                        f"{format_credits(ext_credits)} Tavily credit)"
+                    )
+                url_steps.append(ext_msg)
+                st.write(f":material/check: {ext_msg}")
+
+                url_status.update(label="Extracting claims", state="running")
+                url_meta_out: dict = {}
+                ext_model, ext_record, url_verified = run_stale_audit(
+                    answer_text=article_text,
+                    status_widget=url_status,
+                    steps_log=url_steps,
+                    credits_placeholder=credits_placeholder,
+                    gateway_placeholder=gateway_placeholder,
+                    max_claims=8,
+                    audit_meta_out=url_meta_out,
                 )
-            finally:
-                _clear_slot(url_skel_slot)
+
+                st.session_state["url_extract_model"] = ext_model
+                st.session_state["url_extract_meta"] = ext_record
+                st.session_state["url_results"] = url_verified
+                st.session_state["url_total_claims_found"] = int(
+                    url_meta_out.get("total_claims_extracted") or len(url_verified)
+                )
+                st.session_state["url_audit_at"] = datetime.now().astimezone()
+                st.session_state["url_status_steps"] = url_steps
+            url_finished = True
+
+        except Exception as exc:
+            if url_status is not None:
+                url_status.update(label="URL audit failed", state="error", expanded=False)
+            _set_tab_error(
+                "url_error",
+                exc,
+                action="extracting the URL",
+                recover_key="demo_recover_url",
+                query_or_url=url_val,
+            )
+            url_finished = True
+        finally:
+            if st.session_state.get("busy_action") == "url":
+                st.session_state["busy_action"] = None
+            _clear_slot(url_skel_slot)
+        if url_finished:
+            st.rerun()
 
     elif st.session_state.get("url_status_steps"):
         with st.status(
@@ -5019,7 +5502,9 @@ with tab_url:
             extract_model=st.session_state.get("url_extract_model"),
             extract_meta=st.session_state.get("url_extract_meta"),
             key_prefix="url",
-            just_clicked=bool(url_clicked and saved_url_results is not None),
+            just_clicked=bool(
+                is_url_running or (url_clicked and saved_url_results is not None)
+            ),
             annotated_text=saved_article_text,
             annotated_title="Annotated article",
             empty_title="Ready to audit a URL",
@@ -5047,6 +5532,7 @@ with tab_url:
     )
 
 with tab_benchmark:
+    is_bench_running = current_busy == "benchmark"
     bench_head_col, bench_cache_col, bench_btn_col = st.columns(
         [2.7, 1.05, 1.05],
         vertical_alignment="bottom",
@@ -5069,13 +5555,15 @@ with tab_benchmark:
             "Re-run benchmark",
             key="rerun_benchmark_btn",
             type="primary",
-            icon=":material/speed:",
+            icon=("spinner" if is_bench_running else ":material/speed:"),
+            disabled=is_any_busy,
             width="stretch",
         )
 
     bench_skel_slot = st.empty()
 
-    if rerun_bench_clicked:
+    if rerun_bench_clicked and not is_any_busy:
+        st.session_state["benchmark_error"] = None
         if st.session_state.get("demo_mode"):
             st.info(
                 "Demo mode is active — showing cached benchmark results / dataset offline (0 live API calls). "
@@ -5083,109 +5571,119 @@ with tab_benchmark:
                 icon=":material/info:",
             )
         else:
-            bench_status = None
-            bench_steps: list[str] = []
-            dual_bench = bool(st.session_state.get("dual_judge_mode", False))
-            try:
-                _show_skeleton_slot(bench_skel_slot, (96, 96, 220))
-                with st.status("Running 20-claim benchmark (3 parallel workers)...", expanded=True) as bench_status:
-                    bench_live = st.empty()
-                    bench_live.write("Evaluating 20 labelled claims across Tavily + LLM judge...")
-                    bench_bar = st.progress(0.0, text="Evaluated 0/20 claims (3 parallel workers)...")
+            st.session_state["busy_action"] = "benchmark"
+            st.session_state["_busy_armed"] = True
+            st.rerun()
+    elif is_bench_running:
+        bench_finished = False
+        bench_status = None
+        bench_steps: list[str] = []
+        dual_bench = bool(st.session_state.get("dual_judge_mode", False))
+        try:
+            _show_skeleton_slot(bench_skel_slot, (96, 96, 220))
+            with st.status("Running 20-claim benchmark (3 parallel workers)...", expanded=True) as bench_status:
+                bench_live = st.empty()
+                bench_live.write("Evaluating 20 labelled claims across Tavily + LLM judge...")
+                bench_bar = st.progress(0.0, text="Evaluated 0/20 claims (3 parallel workers)...")
 
-                    def on_bench_progress(done: int, total_count: int, row: dict) -> None:
-                        frac = min(1.0, max(0.0, float(done) / float(total_count))) if total_count else 1.0
-                        mark_sym = "✓" if row.get("correct") else "✗"
-                        pred_lbl = str(row.get("predicted_status") or "unknown")
-                        exp_lbl = str(row.get("expected_status") or "")
-                        idx_num = row.get("index", done)
-                        prog_msg = f"Evaluated {done}/{total_count} claims — #{idx_num} {mark_sym} ({pred_lbl})"
-                        bench_bar.progress(frac, text=prog_msg)
-                        bench_live.write(prog_msg)
-                        bench_steps.append(
-                            f"#{idx_num} {mark_sym}: expected {exp_lbl}, predicted {pred_lbl} "
-                            f"({float(row.get('latency_ms') or 0.0):.0f} ms)"
-                        )
-
-                    run_kwargs: dict = {
-                        "use_cache": bool(bench_use_cache),
-                        "dual_judge": dual_bench,
-                        "progress_callback": on_bench_progress,
-                    }
-                    if not _callable_accepts_kwarg(run_benchmark, "dual_judge"):
-                        run_kwargs.pop("dual_judge", None)
-                    if not _callable_accepts_kwarg(run_benchmark, "use_cache"):
-                        run_kwargs.pop("use_cache", None)
-                    bench_payload = run_benchmark(**run_kwargs)
-
-                    metrics_b = bench_payload.get("metrics") or {}
-                    total_b = int(metrics_b.get("total_claims") or len(bench_payload.get("results") or []))
-                    bench_bar.progress(1.0, text=f"Completed benchmark ({total_b}/{total_b} claims)")
-
-                    bench_credits = float(metrics_b.get("total_tavily_credits") or 0.0)
-                    if bench_credits > 0:
-                        st.session_state["tavily_credits_used"] = round(
-                            float(st.session_state.get("tavily_credits_used", 0.0)) + bench_credits,
-                            2,
-                        )
-                        render_sidebar_credits(
-                            credits_placeholder,
-                            st.session_state["tavily_credits_used"],
-                        )
-
-                    bench_p_tok = int(metrics_b.get("total_prompt_tokens") or 0)
-                    bench_c_tok = int(metrics_b.get("total_completion_tokens") or 0)
-                    bench_t_tok = int(metrics_b.get("total_tokens") or (bench_p_tok + bench_c_tok))
-                    bench_dur_ms = float(metrics_b.get("total_duration_ms") or 0.0)
-                    bench_avg_ms = float(metrics_b.get("avg_latency_ms") or 0.0)
-                    bench_models = bench_payload.get("models_used") or []
-                    if bench_t_tok > 0 or bench_models:
-                        bench_record = build_request_telemetry(
-                            f"Benchmark ({total_b} claims)",
-                            {
-                                "primary_model": bench_models[0] if bench_models else None,
-                                "model_used": ", ".join(bench_models) if bench_models else "Unknown",
-                                "latency_ms": bench_avg_ms,
-                                "prompt_tokens": bench_p_tok,
-                                "completion_tokens": bench_c_tok,
-                                "total_tokens": bench_t_tok,
-                                "fallback_used": False,
-                            },
-                        )
-                        append_gateway_request(bench_record)
-                    if bench_dur_ms > 0:
-                        st.session_state["last_audit_time_ms"] = round(bench_dur_ms, 1)
-                        st.session_state["session_audit_time_ms"] = round(
-                            float(st.session_state.get("session_audit_time_ms") or 0.0) + bench_dur_ms,
-                            1,
-                        )
-                    render_gateway_panel(gateway_placeholder, st.session_state["gateway_requests"])
-
-                    acc_pct = float(metrics_b.get("accuracy") or 0.0) * 100.0
-                    prec_pct = float(metrics_b.get("precision_stale") or 0.0) * 100.0
-                    rec_pct = float(metrics_b.get("recall_stale") or 0.0) * 100.0
-                    summary_step = (
-                        f"Accuracy {acc_pct:.1f}% ({int(metrics_b.get('correct') or 0)}/{total_b}) • "
-                        f"Stale precision {prec_pct:.1f}% • Stale recall {rec_pct:.1f}%"
+                def on_bench_progress(done: int, total_count: int, row: dict) -> None:
+                    frac = min(1.0, max(0.0, float(done) / float(total_count))) if total_count else 1.0
+                    mark_sym = "✓" if row.get("correct") else "✗"
+                    pred_lbl = str(row.get("predicted_status") or "unknown")
+                    exp_lbl = str(row.get("expected_status") or "")
+                    idx_num = row.get("index", done)
+                    prog_msg = f"Evaluated {done}/{total_count} claims — #{idx_num} {mark_sym} ({pred_lbl})"
+                    bench_bar.progress(frac, text=prog_msg)
+                    bench_live.write(prog_msg)
+                    bench_steps.append(
+                        f"#{idx_num} {mark_sym}: expected {exp_lbl}, predicted {pred_lbl} "
+                        f"({float(row.get('latency_ms') or 0.0):.0f} ms)"
                     )
-                    bench_steps.append(summary_step)
-                    bench_live.write(f":material/check: {summary_step}")
-                    bench_status.update(
-                        label=f"Benchmark complete — {summary_step}",
-                        state="complete",
-                        expanded=bool(st.session_state.get("keep_status_expanded", False)),
+
+                run_kwargs: dict = {
+                    "use_cache": bool(bench_use_cache),
+                    "dual_judge": dual_bench,
+                    "progress_callback": on_bench_progress,
+                }
+                if not _callable_accepts_kwarg(run_benchmark, "dual_judge"):
+                    run_kwargs.pop("dual_judge", None)
+                if not _callable_accepts_kwarg(run_benchmark, "use_cache"):
+                    run_kwargs.pop("use_cache", None)
+                bench_payload = run_benchmark(**run_kwargs)
+
+                metrics_b = bench_payload.get("metrics") or {}
+                total_b = int(metrics_b.get("total_claims") or len(bench_payload.get("results") or []))
+                bench_bar.progress(1.0, text=f"Completed benchmark ({total_b}/{total_b} claims)")
+
+                bench_credits = float(metrics_b.get("total_tavily_credits") or 0.0)
+                if bench_credits > 0:
+                    st.session_state["tavily_credits_used"] = round(
+                        float(st.session_state.get("tavily_credits_used", 0.0)) + bench_credits,
+                        2,
                     )
-                    st.session_state["benchmark_results"] = bench_payload
-                    st.session_state["benchmark_status_steps"] = bench_steps
-            except Exception as exc:
-                if bench_status is not None:
-                    bench_status.update(label="Benchmark failed", state="error", expanded=False)
-                st.error(
-                    format_friendly_ui_error(exc, action="running the benchmark"),
-                    icon=":material/error:",
+                    render_sidebar_credits(
+                        credits_placeholder,
+                        st.session_state["tavily_credits_used"],
+                    )
+
+                bench_p_tok = int(metrics_b.get("total_prompt_tokens") or 0)
+                bench_c_tok = int(metrics_b.get("total_completion_tokens") or 0)
+                bench_t_tok = int(metrics_b.get("total_tokens") or (bench_p_tok + bench_c_tok))
+                bench_dur_ms = float(metrics_b.get("total_duration_ms") or 0.0)
+                bench_avg_ms = float(metrics_b.get("avg_latency_ms") or 0.0)
+                bench_models = bench_payload.get("models_used") or []
+                if bench_t_tok > 0 or bench_models:
+                    bench_record = build_request_telemetry(
+                        f"Benchmark ({total_b} claims)",
+                        {
+                            "primary_model": bench_models[0] if bench_models else None,
+                            "model_used": ", ".join(bench_models) if bench_models else "Unknown",
+                            "latency_ms": bench_avg_ms,
+                            "prompt_tokens": bench_p_tok,
+                            "completion_tokens": bench_c_tok,
+                            "total_tokens": bench_t_tok,
+                            "fallback_used": False,
+                        },
+                    )
+                    append_gateway_request(bench_record)
+                if bench_dur_ms > 0:
+                    st.session_state["last_audit_time_ms"] = round(bench_dur_ms, 1)
+                    st.session_state["session_audit_time_ms"] = round(
+                        float(st.session_state.get("session_audit_time_ms") or 0.0) + bench_dur_ms,
+                        1,
+                    )
+                render_gateway_panel(gateway_placeholder, st.session_state["gateway_requests"])
+
+                acc_pct = float(metrics_b.get("accuracy") or 0.0) * 100.0
+                prec_pct = float(metrics_b.get("precision_stale") or 0.0) * 100.0
+                rec_pct = float(metrics_b.get("recall_stale") or 0.0) * 100.0
+                summary_step = (
+                    f"Accuracy {acc_pct:.1f}% ({int(metrics_b.get('correct') or 0)}/{total_b}) • "
+                    f"Stale precision {prec_pct:.1f}% • Stale recall {rec_pct:.1f}%"
                 )
-            finally:
-                _clear_slot(bench_skel_slot)
+                bench_steps.append(summary_step)
+                bench_live.write(f":material/check: {summary_step}")
+                bench_status.update(
+                    label=f"Benchmark complete — {summary_step}",
+                    state="complete",
+                    expanded=bool(st.session_state.get("keep_status_expanded", False)),
+                )
+                st.session_state["benchmark_results"] = bench_payload
+                st.session_state["benchmark_status_steps"] = bench_steps
+            bench_finished = True
+        except Exception as exc:
+            if bench_status is not None:
+                bench_status.update(label="Benchmark failed", state="error", expanded=False)
+            st.session_state["benchmark_error"] = format_friendly_ui_error(
+                exc, action="running the benchmark"
+            )
+            bench_finished = True
+        finally:
+            if st.session_state.get("busy_action") == "benchmark":
+                st.session_state["busy_action"] = None
+            _clear_slot(bench_skel_slot)
+        if bench_finished:
+            st.rerun()
     elif st.session_state.get("benchmark_status_steps"):
         with st.status(
             "Last benchmark run complete",
@@ -5194,6 +5692,12 @@ with tab_benchmark:
         ):
             for step_line in st.session_state["benchmark_status_steps"]:
                 st.write(step_line)
+
+    if st.session_state.get("benchmark_error"):
+        st.error(
+            str(st.session_state["benchmark_error"]),
+            icon=":material/error:",
+        )
 
     if st.session_state.get("benchmark_results") is None:
         st.session_state["benchmark_results"] = load_benchmark_cache()
@@ -5402,6 +5906,7 @@ with tab_benchmark:
                     ],
                     default="All",
                     key="benchmark_filter_mode",
+                    disabled=is_any_busy,
                     label_visibility="collapsed",
                 )
             active_bench_filter = str(selected_bench_filter or "All")
@@ -5449,6 +5954,7 @@ with tab_benchmark:
                 mime="text/markdown",
                 key="dl_bench_md",
                 icon=":material/download:",
+                disabled=is_any_busy,
                 on_click="ignore",
                 width="stretch",
             )
@@ -5460,6 +5966,7 @@ with tab_benchmark:
                 mime="application/json",
                 key="dl_bench_json",
                 icon=":material/data_object:",
+                disabled=is_any_busy,
                 on_click="ignore",
                 width="stretch",
             )

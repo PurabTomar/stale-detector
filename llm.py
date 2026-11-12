@@ -60,6 +60,7 @@ SIMULATED_OUTAGE_PREFIX = "simulated-outage-"
 # HTTP status codes considered safe for fallback safety-net recovery.
 FALLBACK_STATUS_CODES = {429, 500, 502, 503, 504, 404}
 UNREACHABLE_STATUS_CODES = {502, 503, 504}
+DEFAULT_LLM_TIMEOUT_SECONDS = 45.0
 
 # Thread-local store for per-request gateway metrics, outage toggle, and worker secret snapshots.
 _thread_state = threading.local()
@@ -449,12 +450,23 @@ def get_llm_client(
     virtual_key = _get_config_value("LLM_VIRTUAL_KEY") if is_use_bifrost() else ""
     default_headers = {"x-bf-vk": virtual_key} if virtual_key else None
 
+    timeout_seconds = DEFAULT_LLM_TIMEOUT_SECONDS
+    raw_timeout = _get_config_value("LLM_TIMEOUT")
+    if raw_timeout:
+        try:
+            parsed_timeout = float(raw_timeout)
+            if parsed_timeout > 0:
+                timeout_seconds = parsed_timeout
+        except ValueError:
+            pass
+
     # max_retries=0 disables the SDK's hidden retry loop so our explicit
     # 1-retry-per-model + fallback chain behaves predictably.
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
         default_headers=default_headers,
+        timeout=timeout_seconds,
         max_retries=0,
     )
     return client, model_chain, base_url
@@ -613,8 +625,11 @@ def check_gateway_health(base_url: str | None = None, timeout: float = 0.8) -> d
         }
 
 
-def _is_gateway_unreachable(exc: Exception) -> bool:
-    """Return True if an exception indicates the endpoint could not be reached."""
+def _is_transport_unreachable(exc: Exception) -> bool:
+    """
+    Return True when an exception represents a transport/socket/timeout failure
+    rather than an HTTP status response from an active API server.
+    """
     if isinstance(
         exc,
         (
@@ -626,9 +641,6 @@ def _is_gateway_unreachable(exc: Exception) -> bool:
             TimeoutError,
         ),
     ):
-        return True
-    status_code = _extract_status_code(exc)
-    if status_code in UNREACHABLE_STATUS_CODES:
         return True
     msg = str(exc).lower()
     return any(
@@ -643,6 +655,16 @@ def _is_gateway_unreachable(exc: Exception) -> bool:
             "failed to establish a new connection",
         )
     )
+
+
+def _is_gateway_unreachable(exc: Exception) -> bool:
+    """Return True if an exception indicates the endpoint could not be reached."""
+    if _is_transport_unreachable(exc):
+        return True
+    status_code = _extract_status_code(exc)
+    if status_code in UNREACHABLE_STATUS_CODES:
+        return True
+    return False
 
 
 def format_llm_error(
@@ -1034,6 +1056,16 @@ def call_llm_with_meta(
 
         except Exception as exc:
             last_error = exc
+            status_code = _extract_status_code(exc)
+            # If a direct endpoint with explicit fallback models returns a recoverable
+            # HTTP status (e.g. 503 overloaded), cascade immediately to fallback_models.
+            if (
+                not use_native_fallbacks
+                and fallback_models
+                and status_code in FALLBACK_STATUS_CODES
+                and not _is_transport_unreachable(exc)
+            ):
+                break
             # Keep app-level retry ONLY when the endpoint itself is unreachable.
             if attempt == 0 and _is_gateway_unreachable(exc):
                 time.sleep(1)
@@ -1042,7 +1074,7 @@ def call_llm_with_meta(
 
     # Step 2: Explicit app-level failover when simulating an outage or calling Direct Gemini/OpenAI.
     should_try_explicit_fallback = False
-    if last_error is not None and fallback_models and not _is_gateway_unreachable(last_error):
+    if last_error is not None and fallback_models and not _is_transport_unreachable(last_error):
         status_code = _extract_status_code(last_error)
         if outage:
             should_try_explicit_fallback = True

@@ -713,6 +713,60 @@ class TestBifrostLLMClient(unittest.TestCase):
         self.assertEqual(t_key, "tvly-worker-secret")
         self.assertFalse(use_bf)
 
+    def test_llm_timeout_config_and_direct_gemini_503_fallback(self):
+        # 1. LLM_TIMEOUT env sets OpenAI timeout (falls back cleanly to 45s default when unset/invalid)
+        with patch("llm.load_dotenv"), patch.dict(
+            os.environ,
+            {
+                "USE_BIFROST": "false",
+                "GEMINI_API_KEY": "AIza-test-timeout",
+                "LLM_TIMEOUT": "22.5",
+            },
+            clear=False,
+        ):
+            client_custom, _, _ = llm.get_llm_client()
+            self.assertEqual(float(client_custom.timeout), 22.5)
+
+        with patch("llm.load_dotenv"), patch.dict(
+            os.environ,
+            {
+                "USE_BIFROST": "false",
+                "GEMINI_API_KEY": "AIza-test-timeout",
+                "LLM_TIMEOUT": "not-a-number",
+            },
+            clear=False,
+        ):
+            client_default, _, _ = llm.get_llm_client()
+            self.assertEqual(float(client_default.timeout), llm.DEFAULT_LLM_TIMEOUT_SECONDS)
+
+        # 2. Direct Gemini cascades cleanly to fallback_models on HTTP 503 (overloaded)
+        fb_resp = MagicMock()
+        fb_resp.choices = [MagicMock(message=MagicMock(content="Fallback succeeded on 503"))]
+        fb_resp.model = "gemini-2.5-flash-lite"
+        fb_resp.usage = {"prompt_tokens": 18, "completion_tokens": 9, "total_tokens": 27}
+        fb_resp.model_extra = {}
+
+        mock_gemini = MagicMock()
+        mock_gemini.chat.completions.create.side_effect = [
+            _make_status_error(503, "Service temporarily overloaded"),
+            fb_resp,
+        ]
+        with patch("llm.load_dotenv"), patch.dict(os.environ, {"USE_BIFROST": "false"}, clear=False):
+            with patch(
+                "llm.get_llm_client",
+                return_value=(
+                    mock_gemini,
+                    ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+                    llm.GEMINI_OPENAI_BASE_URL,
+                ),
+            ):
+                content, meta = llm.call_llm_with_meta("sys", "user")
+
+        self.assertEqual(content, "Fallback succeeded on 503")
+        self.assertTrue(meta["fallback_used"])
+        self.assertEqual(meta["model_used"], "gemini-2.5-flash-lite")
+        self.assertEqual(mock_gemini.chat.completions.create.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
