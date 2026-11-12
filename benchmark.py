@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import json
 from pathlib import Path
+import tempfile
 import threading
 import time
 from typing import Callable
@@ -29,6 +30,7 @@ from llm import (
     is_use_bifrost,
     pop_last_gateway_metrics,
     set_simulate_outage,
+    snapshot_streamlit_secrets,
 )
 from verifier import (
     PARALLEL_VERIFICATION_WORKERS,
@@ -41,6 +43,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 BENCHMARK_DIR = ROOT_DIR / "benchmark"
 DATASET_PATH = BENCHMARK_DIR / "dataset.json"
 RESULTS_PATH = BENCHMARK_DIR / "results.json"
+TEMP_RESULTS_PATH = Path(tempfile.gettempdir()) / "stale_detector" / "benchmark_results.json"
 README_PATH = ROOT_DIR / "README.md"
 
 BENCHMARK_README_START = "<!-- BENCHMARK_RESULTS_START -->"
@@ -330,29 +333,83 @@ def compute_benchmark_metrics(
     }
 
 
-def load_cached_results(results_path: str | Path | None = None) -> dict | None:
-    """
-    Load previously cached benchmark results from `benchmark/results.json`.
-    Returns None if the cache file does not exist or cannot be parsed cleanly.
-    """
-    path = Path(results_path) if results_path is not None else RESULTS_PATH
-    if not path.exists():
-        return None
+def _read_cached_results_file(path: Path) -> dict | None:
+    """Read and validate one cached benchmark JSON file, returning None on error."""
     try:
+        if not path.exists():
+            return None
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("results"), list):
         return None
     return data
 
 
-def save_cached_results(payload: dict, results_path: str | Path | None = None) -> Path:
-    """Persist benchmark results JSON to disk cleanly."""
-    path = Path(results_path) if results_path is not None else RESULTS_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return path
+def load_cached_results(results_path: str | Path | None = None) -> dict | None:
+    """
+    Load previously cached benchmark results from an explicit path, writable temp
+    cache (`TEMP_RESULTS_PATH`), or repo-bundled `benchmark/results.json`.
+    Returns None if no valid cache file exists.
+    """
+    if results_path is not None:
+        return _read_cached_results_file(Path(results_path))
+
+    candidates: list[Path] = []
+    configured = _get_config_value("BENCHMARK_RESULTS_PATH")
+    if configured:
+        candidates.append(Path(configured))
+    candidates.extend([TEMP_RESULTS_PATH, RESULTS_PATH])
+
+    best_data: dict | None = None
+    best_mtime = -1.0
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        data = _read_cached_results_file(resolved)
+        if data is None:
+            continue
+        try:
+            mtime = resolved.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        if best_data is None or mtime > best_mtime:
+            best_data = data
+            best_mtime = mtime
+    return best_data
+
+
+def save_cached_results(payload: dict, results_path: str | Path | None = None) -> Path | None:
+    """
+    Persist benchmark results JSON to disk safely.
+
+    When `results_path` is omitted, defaults to a writable temp directory
+    (`TEMP_RESULTS_PATH`) so Streamlit Community Cloud never fails on a read-only
+    repository directory. Never raises if the destination path cannot be written.
+    """
+    try:
+        serialized = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    except (TypeError, ValueError):
+        return None
+
+    targets: list[Path]
+    if results_path is not None:
+        targets = [Path(results_path)]
+    else:
+        configured = _get_config_value("BENCHMARK_RESULTS_PATH")
+        targets = [Path(configured)] if configured else [TEMP_RESULTS_PATH]
+
+    for target in targets:
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(serialized, encoding="utf-8")
+            return target
+        except OSError:
+            continue
+    return None
 
 
 def _evaluate_single_benchmark_item(
@@ -364,6 +421,7 @@ def _evaluate_single_benchmark_item(
     dual_judge: bool,
     use_extractor_query: bool,
     parent_outage_raw,
+    parent_secrets: dict[str, str] | None = None,
 ) -> dict:
     """Evaluate one labelled claim through optional query extraction + live claim verification."""
     pop_last_gateway_metrics()
@@ -371,6 +429,8 @@ def _evaluate_single_benchmark_item(
         set_simulate_outage(parent_outage_raw)
     else:
         _llm_mod._thread_state.simulate_outage = None
+    if parent_secrets:
+        _llm_mod._thread_state.secrets_snapshot = parent_secrets
 
     worker_client, should_close = _make_worker_tavily_client(base_tavily_client)
     t0 = time.perf_counter()
@@ -457,6 +517,7 @@ def _evaluate_single_benchmark_item(
                 pass
         pop_last_gateway_metrics()
         _llm_mod._thread_state.simulate_outage = None
+        _llm_mod._thread_state.secrets_snapshot = None
 
 
 def run_benchmark(
@@ -488,6 +549,7 @@ def run_benchmark(
         get_llm_config(task="judge")
 
     parent_outage_raw = getattr(_llm_mod._thread_state, "simulate_outage", None)
+    parent_secrets = snapshot_streamlit_secrets() or getattr(_llm_mod._thread_state, "secrets_snapshot", None)
     worker_count = max(1, min(total, int(max_workers or PARALLEL_VERIFICATION_WORKERS)))
 
     bench_t0 = time.perf_counter()
@@ -505,6 +567,7 @@ def run_benchmark(
                 dual_judge=dual_judge,
                 use_extractor_query=use_extractor_query,
                 parent_outage_raw=parent_outage_raw,
+                parent_secrets=parent_secrets,
             ): pos
             for pos, entry in enumerate(entries)
         }
@@ -672,15 +735,17 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     payload = run_benchmark(
+        results_path=RESULTS_PATH,
         use_cache=not args.no_cache,
         dual_judge=args.dual_judge,
         max_workers=args.workers,
         use_extractor_query=not args.no_extract_query,
         progress_callback=_cli_progress,
     )
+    saved_where = RESULTS_PATH if RESULTS_PATH.exists() else (save_cached_results(payload) or "memory only")
     m = payload["metrics"]
     print(
-        f"\nSaved cached run to {RESULTS_PATH}\n"
+        f"\nSaved cached run to {saved_where}\n"
         f"Accuracy: {m['accuracy'] * 100:.1f}% ({m['correct']}/{m['total_claims']}) | "
         f"Precision (stale): {m['precision_stale'] * 100:.1f}% | "
         f"Recall (stale): {m['recall_stale'] * 100:.1f}% | "

@@ -1795,6 +1795,101 @@ class TestParallelAndURLExtraction(unittest.TestCase):
             if hasattr(base_client, "session"):
                 base_client.session.close()
 
+    def test_cloud_temp_cache_path_and_unwritable_cache_no_crash(self):
+        import sys
+        import types
+
+        # 1. Default cache path resolves inside OS temp directory (writable on Streamlit Cloud).
+        tmp_root = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
+        with patch.dict(os.environ, {"TAVILY_CACHE_PATH": ""}, clear=False):
+            default_path = verifier.get_cache_path()
+        self.assertTrue(os.path.normcase(os.path.abspath(default_path)).startswith(tmp_root))
+
+        # 2. TAVILY_CACHE_PATH falls back to st.secrets when env is empty.
+        fake_st = types.SimpleNamespace(secrets={"TAVILY_CACHE_PATH": "/tmp/custom_st_cache.db"})
+        with patch.dict(os.environ, {"TAVILY_CACHE_PATH": ""}, clear=False):
+            with patch.dict(sys.modules, {"streamlit": fake_st}):
+                self.assertEqual(verifier.get_cache_path(), "/tmp/custom_st_cache.db")
+
+        # 3. Unwritable cache directory / sqlite errors never crash _cache_get, _cache_set, or clear_tavily_cache.
+        with patch("verifier.os.makedirs", side_effect=PermissionError("read-only fs")):
+            verifier._cache_set("k1", "search", {"results": []}, cache_path="/readonly/cache.db")
+        with patch("verifier.os.path.exists", return_value=True), patch(
+            "verifier.sqlite3.connect", side_effect=PermissionError("read-only fs")
+        ):
+            self.assertIsNone(verifier._cache_get("k1", cache_path="/readonly/cache.db"))
+            self.assertEqual(verifier.clear_tavily_cache(cache_path="/readonly/cache.db"), 0)
+        with patch("verifier.os.path.exists", side_effect=OSError("bad path")):
+            self.assertIsNone(verifier._cache_get("k1", cache_path="/readonly/cache.db"))
+            self.assertEqual(verifier.clear_tavily_cache(cache_path="/readonly/cache.db"), 0)
+
+    def test_verify_claims_propagates_streamlit_secrets_to_worker_threads(self):
+        import sys
+        import types
+
+        fake_st = types.SimpleNamespace(
+            secrets={
+                "USE_BIFROST": False,
+                "GEMINI_API_KEY": "AIza-thread-secret",
+                "TAVILY_API_KEY": "tvly-thread-secret",
+                "ENTITY_DOMAIN_MAP": {"cloudco": ["cloudco.dev"]},
+            }
+        )
+        observed_in_workers: list[tuple[str, str, bool]] = []
+
+        def worker_check(claim_item, **kwargs):
+            # Even with os.environ cleared, worker reads snapshotted secrets cleanly.
+            observed_in_workers.append(
+                (
+                    verifier._get_config_value("GEMINI_API_KEY"),
+                    verifier._get_config_value("TAVILY_API_KEY"),
+                    llm.is_use_bifrost(),
+                )
+            )
+            return {
+                "claim": claim_item["claim"],
+                "category": claim_item.get("category", "other"),
+                "status": "fresh",
+                "score": 90,
+                "current_info": "Ok",
+                "reason": "Ok",
+                "sources": [],
+                "tavily_credits_used": 0.0,
+            }
+
+        mock_tavily = MagicMock()
+        claims = [
+            {"claim": "Claim 1", "category": "version", "search_query": "q1"},
+            {"claim": "Claim 2", "category": "price", "search_query": "q2"},
+        ]
+        cleared_env = {
+            "USE_BIFROST": "",
+            "LLM_API_KEY": "",
+            "GEMINI_API_KEY": "",
+            "TAVILY_API_KEY": "",
+            "ENTITY_DOMAIN_MAP": "",
+        }
+        with patch("llm.load_dotenv"), patch("verifier.load_dotenv"), patch.dict(
+            os.environ, cleared_env, clear=False
+        ):
+            with patch.dict(sys.modules, {"streamlit": fake_st}):
+                with patch("verifier.TavilyClient", return_value=mock_tavily) as mock_tv_cls:
+                    verifier.get_tavily_client()
+                mock_tv_cls.assert_called_once_with(api_key="tvly-thread-secret")
+
+                with patch("verifier.get_tavily_client", return_value=mock_tavily):
+                    with patch("verifier.verify_claim", side_effect=worker_check):
+                        res = verifier.verify_claims(claims, max_workers=2)
+
+        self.assertEqual(len(res), 2)
+        self.assertEqual(
+            observed_in_workers,
+            [
+                ("AIza-thread-secret", "tvly-thread-secret", False),
+                ("AIza-thread-secret", "tvly-thread-secret", False),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

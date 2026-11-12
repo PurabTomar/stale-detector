@@ -6,3 +6,6 @@ __pycache__/
 venv/
 .agents/
 .tavily_cache.db*
+.env.*
+!.env.example
+.tavily_cache.db

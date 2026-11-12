@@ -28,6 +28,7 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
 import threading
 import time
 from typing import Callable
@@ -54,6 +55,7 @@ from llm import (
     parse_json_response,
     pop_last_gateway_metrics,
     set_simulate_outage,
+    snapshot_streamlit_secrets,
 )
 
 _verifier_state = threading.local()
@@ -195,8 +197,8 @@ MULTI_PART_PUBLIC_SUFFIXES = {
     "com.br", "gov.br",
 }
 
-# Tavily category strategy and on-disk cache configuration (TTL = 6 hours).
-DEFAULT_CACHE_PATH = ".tavily_cache.db"
+# Tavily category strategy and writable on-disk cache configuration (TTL = 6 hours).
+DEFAULT_CACHE_PATH = os.path.join(tempfile.gettempdir(), "stale_detector", "tavily_cache.db")
 CACHE_TTL_SECONDS = 6 * 60 * 60
 NEWS_DUAL_SEARCH_CATEGORIES = {"price", "version", "company"}
 RECENT_NEWS_TIME_RANGE = "month"
@@ -474,16 +476,16 @@ def get_tavily_client() -> TavilyClient:
     api_key = _get_config_value("TAVILY_API_KEY")
     if not api_key:
         raise ValueError(
-            "TAVILY_API_KEY is not set. Add your Tavily API key to .env or Streamlit Secrets."
+            "Missing Tavily API key: TAVILY_API_KEY is not set. Add your Tavily API key in Streamlit Secrets or .env."
         )
     return TavilyClient(api_key=api_key)
 
 
 def get_cache_path(cache_path: str | None = None) -> str:
-    """Return the path to the on-disk SQLite cache file for Tavily responses."""
+    """Return a writable path for the on-disk SQLite cache file for Tavily responses."""
     if cache_path:
         return cache_path
-    return os.getenv("TAVILY_CACHE_PATH", "").strip() or DEFAULT_CACHE_PATH
+    return _get_config_value("TAVILY_CACHE_PATH") or DEFAULT_CACHE_PATH
 
 
 @contextmanager
@@ -532,6 +534,8 @@ def _cache_get(
     current_time = time.time() if now is None else now
     with _CACHE_LOCK:
         try:
+            if not os.path.exists(path):
+                return None
             with _open_cache_db(path) as conn:
                 row = conn.execute(
                     "SELECT response_json, created_at FROM tavily_cache WHERE cache_key = ?",
@@ -549,7 +553,7 @@ def _cache_get(
 
                 parsed = json.loads(raw_json)
                 return parsed if isinstance(parsed, dict) else None
-        except (sqlite3.Error, ValueError, TypeError):
+        except (sqlite3.Error, OSError, ValueError, TypeError):
             return None
 
 
@@ -577,7 +581,7 @@ def _cache_set(
                     (cache_key, endpoint, payload_json, current_time),
                 )
                 conn.commit()
-        except (sqlite3.Error, TypeError, ValueError):
+        except (sqlite3.Error, OSError, TypeError, ValueError):
             # Cache write failure should never interrupt live verification.
             pass
 
@@ -586,14 +590,14 @@ def clear_tavily_cache(cache_path: str | None = None) -> int:
     """Delete all cached Tavily entries and return the number of rows removed (thread-safe)."""
     path = get_cache_path(cache_path)
     with _CACHE_LOCK:
-        if not os.path.exists(path):
-            return 0
         try:
+            if not os.path.exists(path):
+                return 0
             with _open_cache_db(path) as conn:
                 cur = conn.execute("DELETE FROM tavily_cache")
                 conn.commit()
                 return cur.rowcount or 0
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
             return 0
 
 
@@ -3475,8 +3479,9 @@ def verify_claims(
     total = len(claims)
     worker_count = max(1, min(total, int(max_workers or PARALLEL_VERIFICATION_WORKERS)))
 
-    # Propagate thread-local outage toggle state into worker threads cleanly.
+    # Propagate thread-local outage toggle and Streamlit Secret snapshot into workers cleanly.
     parent_outage_raw = getattr(_llm_mod._thread_state, "simulate_outage", None)
+    parent_secrets = snapshot_streamlit_secrets() or getattr(_llm_mod._thread_state, "secrets_snapshot", None)
 
     def _run_single(item: dict[str, str]) -> dict:
         pop_last_gateway_metrics()
@@ -3484,6 +3489,8 @@ def verify_claims(
             set_simulate_outage(parent_outage_raw)
         else:
             _llm_mod._thread_state.simulate_outage = None
+        if parent_secrets:
+            _llm_mod._thread_state.secrets_snapshot = parent_secrets
 
         worker_client, should_close = _make_worker_tavily_client(tavily_client)
         try:
@@ -3506,6 +3513,7 @@ def verify_claims(
                     pass
             pop_last_gateway_metrics()
             _llm_mod._thread_state.simulate_outage = None
+            _llm_mod._thread_state.secrets_snapshot = None
 
     verified_results: list[dict | None] = [None] * total
     completed = 0

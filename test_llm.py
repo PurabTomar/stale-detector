@@ -601,6 +601,118 @@ class TestBifrostLLMClient(unittest.TestCase):
                         verifier.get_tavily_client()
                         mock_tavily_cls.assert_called_once_with(api_key="tvly-cloud-secret-key")
 
+    def test_cloud_secrets_types_placeholders_bifrost_local_and_outage_disabled(self):
+        import sys
+        import types
+
+        # 1. TOML native bool, list, dict secrets + placeholders + "bifrost-local" fallback to GEMINI_API_KEY
+        fake_st = types.SimpleNamespace(
+            secrets={
+                "USE_BIFROST": False,
+                "LLM_API_KEY": "bifrost-local",
+                "GEMINI_API_KEY": "AIza-toml-real-key",
+                "LLM_MODEL": "gemini-2.5-flash",
+                "LLM_MODEL_FALLBACKS": ["gemini-2.5-flash-lite", "openai/gpt-4o-mini"],
+                "ENTITY_DOMAIN_MAP": {"mybrand": ["mybrand.com", "docs.mybrand.com"]},
+                "TAVILY_API_KEY": "tvly-your-tavily-api-key",
+                "BIFROST_SIMULATE_OUTAGE": True,
+                "LLM_VIRTUAL_KEY": "bf-vk-must-ignore",
+            }
+        )
+        cleared_env = {
+            "USE_BIFROST": "",
+            "LLM_API_KEY": "",
+            "GEMINI_API_KEY": "",
+            "LLM_BASE_URL": "http://localhost:8080/v1",
+            "LLM_MODEL": "",
+            "LLM_MODEL_FALLBACKS": "",
+            "ENTITY_DOMAIN_MAP": "",
+            "TAVILY_API_KEY": "your-tavily-api-key-here",
+            "BIFROST_SIMULATE_OUTAGE": "true",
+            "LLM_VIRTUAL_KEY": "bf-vk-env-ignore",
+        }
+        with patch("llm.load_dotenv"), patch.dict(os.environ, cleared_env, clear=False):
+            with patch.dict(sys.modules, {"streamlit": fake_st}):
+                self.assertFalse(llm.is_use_bifrost())
+                # Outage simulation stays disabled when USE_BIFROST=false
+                llm.set_simulate_outage(True)
+                self.assertFalse(llm.is_simulate_outage())
+
+                client, chain, base_url = llm.get_llm_client()
+                self.assertEqual(client.api_key, "AIza-toml-real-key")
+                self.assertEqual(base_url, llm.GEMINI_OPENAI_BASE_URL)
+                self.assertEqual(chain, ["gemini-2.5-flash", "gemini-2.5-flash-lite"])
+                self.assertNotIn("x-bf-vk", client.default_headers)
+
+                # Placeholder TAVILY_API_KEY is ignored cleanly (empty string)
+                self.assertEqual(llm._get_config_value("TAVILY_API_KEY"), "")
+
+                # Snapshot preserves bool/list/dict & excludes placeholder keys
+                snap = llm.snapshot_streamlit_secrets()
+                self.assertEqual(snap["USE_BIFROST"], "false")
+                self.assertEqual(snap["GEMINI_API_KEY"], "AIza-toml-real-key")
+                self.assertEqual(snap["LLM_MODEL_FALLBACKS"], "gemini-2.5-flash-lite, openai/gpt-4o-mini")
+                self.assertIn("mybrand.com", snap["ENTITY_DOMAIN_MAP"])
+                self.assertNotIn("TAVILY_API_KEY", snap)
+
+                # If both bifrost-local and empty/placeholder GEMINI_API_KEY -> friendly ValueError
+                fake_st_missing = types.SimpleNamespace(
+                    secrets={
+                        "USE_BIFROST": False,
+                        "LLM_API_KEY": "bifrost-local",
+                        "GEMINI_API_KEY": "your-google-gemini-api-key",
+                    }
+                )
+                with patch.dict(sys.modules, {"streamlit": fake_st_missing}):
+                    with self.assertRaises(ValueError) as err_ctx:
+                        llm.get_llm_config()
+                    self.assertIn("GEMINI_API_KEY", str(err_ctx.exception))
+                    self.assertIn("Streamlit Secrets", str(err_ctx.exception))
+
+        llm.set_simulate_outage(False)
+
+    def test_snapshot_secrets_available_inside_worker_threads(self):
+        import concurrent.futures
+        import sys
+        import types
+
+        fake_st = types.SimpleNamespace(
+            secrets={
+                "USE_BIFROST": False,
+                "GEMINI_API_KEY": "AIza-worker-secret",
+                "TAVILY_API_KEY": "tvly-worker-secret",
+            }
+        )
+        with patch("llm.load_dotenv"), patch.dict(
+            os.environ,
+            {"USE_BIFROST": "", "GEMINI_API_KEY": "", "TAVILY_API_KEY": ""},
+            clear=False,
+        ):
+            with patch.dict(sys.modules, {"streamlit": fake_st}):
+                snap = llm.snapshot_streamlit_secrets()
+
+            # Simulate worker thread with broken/inaccessible st.secrets directly
+            broken_st = types.SimpleNamespace(secrets=property(lambda _: (_ for _ in ()).throw(RuntimeError("no ctx"))))
+
+            def read_in_worker():
+                llm._thread_state.secrets_snapshot = snap
+                try:
+                    return (
+                        llm._get_config_value("GEMINI_API_KEY"),
+                        llm._get_config_value("TAVILY_API_KEY"),
+                        llm.is_use_bifrost(),
+                    )
+                finally:
+                    llm._thread_state.secrets_snapshot = None
+
+            with patch.dict(sys.modules, {"streamlit": broken_st}):
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    g_key, t_key, use_bf = pool.submit(read_in_worker).result()
+
+        self.assertEqual(g_key, "AIza-worker-secret")
+        self.assertEqual(t_key, "tvly-worker-secret")
+        self.assertFalse(use_bf)
+
 
 if __name__ == "__main__":
     unittest.main()

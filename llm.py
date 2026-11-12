@@ -23,6 +23,7 @@ Bifrost Gateway features (`USE_BIFROST=true`):
 - Checks Bifrost gateway health via `GET /health`.
 """
 
+from collections.abc import Mapping
 import json
 import os
 import re
@@ -60,21 +61,93 @@ SIMULATED_OUTAGE_PREFIX = "simulated-outage-"
 FALLBACK_STATUS_CODES = {429, 500, 502, 503, 504, 404}
 UNREACHABLE_STATUS_CODES = {502, 503, 504}
 
-# Thread-local store for per-request gateway metrics and outage toggle state.
+# Thread-local store for per-request gateway metrics, outage toggle, and worker secret snapshots.
 _thread_state = threading.local()
+
+# Template placeholder values shipped in .env.example / secrets.toml.example that should count as unset.
+_PLACEHOLDER_SECRETS = {
+    "your-tavily-api-key-here",
+    "tvly-your-tavily-api-key",
+    "your-gemini-api-key-here",
+    "your-google-gemini-api-key",
+    "your-llm-api-key-here",
+}
+
+
+def _coerce_config_value(raw: Any) -> str:
+    """Convert env / TOML secret values (str, bool, list, dict) cleanly to a config string."""
+    if raw is None:
+        return ""
+    if isinstance(raw, bool):
+        return "true" if raw else "false"
+    if isinstance(raw, (list, tuple)):
+        joined = ", ".join(str(item).strip() for item in raw if str(item).strip())
+        return "" if joined.lower() in _PLACEHOLDER_SECRETS else joined
+    if isinstance(raw, Mapping):
+        try:
+            return json.dumps(dict(raw))
+        except (TypeError, ValueError):
+            pass
+    cleaned = str(raw).strip()
+    if cleaned.lower() in _PLACEHOLDER_SECRETS:
+        return ""
+    return cleaned
+
+
+def snapshot_streamlit_secrets() -> dict[str, str]:
+    """
+    Snapshot top-level Streamlit Secrets on the calling thread so ThreadPoolExecutor
+    workers (which do not inherit Streamlit's ScriptRunContext) can still read Secrets.
+    """
+    if "streamlit" not in sys.modules:
+        return {}
+    snapshot: dict[str, str] = {}
+    try:
+        st_mod = sys.modules["streamlit"]
+        secrets = getattr(st_mod, "secrets", None)
+        if secrets is None:
+            return {}
+        keys = list(secrets.keys()) if hasattr(secrets, "keys") else list(secrets)
+        for key in keys:
+            key_str = str(key).strip()
+            if not key_str:
+                continue
+            try:
+                coerced = _coerce_config_value(secrets[key])
+            except Exception:
+                continue
+            if coerced:
+                snapshot[key_str] = coerced
+    except Exception:
+        return {}
+    return snapshot
 
 
 def _get_config_value(name: str) -> str:
-    """Read a setting from environment variables first, falling back to Streamlit Secrets."""
-    val = os.getenv(name, "").strip()
-    if val:
-        return val
+    """
+    Read a setting from os.environ first, then thread-local Secret snapshots (for
+    background workers), then st.secrets directly, ignoring unedited placeholder values.
+    """
+    env_raw = os.getenv(name, "")
+    if env_raw:
+        env_val = _coerce_config_value(env_raw)
+        if env_val:
+            return env_val
+
+    snapshot = getattr(_thread_state, "secrets_snapshot", None)
+    if isinstance(snapshot, dict) and name in snapshot:
+        snap_val = _coerce_config_value(snapshot.get(name))
+        if snap_val:
+            return snap_val
+
     if "streamlit" in sys.modules:
         try:
             st_mod = sys.modules["streamlit"]
             secrets = getattr(st_mod, "secrets", None)
             if secrets is not None and name in secrets:
-                return str(secrets[name]).strip()
+                sec_val = _coerce_config_value(secrets[name])
+                if sec_val:
+                    return sec_val
         except Exception:
             pass
     return ""
@@ -336,19 +409,22 @@ def get_llm_config(
     )
 
     if not use_bifrost:
-        api_key = _get_config_value("LLM_API_KEY") or _get_config_value("GEMINI_API_KEY")
+        raw_llm_key = _get_config_value("LLM_API_KEY")
+        if raw_llm_key.lower() == "bifrost-local":
+            raw_llm_key = ""
+        api_key = raw_llm_key or _get_config_value("GEMINI_API_KEY")
         if not api_key:
             raise ValueError(
-                "LLM_API_KEY (or GEMINI_API_KEY) is not set. Please add your Gemini API key "
-                "to your .env file or Streamlit Secrets when USE_BIFROST=false."
+                "Missing Gemini API key: LLM_API_KEY (or GEMINI_API_KEY) is not set. "
+                "Add your Gemini API key to Streamlit Secrets or your .env file when USE_BIFROST=false."
             )
         return api_key, base_url, model_chain
 
     api_key = _get_config_value("LLM_API_KEY")
     if not api_key:
         raise ValueError(
-            "LLM_API_KEY is not set. Please add it to your .env file "
-            "(if your Bifrost gateway does not require a key, set a placeholder like 'bifrost-local')."
+            "Missing LLM API key: LLM_API_KEY is not set. Add it to Streamlit Secrets or your .env file "
+            "(if your local Bifrost gateway does not require a key, set 'bifrost-local')."
         )
 
     return api_key, base_url, model_chain
@@ -411,11 +487,13 @@ def set_simulate_outage(enabled: bool) -> None:
 
 
 def is_simulate_outage() -> bool:
-    """Return True if primary-provider outage simulation is enabled."""
+    """Return True if primary-provider outage simulation is enabled (Bifrost mode only)."""
+    if not is_use_bifrost():
+        return False
     flag = getattr(_thread_state, "simulate_outage", None)
     if flag is not None:
         return bool(flag)
-    return os.getenv("BIFROST_SIMULATE_OUTAGE", "").strip().lower() in {"1", "true", "yes"}
+    return _get_config_value("BIFROST_SIMULATE_OUTAGE").lower() in {"1", "true", "yes"}
 
 
 def pop_last_gateway_metrics() -> dict | None:
@@ -618,7 +696,7 @@ def format_llm_error(
         if not bifrost_enabled:
             return (
                 "Invalid Gemini API key (401/403). Please verify LLM_API_KEY "
-                "(or GEMINI_API_KEY) in your .env file or Streamlit Secrets."
+                "(or GEMINI_API_KEY) in Streamlit Secrets or your .env file."
             )
         return (
             "Invalid LLM API key or gateway credentials (401/403). Please verify "
@@ -898,13 +976,21 @@ def call_llm_with_meta(
         {"role": "user", "content": user_prompt},
     ]
 
-    outage = is_simulate_outage() if simulate_outage is None else bool(simulate_outage)
+    use_bifrost_cfg = is_use_bifrost()
+    outage = (
+        False
+        if not use_bifrost_cfg
+        else (is_simulate_outage() if simulate_outage is None else bool(simulate_outage))
+    )
     request_model = _build_outage_model_name(original_primary) if outage else original_primary
 
     # Direct OpenAI and Direct Gemini endpoints reject Bifrost's root `fallbacks` field.
     is_direct_openai = bool(base_url and "api.openai.com" in base_url.lower() and not _get_config_value("LLM_VIRTUAL_KEY"))
-    is_direct_gemini = bool(base_url and "generativelanguage.googleapis.com" in base_url.lower())
-    is_direct_endpoint = is_direct_openai or is_direct_gemini
+    is_direct_gemini = bool(
+        (not use_bifrost_cfg)
+        or (base_url and "generativelanguage.googleapis.com" in base_url.lower())
+    )
+    is_direct_endpoint = is_direct_openai or is_direct_gemini or (not use_bifrost_cfg)
     use_native_fallbacks = bool(fallback_models) and not is_direct_endpoint
     routing_mode = "direct_gemini" if is_direct_gemini else "bifrost"
 

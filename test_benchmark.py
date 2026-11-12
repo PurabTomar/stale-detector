@@ -437,6 +437,41 @@ class TestBenchmarkRunnerAndMarkdown(unittest.TestCase):
             self.assertIn("Bifrost gateway", str(ctx.exception))
             self.assertEqual(res_path.read_text(encoding="utf-8"), cached_before)
 
+    def test_temp_cache_default_fallback_and_unwritable_no_crash(self):
+        # 1. TEMP_RESULTS_PATH resolves inside OS temp directory.
+        tmp_root = Path(tempfile.gettempdir()).resolve()
+        self.assertTrue(benchmark.TEMP_RESULTS_PATH.resolve().is_relative_to(tmp_root))
+
+        # 2. save_cached_results defaults to TEMP_RESULTS_PATH and load_cached_results prefers newer temp run.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            fake_temp_cache = tmp_dir / "temp_bench.json"
+            fake_repo_cache = tmp_dir / "repo_bench.json"
+
+            repo_payload = {"metrics": {"accuracy": 0.5}, "results": [{"index": 1, "source": "repo"}]}
+            temp_payload = {"metrics": {"accuracy": 0.9}, "results": [{"index": 1, "source": "temp"}]}
+
+            fake_repo_cache.write_text(json.dumps(repo_payload), encoding="utf-8")
+            with patch.object(benchmark, "TEMP_RESULTS_PATH", fake_temp_cache), patch.object(
+                benchmark, "RESULTS_PATH", fake_repo_cache
+            ), patch.dict(os.environ, {"BENCHMARK_RESULTS_PATH": ""}, clear=False):
+                saved = benchmark.save_cached_results(temp_payload)
+                self.assertEqual(saved, fake_temp_cache)
+
+                # Make temp file strictly newer than repo file and verify load_cached_results picks it.
+                repo_mtime = fake_repo_cache.stat().st_mtime
+                os.utime(fake_temp_cache, (repo_mtime + 10.0, repo_mtime + 10.0))
+                loaded = benchmark.load_cached_results()
+                self.assertEqual(loaded, temp_payload)
+
+            # 3. Read-only / permission-denied destination never crashes save_cached_results.
+            with patch("pathlib.Path.mkdir", side_effect=PermissionError("read-only fs")):
+                res = benchmark.save_cached_results(temp_payload, results_path=tmp_dir / "blocked" / "results.json")
+            self.assertIsNone(res)
+
+            # 4. Unserializable payload also degrades safely to None.
+            self.assertIsNone(benchmark.save_cached_results({"bad": {1, 2, 3}}, results_path=fake_temp_cache))
+
 
 if __name__ == "__main__":
     unittest.main()

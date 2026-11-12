@@ -14,7 +14,6 @@ from datetime import datetime
 import html
 import inspect
 import json
-import os
 from pathlib import Path
 import re
 import time
@@ -41,6 +40,7 @@ from extractor import (
     locate_span_in_text,
 )
 from llm import (
+    GEMINI_OPENAI_BASE_URL,
     _get_config_value,
     ask_question,
     check_gateway_health,
@@ -1440,11 +1440,11 @@ def format_friendly_ui_error(exc: Exception | str, *, action: str = "checking cl
         and any(tok in lower for tok in ("401", "403", "invalid", "unauthorized", "not set", "missing", "forbidden"))
     ):
         return (
-            "Invalid or missing Tavily API key. Please check TAVILY_API_KEY in your "
-            ".env file or Streamlit Secrets."
+            "Invalid or missing Tavily API key. Please add TAVILY_API_KEY in "
+            "Streamlit Secrets or your .env file."
         )
 
-    if "llm_virtual_key" in lower or "x-bf-vk" in lower or "virtual key" in lower:
+    if use_bifrost and ("llm_virtual_key" in lower or "x-bf-vk" in lower or "virtual key" in lower):
         return (
             "Invalid Bifrost virtual key (LLM_VIRTUAL_KEY / x-bf-vk). Please verify "
             "your virtual key in .env and try again."
@@ -1472,18 +1472,18 @@ def format_friendly_ui_error(exc: Exception | str, *, action: str = "checking cl
     if is_auth_failure:
         if not use_bifrost or "gemini" in lower:
             return (
-                "Invalid or missing Gemini API key. Please check LLM_API_KEY "
-                "(or GEMINI_API_KEY) in your .env file or Streamlit Secrets."
+                "Invalid or missing Gemini API key. Please add LLM_API_KEY "
+                "(or GEMINI_API_KEY) in Streamlit Secrets or your .env file."
             )
         return (
-            "Invalid or missing LLM API key. Please check LLM_API_KEY and your "
-            "provider keys in Bifrost before retrying."
+            "Invalid or missing LLM API key. Please check LLM_API_KEY in "
+            "Streamlit Secrets or .env (and your provider keys in Bifrost)."
         )
 
-    # 4. Bifrost gateway down / unreachable
-    if ("bifrost" in lower and any(tok in lower for tok in ("down", "unreachable", "offline", "refused", "timeout", "timed out"))) or (
-        use_bifrost
-        and any(
+    # 4. Bifrost gateway down / unreachable (only in local/gateway mode)
+    if use_bifrost and (
+        ("bifrost" in lower and any(tok in lower for tok in ("down", "unreachable", "offline", "refused", "timeout", "timed out")))
+        or any(
             tok in lower
             for tok in (
                 "connection refused",
@@ -2523,7 +2523,7 @@ def render_ask_answer_card(
 
 def format_fallback_route(primary_model: str | None, answered_model: str | None) -> str:
     """Format a fallback route string as 'A -> B' for 'Fallback used: A -> B' badges."""
-    source = (primary_model or "").strip() or (os.getenv("LLM_MODEL", "").strip() or "primary")
+    source = (primary_model or "").strip() or (_get_config_value("LLM_MODEL") or "primary")
     target = (answered_model or "").strip() or "fallback"
     return f"{source} -> {target}"
 
@@ -2535,7 +2535,7 @@ def build_request_telemetry(
     fallback_used: bool = False,
     primary_model: str | None = None,
 ) -> dict | None:
-    """Normalize per-request Bifrost telemetry from backend metrics or result dicts."""
+    """Normalize per-request telemetry from backend metrics or result dicts."""
     if isinstance(metrics, dict):
         record = dict(metrics)
         record["operation"] = operation
@@ -2543,7 +2543,7 @@ def build_request_telemetry(
         record["primary_model"] = str(
             record.get("primary_model")
             or primary_model
-            or os.getenv("LLM_MODEL", "").strip()
+            or _get_config_value("LLM_MODEL")
             or record["model_used"]
         )
         record["latency_ms"] = round(float(record.get("latency_ms") or 0.0), 1)
@@ -2559,7 +2559,7 @@ def build_request_telemetry(
     if not model_used:
         return None
 
-    resolved_primary = (primary_model or os.getenv("LLM_MODEL", "").strip() or model_used)
+    resolved_primary = (primary_model or _get_config_value("LLM_MODEL") or model_used)
     return {
         "operation": operation,
         "primary_model": resolved_primary,
@@ -2700,6 +2700,8 @@ def render_gateway_panel(
     dual_judge_enabled: bool | None = None,
 ) -> None:
     """Render live per-request metrics, task routing, latency/audit timing, and session totals."""
+    if placeholder is None or not is_use_bifrost():
+        return
     total_prompt = sum(int(r.get("prompt_tokens") or 0) for r in requests_log)
     total_completion = sum(int(r.get("completion_tokens") or 0) for r in requests_log)
     total_session_tokens = sum(int(r.get("total_tokens") or 0) for r in requests_log)
@@ -4190,31 +4192,6 @@ with st.sidebar:
                 width="stretch",
             )
 
-    st.subheader("Gateway panel", icon=":material/hub:")
-    gateway_health = check_gateway_health(timeout=0.5)
-    dashboard_url = get_gateway_dashboard_url()
-    render_gateway_health_card(gateway_health, dashboard_url, use_bifrost=use_bifrost_mode)
-
-    if demo_mode_on:
-        st.caption("Demo mode active — live gateway calls paused.")
-    elif use_bifrost_mode and not gateway_health.get("healthy"):
-        st.caption(
-            "Bifrost looks unreachable on port 8080. Start Bifrost locally, enable Demo mode, "
-            "or set `USE_BIFROST=false` to use Gemini directly."
-        )
-
-    outage_enabled = st.toggle(
-        "Simulate provider outage",
-        key="simulate_outage",
-        disabled=(not use_bifrost_mode),
-        help=(
-            "Forces the primary model to fail so Bifrost switches to the next fallback model."
-            if use_bifrost_mode
-            else "Available only when USE_BIFROST=true (disabled in Direct Gemini mode)."
-        ),
-    )
-    set_simulate_outage(bool(outage_enabled) and use_bifrost_mode)
-
     try:
         _, resolved_base_url, resolved_chain = get_llm_config()
     except ValueError:
@@ -4223,31 +4200,58 @@ with st.sidebar:
 
     routing_summary = _resolve_safe_task_routing()
 
-    configured_fallbacks = (
-        resolved_chain[1:]
-        if resolved_chain
-        else [m.strip() for m in _get_config_value("LLM_MODEL_FALLBACKS").split(",") if m.strip()]
-    )
-    if use_bifrost_mode and outage_enabled and not demo_mode_on:
-        primary_cfg = (
-            routing_summary.get("judge_model")
-            or (resolved_chain[0] if resolved_chain else (_get_config_value("LLM_MODEL") or "gpt-4o-mini"))
-        )
-        if configured_fallbacks:
+    if use_bifrost_mode:
+        st.subheader("Gateway panel", icon=":material/hub:")
+        gateway_health = check_gateway_health(timeout=0.5)
+        dashboard_url = get_gateway_dashboard_url()
+        render_gateway_health_card(gateway_health, dashboard_url, use_bifrost=True)
+
+        if demo_mode_on:
+            st.caption("Demo mode active — live gateway calls paused.")
+        elif not gateway_health.get("healthy"):
             st.caption(
-                f"Simulating primary failure on `{primary_cfg}` → fallback: `{configured_fallbacks[0]}`"
+                "Bifrost looks unreachable on port 8080. Start Bifrost locally, enable Demo mode, "
+                "or set `USE_BIFROST=false` to use Gemini directly."
             )
-        else:
-            st.warning(
-                "Set LLM_MODEL_FALLBACKS in .env so Bifrost has a fallback model to switch to.",
-                icon=":material/warning:",
+
+        outage_enabled = st.toggle(
+            "Simulate provider outage",
+            key="simulate_outage",
+            help="Forces the primary model to fail so Bifrost switches to the next fallback model.",
+        )
+        set_simulate_outage(bool(outage_enabled))
+
+        configured_fallbacks = (
+            resolved_chain[1:]
+            if resolved_chain
+            else [m.strip() for m in _get_config_value("LLM_MODEL_FALLBACKS").split(",") if m.strip()]
+        )
+        if outage_enabled and not demo_mode_on:
+            primary_cfg = (
+                routing_summary.get("judge_model")
+                or (resolved_chain[0] if resolved_chain else (_get_config_value("LLM_MODEL") or "gpt-4o-mini"))
             )
+            if configured_fallbacks:
+                st.caption(
+                    f"Simulating primary failure on `{primary_cfg}` → fallback: `{configured_fallbacks[0]}`"
+                )
+            else:
+                st.warning(
+                    "Set LLM_MODEL_FALLBACKS in .env so Bifrost has a fallback model to switch to.",
+                    icon=":material/warning:",
+                )
+    else:
+        set_simulate_outage(False)
+        st.caption("Bifrost gateway runs locally, see demo video.")
 
     dual_judge_enabled = st.toggle(
         "Dual-judge mode",
         key="dual_judge_mode",
         help=(
             "Run two different judge models per claim through Bifrost. "
+            "Disagreements mark the claim Uncertain with a 'Models disagree' badge."
+            if use_bifrost_mode
+            else "Run two Gemini models per claim directly. "
             "Disagreements mark the claim Uncertain with a 'Models disagree' badge."
         ),
     )
@@ -4257,20 +4261,48 @@ with st.sidebar:
         st.caption(f"Comparing `{j1_cfg}` vs `{j2_cfg}` per claim.")
         if not routing_summary.get("dual_judge_configured", False):
             st.warning(
-                "Add a second model in LLM_MODEL_FALLBACKS (provider/model) or LLM_MODEL_JUDGE_2 so Dual-judge compares two distinct models.",
+                (
+                    "Add a second model in LLM_MODEL_FALLBACKS (provider/model) or LLM_MODEL_JUDGE_2 so Dual-judge compares two distinct models."
+                    if use_bifrost_mode
+                    else "Add a second Gemini model in LLM_MODEL_FALLBACKS or LLM_MODEL_JUDGE_2 so Dual-judge compares two distinct models."
+                ),
                 icon=":material/warning:",
             )
 
-    gateway_placeholder = st.empty()
-    render_gateway_panel(
-        gateway_placeholder,
-        st.session_state["gateway_requests"],
-        task_routing=routing_summary,
-        dual_judge_enabled=bool(dual_judge_enabled),
-    )
+    if use_bifrost_mode:
+        gateway_placeholder = st.empty()
+        render_gateway_panel(
+            gateway_placeholder,
+            st.session_state["gateway_requests"],
+            task_routing=routing_summary,
+            dual_judge_enabled=bool(dual_judge_enabled),
+        )
+    else:
+        gateway_placeholder = None
 
     credits_placeholder = st.empty()
     render_sidebar_credits(credits_placeholder, st.session_state["tavily_credits_used"])
+
+    raw_llm_key = _get_config_value("LLM_API_KEY")
+    if not use_bifrost_mode and raw_llm_key.lower() == "bifrost-local":
+        raw_llm_key = ""
+    llm_key_ok = bool(raw_llm_key or (not use_bifrost_mode and _get_config_value("GEMINI_API_KEY")))
+    tavily_ok = bool(_get_config_value("TAVILY_API_KEY"))
+
+    if not demo_mode_on:
+        missing_keys: list[str] = []
+        if not llm_key_ok:
+            missing_keys.append(
+                "`LLM_API_KEY` (or `GEMINI_API_KEY`)" if not use_bifrost_mode else "`LLM_API_KEY`"
+            )
+        if not tavily_ok:
+            missing_keys.append("`TAVILY_API_KEY`")
+        if missing_keys:
+            st.warning(
+                f"Missing API key(s): {', '.join(missing_keys)}. Add them in Streamlit Secrets or `.env`, "
+                "or enable **Demo mode** above.",
+                icon=":material/key:",
+            )
 
     with st.expander("How it works", expanded=False, icon=":material/route:"):
         st.markdown(
@@ -4297,20 +4329,17 @@ with st.sidebar:
         fallbacks_label = ", ".join(resolved_chain[1:]) if len(resolved_chain) > 1 else (_get_config_value("LLM_MODEL_FALLBACKS") or "None")
         endpoint_display = (
             resolved_base_url
-            or _get_config_value("LLM_BASE_URL")
-            or ("Default OpenAI" if use_bifrost_mode else "https://generativelanguage.googleapis.com/v1beta/openai/")
+            or (
+                _get_config_value("LLM_BASE_URL") or "Default OpenAI"
+                if use_bifrost_mode
+                else GEMINI_OPENAI_BASE_URL
+            )
         )
-        llm_key_ok = bool(
-            _get_config_value("LLM_API_KEY")
-            or (not use_bifrost_mode and _get_config_value("GEMINI_API_KEY"))
-        )
-        tavily_ok = bool(_get_config_value("TAVILY_API_KEY"))
-        vk_ok = bool(_get_config_value("LLM_VIRTUAL_KEY")) if use_bifrost_mode else False
-        vk_status = (
-            ("Configured" if vk_ok else "Not set")
-            if use_bifrost_mode
-            else "Bypassed (Direct Gemini)"
-        )
+        vk_line = ""
+        if use_bifrost_mode:
+            vk_ok = bool(_get_config_value("LLM_VIRTUAL_KEY"))
+            vk_status = "Configured" if vk_ok else "Not set"
+            vk_line = f"**Virtual key (`x-bf-vk`):** {vk_status}  \n"
 
         st.caption(
             f"**Routing mode:** {routing_label}  \n"
@@ -4321,9 +4350,9 @@ with st.sidebar:
             f"**Fallbacks:** `{fallbacks_label}`  \n"
             f"**Endpoint:** `{endpoint_display}`  \n"
             f"**LLM / Gemini key:** {'Configured' if llm_key_ok else 'Missing'}  \n"
-            f"**Virtual key (`x-bf-vk`):** {vk_status}  \n"
+            f"{vk_line}"
             f"**Tavily key:** {'Configured' if tavily_ok else 'Missing'}  \n"
-            "**Tavily cache:** `6h on-disk SQLite TTL`"
+            "**Tavily cache:** `6h temp SQLite TTL`"
         )
         st.toggle("Show search queries on cards", key="show_search_queries")
         st.toggle("Keep status log expanded", key="keep_status_expanded")
@@ -5027,7 +5056,7 @@ with tab_benchmark:
         st.subheader("Detector benchmark", icon=":material/monitoring:")
         st.caption(
             "20 labelled claims (10 outdated, 10 fresh across prices, versions, regulations, leadership, and stats). "
-            "Loads cached benchmark/results.json instantaneously on startup."
+            "Loads cached benchmark results instantaneously on startup."
         )
     with bench_cache_col:
         bench_use_cache = st.toggle(
@@ -5435,10 +5464,16 @@ with tab_benchmark:
                 width="stretch",
             )
     else:
-        st.info(
-            "No cached run found in `benchmark/results.json` yet. Start Bifrost on port 8080 "
+        bench_empty_msg = (
+            "No cached benchmark run found yet. Start Bifrost on port 8080 "
             "(or set `USE_BIFROST=false` with a Gemini API key) and click **Re-run benchmark** "
-            "above, or run `python benchmark.py --update-readme` from your terminal.",
+            "above, or run `python benchmark.py --update-readme` from your terminal."
+            if use_bifrost_mode
+            else "No cached benchmark run found yet. Add `GEMINI_API_KEY` (or `LLM_API_KEY`) "
+            "and `TAVILY_API_KEY` in Streamlit Secrets (or `.env`) and click **Re-run benchmark** above."
+        )
+        st.info(
+            bench_empty_msg,
             title="Benchmark dataset ready (20 labelled claims)",
             icon=":material/info:",
         )
