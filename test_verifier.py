@@ -198,6 +198,8 @@ class TestExplainableScoring(unittest.TestCase):
 
         llm_payload = (
             '{"status": "outdated", "score": 15, "agreeing_sources": 3, '
+            '"evidence_stance": "contradicts", '
+            '"supporting_quote": "Official pricing page: GPT input tokens cost $5.00 / 1M tokens.", '
             '"current_info": "Pricing is $5 per 1M input tokens.", '
             '"reason": "The $10 price was lowered."}'
         )
@@ -594,13 +596,15 @@ class TestExplainableScoring(unittest.TestCase):
         ok_tavily.search.return_value = {
             "results": [
                 {"title": "GST Gov", "url": "https://gst.gov.in/rates", "published_date": date.today().isoformat(), "content": "5% and 18% GST slabs"},
-                {"title": "CBIC", "url": "https://cbic.gov.in/notice", "published_date": date.today().isoformat(), "content": "12% and 28% slabs removed, 40% demerit rate added"},
+                {"title": "CBIC", "url": "https://cbic.gov.in/notice", "published_date": date.today().isoformat(), "content": "GST 12% and 28% slabs removed, 40% demerit rate added effective 2025-09-22 (September 2025)"},
             ],
             "usage": {"credits": 2},
         }
         ok_tavily.extract.return_value = {"results": [], "usage": {"credits": 0}}
         structured_json = (
             '{"status": "outdated", "score": 85, "agreeing_sources": 2, '
+            '"evidence_stance": "contradicts", '
+            '"supporting_quote": "GST 12% and 28% slabs removed, 40% demerit rate added", '
             '"current_info": "India GST uses 5% and 18% main slabs plus a 40% demerit rate.", '
             '"current_value": "5% and 18% (+ 40% demerit rate)", '
             '"effective_date": "2025-09-22", '
@@ -632,8 +636,14 @@ class TestTavilyUpgrade(unittest.TestCase):
         # 1a. Entity-mapped price (high-risk) -> primary-first (include_domains) + general, BOTH search_depth="advanced"
         apple_price_client = MagicMock()
         apple_price_client.search.side_effect = [
-            {"results": [{"title": "Apple Store", "url": "https://apple.com/iphone", "content": "iPhone pricing"}], "usage": {"credits": 2}},
-            {"results": [{"title": "News Price", "url": "https://reuters.com/apple-price", "content": "Price update"}], "usage": {"credits": 2}},
+            {
+                "results": [
+                    {"title": "Apple Store", "url": "https://apple.com/iphone", "content": "iPhone 15 Pro pricing"},
+                    {"title": "Apple Compare", "url": "https://apple.com/iphone/compare", "content": "iPhone 15 Pro specs and pricing"},
+                ],
+                "usage": {"credits": 2},
+            },
+            {"results": [{"title": "News Price", "url": "https://reuters.com/apple-price", "content": "iPhone 15 Pro price update"}], "usage": {"credits": 2}},
         ]
         res_apple_price = verifier.search_tavily_for_claim(
             query="iPhone 15 Pro price",
@@ -696,7 +706,10 @@ class TestTavilyUpgrade(unittest.TestCase):
         # 3a. Entity-mapped regulation (GST / India, high-risk) -> primary-first (official entity domains) + general [advanced]
         gst_client = MagicMock()
         gst_client.search.return_value = {
-            "results": [{"title": "GST Portal", "url": "https://www.gst.gov.in/rates", "content": "GST slabs"}],
+            "results": [
+                {"title": "GST Portal", "url": "https://www.gst.gov.in/rates", "content": "India GST slabs"},
+                {"title": "GST Council", "url": "https://gstcouncil.gov.in/decisions", "content": "GST council tax slabs"},
+            ],
             "usage": {"credits": 2},
         }
         res_gst = verifier.search_tavily_for_claim(
@@ -748,8 +761,8 @@ class TestTavilyUpgrade(unittest.TestCase):
         client.search.return_value = {
             "results": [
                 {"title": "Reddit Thread", "url": "https://www.reddit.com/r/tax/comments/1", "content": "Someone guessed 18%"},
-                {"title": "Official GST Portal", "url": "https://www.gst.gov.in/rules", "content": "GST rule summary"},
-                {"title": "Personal Blog", "url": "https://medium.com/@author/gst", "content": "Old guide"},
+                {"title": "Official GST Portal", "url": "https://www.gst.gov.in/rules", "content": "GST threshold raised to Rs 40 lakh for goods."},
+                {"title": "Personal Blog", "url": "https://medium.com/@author/gst", "content": "Old GST guide"},
             ],
             "usage": {"credits": 2},
         }
@@ -770,6 +783,8 @@ class TestTavilyUpgrade(unittest.TestCase):
             captured_prompts.append(user_prompt)
             return (
                 '{"status": "outdated", "score": 15, "agreeing_sources": 2, '
+                '"evidence_stance": "contradicts", '
+                '"supporting_quote": "threshold raised to Rs 40 lakh for goods.", '
                 '"current_info": "Threshold is Rs 40 lakh for goods.", "reason": "Updated on gst.gov.in."}',
                 "gpt-4o-mini",
             )
@@ -814,7 +829,13 @@ class TestTavilyUpgrade(unittest.TestCase):
                         "url": "https://docs.python.org/3/",
                         "published_date": date.today().isoformat(),
                         "content": "Python 3.14 is latest.",
-                    }
+                    },
+                    {
+                        "title": "Python Downloads",
+                        "url": "https://www.python.org/downloads/",
+                        "published_date": date.today().isoformat(),
+                        "content": "Download Python 3.14 latest stable release.",
+                    },
                 ],
                 "usage": {"credits": 1},
             }
@@ -860,7 +881,7 @@ class TestTavilyUpgrade(unittest.TestCase):
         retry_client = MagicMock()
         retry_client.search.side_effect = [
             UsageLimitExceededError("Rate limit 100 RPM"),
-            {"results": [{"title": "Source", "url": "https://example.com", "content": "Data"}], "usage": {"credits": 1}},
+            {"results": [{"title": "Source", "url": "https://example.com", "content": "Data for some stat"}], "usage": {"credits": 1}},
         ]
         with patch("verifier.time.sleep") as mock_sleep:
             out = verifier.search_tavily_for_claim(
@@ -880,21 +901,22 @@ class TestTavilyUpgrade(unittest.TestCase):
         partial_client.search.side_effect = [
             UsageLimitExceededError("429 on news"),
             UsageLimitExceededError("429 on news retry"),
-            {"results": [{"title": "Official Bio", "url": "https://openai.com/about", "content": "Sam Altman CEO"}], "usage": {"credits": 1}},
+            {"results": [{"title": "Official Bio", "url": "https://acmecorp.example/about", "content": "Alex Rivera is CEO of Acme Corp."}], "usage": {"credits": 1}},
         ]
         partial_client.extract.return_value = {
-            "results": [{"url": "https://openai.com/about", "raw_content": "Sam Altman is CEO of OpenAI."}],
+            "results": [{"url": "https://acmecorp.example/about", "raw_content": "Alex Rivera is CEO of Acme Corp."}],
             "usage": {"credits": 0.2},
         }
         llm_reply = (
             '{"status": "fresh", "score": 95, "agreeing_sources": 1, '
-            '"current_info": "Sam Altman is CEO.", "reason": "Confirmed."}',
+            '"evidence_stance": "supports", "supporting_quote": "Alex Rivera is CEO of Acme Corp.", '
+            '"current_info": "Alex Rivera is CEO.", "reason": "Confirmed."}',
             "gpt-4o-mini",
         )
         with patch("verifier.time.sleep"):
             with patch("verifier.call_llm", return_value=llm_reply):
                 res = verifier.verify_claim(
-                    {"claim": "Sam Altman is CEO of OpenAI.", "category": "company", "search_query": "OpenAI CEO"},
+                    {"claim": "Alex Rivera is CEO of Acme Corp.", "category": "company", "search_query": "Acme Corp CEO"},
                     tavily_client=partial_client,
                     use_cache=False,
                 )
@@ -1001,8 +1023,14 @@ class TestEvidenceLayer(unittest.TestCase):
                         "title": "OpenAI API Pricing",
                         "url": "https://openai.com/api/pricing/",
                         "published_date": "2026-10-01",
-                        "content": "GPT-5 input tokens cost $1.25 per 1M tokens.",
-                    }
+                        "content": "GPT-5 input tokens cost $1.25 per 1M tokens, replacing legacy GPT-4 Turbo $10 rates.",
+                    },
+                    {
+                        "title": "OpenAI Models Compare",
+                        "url": "https://platform.openai.com/docs/models/gpt-4-turbo",
+                        "published_date": "2026-10-01",
+                        "content": "GPT-4 Turbo pricing updated in API schedule.",
+                    },
                 ],
                 "usage": {"credits": 2},
             },
@@ -1012,25 +1040,27 @@ class TestEvidenceLayer(unittest.TestCase):
                         "title": "Reddit discussion",
                         "url": "https://www.reddit.com/r/OpenAI/comments/99",
                         "published_date": "2026-10-02",
-                        "content": "Developers discuss OpenAI API pricing update.",
+                        "content": "Developers discuss OpenAI API GPT-4 Turbo pricing update.",
                     },
                     {
                         "title": "Reuters Tech",
                         "url": "https://www.reuters.com/technology/openai-pricing-2026/",
                         "published_date": "2026-10-03",
-                        "content": "OpenAI announced new API token rates.",
+                        "content": "OpenAI announced new API token rates replacing GPT-4 Turbo pricing.",
                     },
                 ],
                 "usage": {"credits": 2},
             },
         ]
         mock_tavily.extract.return_value = {
-            "results": [{"url": "https://openai.com/api/pricing/", "raw_content": "Official OpenAI pricing table."}],
+            "results": [{"url": "https://openai.com/api/pricing/", "raw_content": "Official OpenAI pricing table: GPT-4 Turbo superseded by $1.25 rates."}],
             "failed_results": [],
             "usage": {"credits": 0.2},
         }
         llm_reply = (
             '{"status": "outdated", "score": 15, "agreeing_sources": 3, '
+            '"evidence_stance": "contradicts", '
+            '"supporting_quote": "GPT-5 input tokens cost $1.25 per 1M tokens, replacing legacy GPT-4 Turbo $10 rates.", '
             '"current_info": "OpenAI updated API pricing.", '
             '"current_value": "$1.25 / 1M input tokens", '
             '"reason": "GPT-4 Turbo pricing was superseded."}'
@@ -1065,7 +1095,7 @@ class TestEvidenceLayer(unittest.TestCase):
         self.assertEqual(verifier.classify_source_type("https://stackoverflow.com/questions/12345"), "Forum")
 
         # Snippets must be trimmed to <= 25 words even on lengthy source extracts, keeping published_date.
-        long_text_45_words = " ".join([f"word{i}" for i in range(1, 46)])
+        long_text_45_words = "Python 3.14 " + " ".join([f"word{i}" for i in range(1, 46)])
         mock_tavily = MagicMock()
         mock_tavily.search.side_effect = [
             {
@@ -1096,6 +1126,7 @@ class TestEvidenceLayer(unittest.TestCase):
                 ],
                 "usage": {"credits": 1},
             },
+            {"results": [], "usage": {"credits": 0}},
         ]
         mock_tavily.extract.return_value = {"results": [], "usage": {"credits": 0}}
         llm_reply = (
@@ -1165,7 +1196,7 @@ class TestEvidenceLayer(unittest.TestCase):
                 use_cache=False,
             )
 
-        self.assertEqual(res_conflict["agreement_summary"], "1 of 3 sources agree")
+        self.assertEqual(res_conflict["agreement_summary"], "1 of 3 independent sources agree")
         self.assertEqual(res_conflict["sources_agreeing"], 1)
         self.assertEqual(res_conflict["sources_total"], 3)
         self.assertTrue(res_conflict["conflict_detected"])
@@ -1193,7 +1224,7 @@ class TestEvidenceLayer(unittest.TestCase):
         )
         self.assertFalse(non_conflict["conflict_detected"])
         self.assertEqual(non_conflict["resolved_status"], "outdated")
-        self.assertEqual(non_conflict["agreement_summary"], "1 of 3 sources agree")
+        self.assertEqual(non_conflict["agreement_summary"], "1 of 3 independent sources agree")
 
     def test_stale_since_estimates_earliest_change_source_and_months(self):
         fixed_today = date(2026, 11, 11)
@@ -1274,7 +1305,13 @@ class TestEvidenceLayer(unittest.TestCase):
                             "url": "https://www.apple.com/newsroom/2025/09/iphone-17-pro/",
                             "published_date": "2025-09-09",
                             "content": "Apple introduced iPhone 17 Pro Max starting at $1,199 with A19 Pro and iOS 26.",
-                        }
+                        },
+                        {
+                            "title": "Apple Store Compare",
+                            "url": "https://www.apple.com/iphone/",
+                            "published_date": "2025-09-09",
+                            "content": "Buy iPhone 17 Pro Max, Apple's current flagship lineup.",
+                        },
                     ],
                     "usage": {"credits": 2},
                 },
@@ -1302,6 +1339,8 @@ class TestEvidenceLayer(unittest.TestCase):
             }
             llm_reply = (
                 '{"status": "outdated", "score": 15, "agreeing_sources": 2, '
+                '"evidence_stance": "contradicts", '
+                '"supporting_quote": "Apple introduced iPhone 17 Pro Max starting at $1,199 with A19 Pro and iOS 26.", '
                 '"current_info": "Apple sells iPhone 17 Pro Max starting at $1,199 with iOS 26.", '
                 '"current_value": "iPhone 17 Pro Max ($1,199)", '
                 '"change_summary": "iPhone 16 Pro Max and iPhone 17 Pro Max superseded iPhone 15 Pro Max", '
@@ -1316,7 +1355,7 @@ class TestEvidenceLayer(unittest.TestCase):
             self.assertEqual(client.search.call_count, 2)
             self.assertEqual(client.extract.call_count, 1)
             self.assertAlmostEqual(cold["tavily_credits_used"], 4.2)
-            self.assertEqual(cold["agreement_summary"], "2 of 2 sources agree")
+            self.assertEqual(cold["agreement_summary"], "2 of 2 independent sources agree")
             self.assertEqual(cold["sources"][0]["source_type"], "Primary")
             self.assertTrue(str(cold["stale_duration_label"]).startswith("stale for "))
 
@@ -1394,13 +1433,13 @@ class TestBifrostDualJudgeAndRouting(unittest.TestCase):
                         "title": "OpenAI Pricing",
                         "url": "https://openai.com/api/pricing/",
                         "published_date": "2026-10-15",
-                        "content": "Updated OpenAI API pricing schedule.",
+                        "content": "Updated OpenAI API pricing schedule replaces legacy GPT-4 Turbo $10 rates.",
                     },
                     {
                         "title": "Reuters Tech",
                         "url": "https://www.reuters.com/technology/openai-pricing/",
                         "published_date": "2026-10-16",
-                        "content": "OpenAI updated API pricing.",
+                        "content": "OpenAI updated API pricing for GPT-4 Turbo.",
                     },
                 ],
                 "usage": {"credits": 2},
@@ -1427,6 +1466,8 @@ class TestBifrostDualJudgeAndRouting(unittest.TestCase):
             )
             return (
                 f'{{"status": "outdated", "score": {sc}, "agreeing_sources": 2, '
+                f'"evidence_stance": "contradicts", '
+                f'"supporting_quote": "Updated OpenAI API pricing schedule replaces legacy GPT-4 Turbo $10 rates.", '
                 f'"current_info": "Updated pricing applies.", "reason": "Confirmed by {m_name}."}}',
                 m_name,
             )
@@ -1500,11 +1541,13 @@ class TestBifrostDualJudgeAndRouting(unittest.TestCase):
             if not is_j2:
                 return (
                     '{"status": "fresh", "score": 92, "agreeing_sources": 2, '
+                    '"evidence_stance": "supports", "supporting_quote": "OpenAI API pricing overview.", '
                     '"current_info": "Tier matches snippet.", "reason": "Looks current."}',
                     m_name,
                 )
             return (
                 '{"status": "outdated", "score": 15, "agreeing_sources": 2, '
+                '"evidence_stance": "contradicts", "supporting_quote": "OpenAI pricing discussed.", '
                 '"current_info": "New tier lowered rate.", "reason": "Legacy tier superseded."}',
                 m_name,
             )
@@ -2004,6 +2047,368 @@ class TestParallelAndURLExtraction(unittest.TestCase):
             with patch("verifier.call_llm", return_value=(bad_output, "openai/gpt-4o-mini")):
                 with self.assertRaises(ValueError):
                     verifier.generate_corrected_answer(long_original, findings)
+
+
+class TestCorrectnessAndRelevanceGate(unittest.TestCase):
+    """Regression tests for evidence-only judging, relevance filtering, validator caps, and cache invalidation."""
+
+    def test_reg9a_iphone_18_pro_with_only_podcasts_returns_unverifiable_never_outdated(self):
+        mock_tavily = MagicMock()
+        mock_tavily.search.return_value = {
+            "results": [
+                {
+                    "title": "Apple Tech Podcast Ep 42",
+                    "url": "https://podcasts.apple.com/us/podcast/iphone-18-pro-rumors/id12345",
+                    "published_date": "2026-09-10",
+                    "score": 0.62,
+                    "content": "Podcast hosts discuss iPhone 18 Pro and Apple iPhone 17.",
+                }
+            ],
+            "usage": {"credits": 1},
+        }
+        mock_tavily.extract.return_value = {"results": [], "usage": {"credits": 0}}
+
+        with patch("verifier.call_llm") as mock_llm:
+            res = verifier.verify_claim(
+                {
+                    "claim": "iPhone 18 Pro is available.",
+                    "category": "version",
+                    "search_query": "iPhone 18 Pro available",
+                },
+                tavily_client=mock_tavily,
+                use_cache=False,
+            )
+
+        mock_llm.assert_not_called()
+        self.assertEqual(res["status"], "unverifiable")
+        self.assertNotEqual(res["status"], "outdated")
+        self.assertIsNone(res["score"])
+        self.assertEqual(res["confidence"], "low")
+        self.assertEqual(res["sources"], [])
+        # Primary had 0 relevant hits -> automatically ran general + topic="news" as well (3 calls).
+        self.assertEqual(mock_tavily.search.call_count, 3)
+
+    def test_reg9b_iphone_18_pro_with_apple_newsroom_returns_fresh(self):
+        mock_tavily = MagicMock()
+        mock_tavily.search.side_effect = [
+            {
+                "results": [
+                    {
+                        "title": "Apple announces iPhone 18 Pro",
+                        "url": "https://www.apple.com/newsroom/2026/09/iphone-18-pro/",
+                        "published_date": "2026-09-09",
+                        "score": 0.94,
+                        "content": "Apple announced iPhone 18 Pro on September 9, 2026, with retail availability starting September 18, 2026.",
+                    }
+                ],
+                "usage": {"credits": 1},
+            },
+            {"results": [], "usage": {"credits": 1}},
+            {"results": [], "usage": {"credits": 1}},
+        ]
+        mock_tavily.extract.return_value = {
+            "results": [
+                {
+                    "url": "https://www.apple.com/newsroom/2026/09/iphone-18-pro/",
+                    "raw_content": "iPhone 18 Pro went on sale September 18, 2026 across Apple Store locations.",
+                }
+            ],
+            "failed_results": [],
+            "usage": {"credits": 0.2},
+        }
+        llm_reply = (
+            '{"status": "fresh", "score": 96, "agreeing_sources": 1, '
+            '"evidence_stance": "supports", '
+            '"supporting_quote": "Apple announced iPhone 18 Pro on September 9, 2026, with retail availability starting September 18, 2026.", '
+            '"current_info": "iPhone 18 Pro went on sale on September 18, 2026.", '
+            '"current_value": "Available since Sep 18, 2026", '
+            '"effective_date": "2026-09-18", '
+            '"reason": "Apple Newsroom confirms iPhone 18 Pro availability."}',
+            "gemini-2.5-flash",
+        )
+
+        with patch("verifier.call_llm", return_value=llm_reply):
+            res = verifier.verify_claim(
+                {
+                    "claim": "iPhone 18 Pro is available.",
+                    "category": "version",
+                    "search_query": "iPhone 18 Pro available",
+                },
+                tavily_client=mock_tavily,
+                use_cache=False,
+            )
+
+        self.assertEqual(res["status"], "fresh")
+        self.assertEqual(res["evidence_stance"], "supports")
+        self.assertIn("September 18, 2026", res["supporting_quote"])
+        # Single independent relevant domain (apple.com) yields low confidence and score capped to 40..74.
+        self.assertEqual(res["confidence"], "low")
+        self.assertGreaterEqual(res["score"], 40)
+        self.assertLessEqual(res["score"], 74)
+        self.assertEqual(res["sources"][0]["source_type"], "Primary")
+
+    def test_reg9c_conflicting_sources_returns_uncertain_with_disagreement_note(self):
+        mock_tavily = MagicMock()
+        mock_tavily.search.side_effect = [
+            {
+                "results": [
+                    {
+                        "title": "Reuters Test Report",
+                        "url": "https://www.reuters.com/technology/iphone-18-pro-battery-2026/",
+                        "published_date": "2026-10-20",
+                        "score": 0.89,
+                        "content": "Independent tests show the iPhone 18 Pro battery outlasted every competing flagship phone.",
+                    },
+                    {
+                        "title": "The Verge Lab Review",
+                        "url": "https://www.theverge.com/reviews/iphone-18-pro-battery",
+                        "published_date": "2026-10-22",
+                        "score": 0.87,
+                        "content": "Counter-tests show iPhone 18 Pro fell behind rival flagship Android batteries in 5G streaming.",
+                    },
+                ],
+                "usage": {"credits": 1},
+            },
+            {"results": [], "usage": {"credits": 1}},
+        ]
+        mock_tavily.extract.return_value = {"results": [], "usage": {"credits": 0}}
+        llm_reply = (
+            '{"status": "uncertain", "score": 52, "agreeing_sources": 1, "conflicting_sources": true, '
+            '"evidence_stance": "supports", '
+            '"supporting_quote": "Independent tests show the iPhone 18 Pro battery outlasted every competing flagship phone.", '
+            '"current_info": "Sources disagree on whether iPhone 18 Pro beats all competitors in battery tests.", '
+            '"reason": "Sources disagree: Reuters reports top battery life while The Verge reports rivals lasted longer."}',
+            "gpt-4o-mini",
+        )
+
+        with patch("verifier.call_llm", return_value=llm_reply):
+            res = verifier.verify_claim(
+                {
+                    "claim": "The iPhone 18 Pro battery lasts longer than every competing phone.",
+                    "category": "statistic",
+                    "search_query": "iPhone 18 Pro battery test comparison",
+                },
+                tavily_client=mock_tavily,
+                use_cache=False,
+            )
+
+        self.assertEqual(res["status"], "uncertain")
+        self.assertTrue(res["conflict_detected"])
+        self.assertIn("disagree", res["conflict_note"].lower())
+        self.assertIn("disagree", res["reason"].lower())
+        self.assertEqual(res["confidence"], "low")
+        self.assertGreaterEqual(res["score"], 40)
+        self.assertLessEqual(res["score"], 74)
+
+    def test_reg9d_no_invented_dates_when_no_dated_source_or_snippet_exists(self):
+        mock_tavily = MagicMock()
+        mock_tavily.search.side_effect = [
+            {
+                "results": [
+                    {
+                        "title": "MacBook Air Specs",
+                        "url": "https://www.apple.com/macbook-air/",
+                        "published_date": None,
+                        "score": 0.91,
+                        "content": "MacBook Air now comes standard with 16 GB of unified memory in the base model.",
+                    },
+                    {
+                        "title": "MacBook Air Compare",
+                        "url": "https://www.apple.com/macbook-air/compare/",
+                        "published_date": "",
+                        "score": 0.88,
+                        "content": "Every MacBook Air configuration includes 16 GB base memory.",
+                    },
+                ],
+                "usage": {"credits": 1},
+            },
+            {
+                "results": [
+                    {
+                        "title": "MacRumors Buyer Guide",
+                        "url": "https://www.macrumors.com/guide/macbook-air-memory/",
+                        "published_date": None,
+                        "score": 0.85,
+                        "content": "Apple upgraded entry MacBook Air base RAM from 8 GB to 16 GB.",
+                    }
+                ],
+                "usage": {"credits": 1},
+            },
+        ]
+        mock_tavily.extract.return_value = {"results": [], "usage": {"credits": 0}}
+        # Mock LLM attempts to hallucinate stale_since & effective_date not present anywhere in snippets.
+        llm_hallucinated_dates = (
+            '{"status": "outdated", "score": 15, "agreeing_sources": 2, '
+            '"evidence_stance": "contradicts", '
+            '"supporting_quote": "MacBook Air now comes standard with 16 GB of unified memory in the base model.", '
+            '"current_info": "Base MacBook Air ships with 16 GB unified memory.", '
+            '"current_value": "16 GB", '
+            '"effective_date": "2025-03-01", '
+            '"stale_since": "March 2025", '
+            '"reason": "Base RAM increased to 16 GB."}',
+            "gpt-4o-mini",
+        )
+
+        with patch("verifier.call_llm", return_value=llm_hallucinated_dates):
+            res = verifier.verify_claim(
+                {
+                    "claim": "MacBook Air ships with 8 GB base memory.",
+                    "category": "version",
+                    "search_query": "MacBook Air base memory RAM",
+                },
+                tavily_client=mock_tavily,
+                use_cache=False,
+            )
+
+        self.assertEqual(res["status"], "outdated")
+        self.assertIsNone(res["effective_date"])
+        self.assertIsNone(res["stale_since"])
+        self.assertIsNone(res["stale_duration_label"])
+        self.assertIsNone(res["stale_for_months"])
+
+    def test_relevance_gate_drops_irrelevant_and_triggers_news_fallback(self):
+        # 1. Drops podcasts/support/careers/login, low score (<0.35), and wrong product model ("iPhone 17"),
+        #    keeping only relevant "iPhone 18 Pro" article on apple.com.
+        raw = [
+            {"title": "Podcasts", "url": "https://podcasts.apple.com/show/iphone-18", "score": 0.9, "content": "iPhone 18 Pro chat"},
+            {"title": "Support", "url": "https://support.apple.com/iphone-18", "score": 0.9, "content": "iPhone 18 Pro help"},
+            {"title": "Careers", "url": "https://careers.apple.com/iphone-18", "score": 0.9, "content": "iPhone 18 Pro engineering"},
+            {"title": "Sign In", "url": "https://apple.com/account/login", "score": 0.9, "content": "iPhone 18 Pro sign in"},
+            {"title": "Low Score", "url": "https://example.com/iphone-18", "score": 0.21, "content": "iPhone 18 Pro brief mention"},
+            {"title": "Wrong Model", "url": "https://www.apple.com/iphone-17-pro/", "score": 0.88, "content": "iPhone 17 Pro specs and release."},
+            {"title": "Right Model", "url": "https://www.apple.com/newsroom/iphone-18-pro/", "score": 0.82, "content": "Apple unveils iPhone 18 Pro."},
+        ]
+        filtered = verifier._filter_relevant_results(raw, claim="iPhone 18 Pro is available.", query="iPhone 18 Pro")
+        self.assertEqual([r["title"] for r in filtered], ["Right Model"])
+
+        # 2. Fewer than 2 relevant primary results automatically triggers general + topic="news" (time_range=month) + URL dedupe.
+        client = MagicMock()
+        client.search.side_effect = [
+            {
+                "results": [
+                    {"title": "Podcasts", "url": "https://podcasts.apple.com/ep1", "score": 0.8, "content": "iPhone 18 Pro"},
+                    {"title": "Newsroom", "url": "https://www.apple.com/newsroom/iphone-18-pro/?utm_source=x", "score": 0.9, "content": "iPhone 18 Pro announced"},
+                ],
+                "usage": {"credits": 1},
+            },
+            {
+                "results": [
+                    {"title": "Reuters", "url": "https://www.reuters.com/tech/iphone-18-pro", "score": 0.88, "content": "iPhone 18 Pro hits stores"},
+                ],
+                "usage": {"credits": 1},
+            },
+            {
+                "results": [
+                    {"title": "Newsroom Dup", "url": "https://www.apple.com/newsroom/iphone-18-pro/", "score": 0.87, "content": "iPhone 18 Pro on sale"},
+                    {"title": "9to5Mac News", "url": "https://9to5mac.com/2026/09/18/iphone-18-pro-sale/", "score": 0.86, "content": "iPhone 18 Pro available today"},
+                ],
+                "usage": {"credits": 1},
+            },
+        ]
+        search_out = verifier.search_tavily_for_claim(
+            query="iPhone 18 Pro available",
+            category="version",
+            claim="iPhone 18 Pro is available.",
+            client=client,
+            use_cache=False,
+        )
+        self.assertEqual(client.search.call_count, 3)
+        self.assertEqual(client.search.call_args_list[2].kwargs["topic"], "news")
+        self.assertEqual(client.search.call_args_list[2].kwargs["time_range"], verifier.RECENT_NEWS_TIME_RANGE)
+        urls = [r["url"] for r in search_out["results"]]
+        self.assertEqual(len(urls), 3)  # Canonical URL deduped the duplicate newsroom hit
+        self.assertIn("news", search_out["search_strategy"] if "search_strategy" in search_out else search_out["strategy"])
+
+    def test_validator_rules_independent_domain_counting_query_enrichment_and_cache_version(self):
+        # 1. no_evidence always forces unverifiable even if LLM guessed fresh/outdated.
+        mock_tavily = MagicMock()
+        mock_tavily.search.side_effect = [
+            {
+                "results": [
+                    {"title": "Apple Newsroom", "url": "https://www.apple.com/newsroom/iphone-18-pro/", "content": "iPhone 18 Pro event overview.", "score": 0.85},
+                    {"title": "Apple Store", "url": "https://store.apple.com/iphone-18-pro/", "content": "iPhone 18 Pro gallery preview.", "score": 0.82},
+                ],
+                "usage": {"credits": 1},
+            },
+            {
+                "results": [
+                    {"title": "MacRumors", "url": "https://www.macrumors.com/iphone-18-pro/", "content": "iPhone 18 Pro specs sheet.", "score": 0.8},
+                ],
+                "usage": {"credits": 1},
+            },
+        ]
+        mock_tavily.extract.return_value = {"results": [], "usage": {"credits": 0}}
+        with patch(
+            "verifier.call_llm",
+            return_value=(
+                '{"status": "outdated", "score": 15, "evidence_stance": "no_evidence", "supporting_quote": null, "current_info": "Unsure", "reason": "No clear proof"}',
+                "gpt-4o-mini",
+            ),
+        ):
+            res_no_ev = verifier.verify_claim(
+                {"claim": "iPhone 18 Pro is available.", "category": "version", "search_query": "iPhone 18 Pro"},
+                tavily_client=mock_tavily,
+                use_cache=False,
+            )
+        self.assertEqual(res_no_ev["status"], "unverifiable")
+        self.assertIsNone(res_no_ev["score"])
+
+        # 2. LLM returns status="outdated" WITHOUT a grounded contradicting quote -> downgraded to "uncertain" + capped 40..74 if low confidence.
+        mock_tavily.search.side_effect = [
+            {
+                "results": [
+                    {"title": "Apple Newsroom", "url": "https://www.apple.com/newsroom/iphone-18-pro/", "content": "iPhone 18 Pro announced.", "score": 0.85},
+                    {"title": "Apple Store", "url": "https://store.apple.com/iphone-18-pro/", "content": "iPhone 18 Pro hardware overview.", "score": 0.82},
+                ],
+                "usage": {"credits": 1},
+            },
+            {"results": [], "usage": {"credits": 1}},
+        ]
+        with patch(
+            "verifier.call_llm",
+            return_value=(
+                '{"status": "outdated", "score": 12, "agreeing_sources": 2, "evidence_stance": "contradicts", '
+                '"supporting_quote": "This fabricated quote appears in zero search snippets anywhere.", '
+                '"current_info": "iPhone 18 Pro announced.", "reason": "Memory claim"}',
+                "gpt-4o-mini",
+            ),
+        ):
+            res_downgraded = verifier.verify_claim(
+                {"claim": "iPhone 18 Pro is available.", "category": "version", "search_query": "iPhone 18 Pro"},
+                tavily_client=mock_tavily,
+                use_cache=False,
+            )
+        self.assertEqual(res_downgraded["status"], "uncertain")
+        # Both apple.com & store.apple.com collapse to 1 registered domain (apple.com) -> low confidence -> 40..74 band!
+        self.assertEqual(res_downgraded["confidence"], "low")
+        self.assertEqual(res_downgraded["agreement_summary"], "1 of 1 independent sources agree")
+        self.assertGreaterEqual(res_downgraded["score"], 40)
+        self.assertLessEqual(res_downgraded["score"], 74)
+
+        # 3. Version/product query enrichment includes current Month Year + announced/released/official.
+        enriched = verifier._enrich_search_query(
+            "iPhone 18 Pro",
+            claim="iPhone 18 Pro is available.",
+            category="version",
+            today=date(2026, 11, 12),
+        )
+        self.assertIn("November 2026", enriched)
+        for kw in ("announced", "released", "official"):
+            self.assertIn(kw, enriched.lower())
+
+        # 4. Cache key embeds CACHE_VERSION and clear_tavily_cache clears rows cleanly.
+        k_curr = verifier._build_cache_key("search", {"query": "iphone 18 pro"})
+        with patch.object(verifier, "CACHE_VERSION", verifier.CACHE_VERSION + 1):
+            k_next = verifier._build_cache_key("search", {"query": "iphone 18 pro"})
+        self.assertNotEqual(k_curr, k_next)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "clear_test.db")
+            verifier._cache_set(k_curr, "search", {"results": [{"url": "https://apple.com"}]}, cache_path=db_path)
+            self.assertIsNotNone(verifier._cache_get(k_curr, cache_path=db_path))
+            removed = verifier.clear_tavily_cache(cache_path=db_path)
+            self.assertEqual(removed, 1)
+            self.assertIsNone(verifier._cache_get(k_curr, cache_path=db_path))
 
 
 if __name__ == "__main__":

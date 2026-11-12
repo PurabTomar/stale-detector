@@ -4512,6 +4512,8 @@ def build_benchmark_tables(
             continue
         if filter_mode == "Expected: Fresh" and exp != "fresh":
             continue
+        if filter_mode == "Expected: Uncertain / Unverifiable" and exp not in {"uncertain", "unverifiable"}:
+            continue
         filtered_rows.append(row)
 
     table_rows = []
@@ -4691,6 +4693,17 @@ with st.sidebar:
     credits_placeholder = st.empty()
     render_sidebar_credits(credits_placeholder, st.session_state["tavily_credits_used"])
 
+    if st.button(
+        "Clear cache",
+        key="clear_tavily_cache_btn",
+        icon=":material/delete_sweep:",
+        disabled=is_any_busy,
+        width="stretch",
+        help="Clear cached Tavily web search and URL extraction entries so claims re-verify fresh.",
+    ):
+        removed = clear_tavily_cache()
+        st.caption(f"Cleared {removed} cached Tavily entr{'y' if removed == 1 else 'ies'}.")
+
     raw_llm_key = _get_config_value("LLM_API_KEY")
     if not use_bifrost_mode and raw_llm_key.lower() == "bifrost-local":
         raw_llm_key = ""
@@ -4764,14 +4777,6 @@ with st.sidebar:
         )
         st.toggle("Show search queries on cards", key="show_search_queries")
         st.toggle("Keep status log expanded", key="keep_status_expanded")
-        if st.button(
-            "Clear Tavily cache",
-            key="clear_tavily_cache_btn",
-            disabled=is_any_busy,
-            width="stretch",
-        ):
-            removed = clear_tavily_cache()
-            st.caption(f"Cleared {removed} cached Tavily entr{'y' if removed == 1 else 'ies'}.")
 
 # ---------------------------------------------------------------------------
 # Hero header
@@ -5533,6 +5538,12 @@ with tab_url:
 
 with tab_benchmark:
     is_bench_running = current_busy == "benchmark"
+    try:
+        _dataset_preview_cached = load_benchmark_dataset()
+        _bench_claim_count = len(_dataset_preview_cached)
+    except Exception:
+        _dataset_preview_cached = []
+        _bench_claim_count = 24
     bench_head_col, bench_cache_col, bench_btn_col = st.columns(
         [2.7, 1.05, 1.05],
         vertical_alignment="bottom",
@@ -5541,7 +5552,7 @@ with tab_benchmark:
     with bench_head_col:
         st.subheader("Detector benchmark", icon=":material/monitoring:")
         st.caption(
-            "20 labelled claims (10 outdated, 10 fresh across prices, versions, regulations, leadership, and stats). "
+            f"{_bench_claim_count} labelled claims (fresh, outdated, uncertain, and unverifiable across prices, versions, regulations, leadership, and stats). "
             "Loads cached benchmark results instantaneously on startup."
         )
     with bench_cache_col:
@@ -5581,10 +5592,10 @@ with tab_benchmark:
         dual_bench = bool(st.session_state.get("dual_judge_mode", False))
         try:
             _show_skeleton_slot(bench_skel_slot, (96, 96, 220))
-            with st.status("Running 20-claim benchmark (3 parallel workers)...", expanded=True) as bench_status:
+            with st.status(f"Running {_bench_claim_count}-claim benchmark (3 parallel workers)...", expanded=True) as bench_status:
                 bench_live = st.empty()
-                bench_live.write("Evaluating 20 labelled claims across Tavily + LLM judge...")
-                bench_bar = st.progress(0.0, text="Evaluated 0/20 claims (3 parallel workers)...")
+                bench_live.write(f"Evaluating {_bench_claim_count} labelled claims across Tavily + LLM judge...")
+                bench_bar = st.progress(0.0, text=f"Evaluated 0/{_bench_claim_count} claims (3 parallel workers)...")
 
                 def on_bench_progress(done: int, total_count: int, row: dict) -> None:
                     frac = min(1.0, max(0.0, float(done) / float(total_count))) if total_count else 1.0
@@ -5903,6 +5914,7 @@ with tab_benchmark:
                         "Incorrect only",
                         "Expected: Outdated",
                         "Expected: Fresh",
+                        "Expected: Uncertain / Unverifiable",
                     ],
                     default="All",
                     key="benchmark_filter_mode",
@@ -5981,17 +5993,19 @@ with tab_benchmark:
         )
         st.info(
             bench_empty_msg,
-            title="Benchmark dataset ready (20 labelled claims)",
+            title=f"Benchmark dataset ready ({_bench_claim_count} labelled claims)",
             icon=":material/info:",
         )
-        try:
-            dataset_preview = load_benchmark_dataset()
-        except Exception as ds_exc:
-            st.error(
-                format_friendly_ui_error(ds_exc, action="loading benchmark dataset"),
-                icon=":material/error:",
-            )
-            dataset_preview = []
+        dataset_preview = _dataset_preview_cached
+        if not dataset_preview:
+            try:
+                dataset_preview = load_benchmark_dataset()
+            except Exception as ds_exc:
+                st.error(
+                    format_friendly_ui_error(ds_exc, action="loading benchmark dataset"),
+                    icon=":material/error:",
+                )
+                dataset_preview = []
 
         if dataset_preview:
             preview_df = pd.DataFrame(
@@ -6012,7 +6026,7 @@ with tab_benchmark:
                     preview_df,
                     hide_index=True,
                     width="stretch",
-                    alt="Preview of 20 labelled claims in benchmark dataset",
+                    alt=f"Preview of {len(dataset_preview)} labelled claims in benchmark dataset",
                     column_config={
                         "#": st.column_config.NumberColumn("#", format="%d", width="small"),
                         "Category": st.column_config.TextColumn("Category", width="small"),

@@ -258,6 +258,47 @@ class TestExtractionJSONParsing(unittest.TestCase):
         self.assertEqual(norm[0]["claim"], "Python 3.11 is the latest release.")
         self.assertEqual(norm[1]["claim"], "iOS 17 is the latest iOS.")
 
+    def test_product_claim_preserves_exact_wording_and_uses_version_or_company_category(self):
+        # 1. Named product release classified as "other" (or invalid category) gets promoted to "version" or "company".
+        raw_cat = [
+            {
+                "claim": "iPhone 18 Pro is available.",
+                "span": "iPhone 18 Pro is available",
+                "category": "other",
+                "search_query": "iPhone 18 Pro availability",
+            },
+            {
+                "claim": "Anthropic Inc. sells enterprise subscriptions.",
+                "span": "Anthropic Inc. sells enterprise subscriptions",
+                "category": "other",
+                "search_query": "Anthropic enterprise subscriptions",
+            },
+        ]
+        norm_cat = extractor._normalize_claims(
+            raw_cat,
+            source_text="iPhone 18 Pro is available. Anthropic Inc. sells enterprise subscriptions.",
+        )
+        self.assertEqual(norm_cat[0]["category"], "version")
+        self.assertEqual(norm_cat[0]["claim"], "iPhone 18 Pro is available.")
+        self.assertEqual(norm_cat[1]["category"], "company")
+
+        # 2. If LLM paraphrases a short product claim into a vaguer sentence (e.g. dropping "18 Pro"),
+        # _normalize_claims restores the user's exact verbatim wording from source_text.
+        source_text = "As of today, iPhone 18 Pro is available at Apple Store."
+        vague_llm_json = (
+            '[{"claim": "A smartphone is available at retail.", '
+            '"span": "iPhone 18 Pro is available at Apple Store", '
+            '"category": "other", '
+            '"search_query": "iPhone 18 Pro available"}]'
+        )
+        with patch("extractor.call_llm", return_value=(vague_llm_json, "gemini-2.5-flash-lite")):
+            extracted, _ = extractor.extract_claims(source_text)
+
+        self.assertEqual(len(extracted), 1)
+        self.assertEqual(extracted[0]["category"], "version")
+        self.assertIn("iPhone 18 Pro", extracted[0]["claim"])
+        self.assertEqual(extracted[0]["span"], "iPhone 18 Pro is available at Apple Store")
+
 
 if __name__ == "__main__":
     unittest.main()

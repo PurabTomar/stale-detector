@@ -24,7 +24,7 @@ Users rarely know *which* sentence in a polished AI response is still accurate a
   - **Audit pasted answer**: Paste any AI response (or click one of 4 sidebar sample prompts) to inspect inline claim highlights, hover corrected values, click-to-card scroll anchors, score ring, KPI cards, and per-claim breakdowns.
   - **Ask & Audit**: Type a question, fetch a live answer through Bifrost (or Direct Gemini), view it immediately, and watch the detector auto-audit and underline outdated (`red`), fresh (`green`), uncertain (`yellow`), and unverifiable (`grey`) spans in place.
   - **Audit a URL**: Paste any article or blog URL, pull clean text with **Tavily Extract**, and verify the first **8** time-sensitive claims concurrently.
-  - **Benchmark**: Evaluates `benchmark/dataset.json` (20 balanced claims) for accuracy, stale precision/recall/F1, confusion matrix, category breakdown, latency, tokens, and Tavily credits—loading cached `benchmark/results.json` instantaneously when present.
+  - **Benchmark**: Evaluates `benchmark/dataset.json` (24 labelled claims) for accuracy, stale precision/recall/F1, confusion matrix, category breakdown, latency, tokens, and Tavily credits—loading cached `benchmark/results.json` instantaneously when present.
 - **Offline Demo Mode**: A one-click **Demo mode** toggle in the sidebar replays pre-verified audits, annotated highlights, side-by-side diffs, and rewrites across all tabs from `demo_cache.json` (`0` live API calls, `0` Tavily credits), plus one-click recovery buttons if an API key is missing or an upstream endpoint is unreachable.
 - **Explainable Status-Banded Scoring (`0–100` / `N/A`)**: Enforces clear status bands (**Fresh** `75–100`, **Uncertain** `40–74`, **Outdated** `0–39`, **Unverifiable** `N/A`), risk-weighted overall scoring (regulation & price weighted higher than version), and calibrated **High / Medium / Low** confidence.
 - **Primary-Source Evidence Layer**: Prioritizes official domains (`apple.com`, `openai.com`, `python.org`, `gstcouncil.gov.in`, `rbi.org.in`, etc.), labels source chips (**Primary**, **News**, **Blog**, **Forum**), keeps <=25-word evidence snippets, flags source conflicts, and estimates **Stale since** (`stale for ~X months`).
@@ -55,7 +55,7 @@ flowchart TD
     Tab1["Tab 1: Audit Pasted Answer"]
     Tab2["Tab 2: Ask & Audit"]
     Tab3["Tab 3: Audit a URL (First 8 Claims)"]
-    Tab4["Tab 4: Benchmark (20 Claims)"]
+    Tab4["Tab 4: Benchmark (24 Claims)"]
 
     DemoMode -->|"OFF (Live Pipeline)"| Tab1
     DemoMode -->|"OFF (Live Pipeline)"| Tab2
@@ -111,8 +111,8 @@ flowchart TD
 1. **Configurable Primary Domain Map (`ENTITY_DOMAIN_MAP`)**: Built-in entity-to-domain mappings can be extended or overridden at runtime or via the `ENTITY_DOMAIN_MAP` JSON environment variable.
 2. **Source Type Labels, Dates & <=25-Word Evidence Snippets**: Every source chip is tagged **Primary**, **News**, **Blog**, or **Forum** alongside its `published_date` and a concise snippet inside each claim's **Evidence snippets** expander.
 3. **Single-URL & Full-Article `tavily.extract()`**: Inside claim verification, selects the highest-authority/primary URL to extract exact figures, effective dates, and thresholds. In **Audit a URL**, extracts clean text from any pasted webpage (6-hour cached, 12,000-character cap) and audits the first **8** claims.
-4. **Parallel Verification & Thread-Safe 6h Cache**: Verifies claims concurrently using `ThreadPoolExecutor(max_workers=3)` with a live `st.progress` bar, mutex-guarded 6-hour SQLite cache (`.tavily_cache.db`), and exact session credit accounting (`Tavily credits used this session`). Cache entries can be cleared from the sidebar **Settings** expander.
-5. **Agreement Tracking, Conflict Detection & Stale-Since Estimation**: Computes `"N of M sources agree"`, marks conflicting sources explicitly as **Uncertain** (*Sources disagree*), and estimates **Stale since** (`stale for ~X months`) from the earliest dated source describing the change.
+4. **Parallel Verification & Thread-Safe 6h Cache**: Verifies claims concurrently using `ThreadPoolExecutor(max_workers=3)` with a live `st.progress` bar, mutex-guarded 6-hour SQLite cache (`.tavily_cache.db`), and exact session credit accounting (`Tavily credits used this session`). Cache entries can be cleared from the sidebar **Clear cache** button.
+5. **Agreement Tracking, Conflict Detection & Stale-Since Estimation**: Computes `"N of M independent sources agree"`, marks conflicting sources explicitly as **Uncertain** (*Sources disagree*), and estimates **Stale since** (`stale for ~X months`) only when grounded in dated source snippets or `published_date` metadata.
 6. **Status-Banded Explainable Scoring**:
    - **Fresh**: `75–100`
    - **Uncertain**: `40–74`
@@ -339,8 +339,8 @@ Add captures from your session under `docs/screenshots/` to populate these place
 
 - [`app.py`](app.py) — Four-tab dark-themed Streamlit app with offline **Demo mode**, polished empty states, loading skeletons, friendly error recovery, annotated highlights, parallel progress bar, and sidebar telemetry panels
 - [`api.py`](api.py) — FastAPI REST service exposing `POST /verify` and `GET /health`
-- [`benchmark.py`](benchmark.py) — 20-claim parallel benchmark runner, stale precision/recall/confusion-matrix calculator, `benchmark/results.json` cache, and README updater (`--update-readme`)
-- [`benchmark/dataset.json`](benchmark/dataset.json) — 20 labelled claims across `price`, `version`, `regulation`, `company`, and `statistic`
+- [`benchmark.py`](benchmark.py) — 24-claim parallel benchmark runner, stale precision/recall/confusion-matrix calculator, `benchmark/results.json` cache, and README updater (`--update-readme`)
+- [`benchmark/dataset.json`](benchmark/dataset.json) — 24 labelled claims across `price`, `version`, `regulation`, `company`, and `statistic` (including regression cases for `fresh`, `outdated`, `uncertain`, and `unverifiable`)
 - [`demo_data.py`](demo_data.py) & [`demo_cache.json`](demo_cache.json) — Offline pre-verified sample audits, spans, and rewrites powering sidebar **Demo mode**
 - [`assets/favicon.svg`](assets/favicon.svg) — Custom SVG app icon rendered via `st.set_page_config`
 - [`extractor.py`](extractor.py) — Claim & verbatim `span` extractor, string-match span locator, and JSON schema normalizer

@@ -34,8 +34,8 @@ VALID_CATEGORIES = (
 EXTRACTION_SYSTEM_PROMPT = """You are a careful fact-checking assistant.
 Your job is to inspect an LLM-generated answer or article and extract specific,
 independently verifiable factual claims that could become outdated over time
-(for example: prices, API/software versions, laws or regulations, company info
-like CEO/funding/acquisitions, and statistics).
+(for example: prices, product or API/software versions, laws or regulations,
+company info like CEO/funding/acquisitions, and statistics).
 
 Skip conversational filler, greetings, disclaimers, purely subjective opinions,
 vague recommendations without concrete facts, and duplicate paraphrases of a
@@ -44,16 +44,201 @@ not invent details absent from the input text.
 
 Return ONLY a valid JSON array (no markdown explanation, no extra text).
 Each element in the JSON array must be an object with these exact keys:
-- "claim": A clear, self-contained statement of the factual claim (replace pronouns
-  like "it" or "their" with the actual entity name so the claim makes sense on its own).
+- "claim": Keep the claim wording as close as possible to the user's exact
+  wording (copy the exact "span" whenever it already stands on its own; only
+  replace an ambiguous pronoun like "it" or "their" with the named entity so
+  the claim makes sense alone). NEVER rewrite or paraphrase a specific product,
+  version, price, or entity claim into a vaguer statement.
 - "span": The exact verbatim substring copied character-for-character from the input
   text that states this claim (preserve exact casing, numbers, punctuation, version
   dots, and currency symbols so it can be located with a string match).
 - "category": Must be one of: "price", "version", "regulation", "company", "statistic", "other".
+  Product-name, hardware/software model, release, and availability claims (such as
+  "iPhone 18 Pro is available", "Python 3.15", or "GPT-5") MUST use "version"
+  (or "price" if stating a price, or "company" if about leadership/ownership/corporate
+  lineup) — NEVER label named product claims as "other".
 - "search_query": A concise, targeted web search query to check the current truth of this claim.
 
 If the text contains no time-sensitive or verifiable factual claims, return [].
 """
+
+
+_PRODUCT_VERSION_TERMS = (
+    "iphone",
+    "ipad",
+    "macbook",
+    "imac",
+    "airpods",
+    "apple watch",
+    "vision pro",
+    "ios",
+    "ipados",
+    "macos",
+    "watchos",
+    "tvos",
+    "visionos",
+    "pixel",
+    "galaxy",
+    "android",
+    "windows",
+    "surface",
+    "playstation",
+    "ps5",
+    "xbox",
+    "nintendo switch",
+    "switch 2",
+    "steam deck",
+    "gpt",
+    "chatgpt",
+    "claude",
+    "gemini",
+    "llama",
+    "mistral",
+    "copilot",
+    "python",
+    "react",
+    "next.js",
+    "nextjs",
+    "node.js",
+    "nodejs",
+    "typescript",
+    "golang",
+    "rust",
+    "kubernetes",
+    "docker",
+    "pytorch",
+    "tensorflow",
+    "streamlit",
+    "fastapi",
+    "cuda",
+)
+
+_KNOWN_COMPANY_TERMS = (
+    "apple",
+    "openai",
+    "anthropic",
+    "google",
+    "alphabet",
+    "microsoft",
+    "nvidia",
+    "tesla",
+    "meta",
+    "amazon",
+    "aws",
+    "stripe",
+    "netflix",
+    "disney",
+    "starbucks",
+    "github",
+    "twitter",
+    "xai",
+)
+
+_CORPORATE_ACTION_RE = re.compile(
+    r"\b(?:ceo|chief\s+executive|cfo|cto|coo|chairman|president|founder|co-founder|"
+    r"acquired|acquisition|merged|merger|subsidiary|headquarter(?:ed|s)?|ipo|valuation|"
+    r"board\s+of\s+directors|stepped\s+down|appointed)\b",
+    re.IGNORECASE,
+)
+
+_MODEL_VERSION_RE = re.compile(
+    r"(?:\b(?:v|r)\d+(?:\.\d+)+\b|"
+    r"\b[A-Za-z][A-Za-z0-9.+-]{1,20}[\s\-]+(?:(?:Pro|Max|Ultra|Plus|Mini|Air|SE|Studio|Turbo)\s+)*\d+(?:\.\d+)?(?:\s+(?:Pro|Max|Ultra|Plus|Mini|Air|SE|Studio|Turbo))?\b)",
+    re.IGNORECASE,
+)
+
+_RELEASE_CONTEXT_RE = re.compile(
+    r"\b(?:available|released|release|launched|launch|announced|ships|shipping|"
+    r"version|update|latest|flagship|lineup|series|edition|on\s+sale)\b",
+    re.IGNORECASE,
+)
+
+_LEADING_PRONOUN_RE = re.compile(
+    r"^(?:it|its|they|their|this|that|these|those|he|she|his|her)\b",
+    re.IGNORECASE,
+)
+
+
+def _infer_product_or_company_category(
+    claim_text: str,
+    span_text: str | None = None,
+) -> str:
+    """
+    Reclassify named product/model/company claims away from 'other' when the
+    extractor LLM mislabels them as 'other'.
+    """
+    combined = " ".join(f"{claim_text} {span_text or ''}".split()).strip()
+    if not combined:
+        return "other"
+    lower = combined.lower()
+
+    has_product_term = any(
+        re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", lower)
+        for term in _PRODUCT_VERSION_TERMS
+    )
+    has_company_term = any(
+        re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", lower)
+        for term in _KNOWN_COMPANY_TERMS
+    )
+    has_corp_action = bool(_CORPORATE_ACTION_RE.search(combined))
+    has_model_ver = bool(_MODEL_VERSION_RE.search(combined))
+    has_release_ctx = bool(_RELEASE_CONTEXT_RE.search(combined))
+
+    if has_corp_action:
+        return "company"
+    if has_product_term:
+        return "version"
+    if has_model_ver and (has_release_ctx or has_company_term):
+        return "version"
+    if has_company_term:
+        return "company"
+    return "other"
+
+
+def _extract_word_tokens_for_fidelity(text: str) -> set[str]:
+    cleaned = re.sub(r"(?<=\d),(?=\d)", "", text.lower())
+    return {tok for tok in re.findall(r"[a-z0-9]+(?:\.[a-z0-9]+)*", cleaned) if len(tok) >= 2 or tok.isdigit()}
+
+
+def _preserve_exact_claim_wording(claim_text: str, span_str: str | None) -> str:
+    """
+    Keep normalized `claim` anchored closely to the user's exact span wording so
+    an extractor cannot rewrite specific facts (e.g. 'iPhone 18 Pro is available')
+    into vaguer paraphrases.
+    """
+    if not span_str:
+        return claim_text
+    clean_span = " ".join(span_str.split()).strip()
+    if len(clean_span) < 6:
+        return claim_text
+
+    # Do not replace with a lowercase clause fragment (e.g. "starts at ..."), while still
+    # preserving camelCase product names like iPhone, iPad, iOS, macOS, watchOS.
+    first_word_match = re.match(r"^[A-Za-z]+", clean_span)
+    first_word = first_word_match.group(0) if first_word_match else ""
+    is_camel_brand = bool(re.match(r"^(?:i[A-Z]|e[A-Z]|mac[A-Z]|watch[A-Z]|tv[A-Z]|vision[A-Z])", first_word))
+    if (first_word and first_word[0].islower() and not is_camel_brand) or _LEADING_PRONOUN_RE.match(clean_span):
+        return claim_text
+
+    # If claim and span only differ by trailing punctuation/whitespace, preserve claim as-is.
+    if clean_span.rstrip(".!?").lower() == " ".join(claim_text.split()).rstrip(".!?").lower():
+        return claim_text
+
+    span_tokens = _extract_word_tokens_for_fidelity(clean_span)
+    claim_tokens = _extract_word_tokens_for_fidelity(claim_text)
+    if not span_tokens:
+        return claim_text
+
+    span_num_tokens = {t for t in span_tokens if any(c.isdigit() for c in t)}
+    dropped_numbers = span_num_tokens - claim_tokens
+    overlap_ratio = len(span_tokens & claim_tokens) / max(1, len(span_tokens))
+
+    if dropped_numbers or overlap_ratio < 0.70:
+        if claim_text.endswith(".") and not clean_span.endswith((".", "!", "?")):
+            return f"{clean_span}."
+        return clean_span
+
+    return claim_text
 
 
 def _range_overlaps(
@@ -207,21 +392,9 @@ def _normalize_claims(
 
         raw_category = str(item.get("category", "other")).strip().lower()
         category = raw_category if raw_category in VALID_CATEGORIES else "other"
-
-        norm_claim_key = (" ".join(claim_text.lower().split()).rstrip(".!?"), category)
-        if norm_claim_key in seen_claim_keys:
-            continue
-        seen_claim_keys.add(norm_claim_key)
-
-        search_query = str(item.get("search_query", "")).strip() or claim_text
         raw_span = str(item.get("span") or "").strip()
 
-        entry: dict[str, str] = {
-            "claim": claim_text,
-            "category": category,
-            "search_query": search_query,
-        }
-
+        matched_span: str | None = None
         if source_text:
             located = locate_span_in_text(
                 source_text,
@@ -231,11 +404,30 @@ def _normalize_claims(
             )
             if located is not None:
                 occupied_ranges.append((located[0], located[1]))
-                entry["span"] = located[2]
+                matched_span = located[2]
             elif raw_span:
-                entry["span"] = raw_span
+                matched_span = raw_span
         elif raw_span:
-            entry["span"] = raw_span
+            matched_span = raw_span
+
+        claim_text = _preserve_exact_claim_wording(claim_text, matched_span)
+        if category == "other":
+            category = _infer_product_or_company_category(claim_text, matched_span)
+
+        norm_claim_key = (" ".join(claim_text.lower().split()).rstrip(".!?"), category)
+        if norm_claim_key in seen_claim_keys:
+            continue
+        seen_claim_keys.add(norm_claim_key)
+
+        search_query = str(item.get("search_query", "")).strip() or claim_text
+
+        entry: dict[str, str] = {
+            "claim": claim_text,
+            "category": category,
+            "search_query": search_query,
+        }
+        if matched_span:
+            entry["span"] = matched_span
 
         cleaned_claims.append(entry)
 

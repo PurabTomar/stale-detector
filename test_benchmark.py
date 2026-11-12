@@ -24,23 +24,30 @@ import llm
 class TestBenchmarkDataset(unittest.TestCase):
     """Validate structure and balance of benchmark/dataset.json."""
 
-    def test_dataset_has_20_balanced_valid_claims(self):
+    def test_dataset_has_24_valid_labelled_claims(self):
         entries = benchmark.load_dataset()
-        self.assertEqual(len(entries), 20)
+        self.assertEqual(len(entries), 24)
 
         status_counts = Counter(e["expected_status"] for e in entries)
-        self.assertEqual(status_counts["outdated"], 10)
-        self.assertEqual(status_counts["fresh"], 10)
+        self.assertEqual(status_counts["outdated"], 11)
+        self.assertEqual(status_counts["fresh"], 11)
+        self.assertEqual(status_counts["uncertain"], 1)
+        self.assertEqual(status_counts["unverifiable"], 1)
 
         cat_counts = Counter(e["category"] for e in entries)
         for cat in ("price", "version", "regulation", "company", "statistic"):
-            self.assertEqual(cat_counts[cat], 4, f"Expected 4 claims in category {cat!r}")
+            self.assertGreaterEqual(cat_counts[cat], 4, f"Expected >=4 claims in category {cat!r}")
+
+        self.assertTrue(
+            any("iPhone 18 Pro is available" in e["claim"] for e in entries),
+            "Dataset should include the 'iPhone 18 Pro is available' regression claim.",
+        )
 
         for idx, entry in enumerate(entries, start=1):
             self.assertEqual(entry["index"], idx)
             self.assertTrue(entry["claim"])
             self.assertTrue(entry["note"])
-            self.assertIn(entry["expected_status"], {"fresh", "outdated"})
+            self.assertIn(entry["expected_status"], {"fresh", "outdated", "uncertain", "unverifiable"})
 
     def test_load_dataset_validation_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -60,7 +67,7 @@ class TestBenchmarkDataset(unittest.TestCase):
                         {
                             "claim": "Test claim",
                             "category": "price",
-                            "expected_status": "uncertain",
+                            "expected_status": "bogus_status",
                             "note": "Invalid label for dataset",
                         }
                     ]
@@ -69,6 +76,22 @@ class TestBenchmarkDataset(unittest.TestCase):
             )
             with self.assertRaises(ValueError):
                 benchmark.load_dataset(bad_status)
+
+            # All 4 supported benchmark statuses load cleanly
+            all_four = tmp_dir / "all_four.json"
+            all_four.write_text(
+                json.dumps(
+                    [
+                        {"claim": "C1", "category": "price", "expected_status": "fresh", "note": "n1"},
+                        {"claim": "C2", "category": "price", "expected_status": "outdated", "note": "n2"},
+                        {"claim": "C3", "category": "statistic", "expected_status": "uncertain", "note": "n3"},
+                        {"claim": "C4", "category": "version", "expected_status": "unverifiable", "note": "n4"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            loaded_four = benchmark.load_dataset(all_four)
+            self.assertEqual([e["expected_status"] for e in loaded_four], ["fresh", "outdated", "uncertain", "unverifiable"])
 
             bad_claim = tmp_dir / "bad_claim.json"
             bad_claim.write_text(

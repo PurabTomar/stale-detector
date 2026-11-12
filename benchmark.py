@@ -49,15 +49,15 @@ README_PATH = ROOT_DIR / "README.md"
 BENCHMARK_README_START = "<!-- BENCHMARK_RESULTS_START -->"
 BENCHMARK_README_END = "<!-- BENCHMARK_RESULTS_END -->"
 
-EXPECTED_BENCHMARK_STATUSES = {"fresh", "outdated"}
+EXPECTED_BENCHMARK_STATUSES = {"fresh", "outdated", "uncertain", "unverifiable"}
 
 
 def load_dataset(dataset_path: str | Path | None = None) -> list[dict]:
     """
     Load and validate labelled claims from `benchmark/dataset.json`.
 
-    Each entry requires: `claim`, `category`, `expected_status` ('fresh' or 'outdated'),
-    and `note`.
+    Each entry requires: `claim`, `category`, `expected_status`
+    ('fresh', 'outdated', 'uncertain', or 'unverifiable'), and `note`.
     """
     path = Path(dataset_path) if dataset_path is not None else DATASET_PATH
     if not path.exists():
@@ -83,7 +83,7 @@ def load_dataset(dataset_path: str | Path | None = None) -> list[dict]:
         if expected not in EXPECTED_BENCHMARK_STATUSES:
             raise ValueError(
                 f"Benchmark dataset entry #{idx} has invalid expected_status={expected!r}; "
-                "must be 'fresh' or 'outdated'."
+                "must be 'fresh', 'outdated', 'uncertain', or 'unverifiable'."
             )
 
         note = str(item.get("note", "")).strip()
@@ -285,7 +285,7 @@ def compute_benchmark_metrics(
             cat_bucket["fn"] += 1
         elif exp == "fresh" and pred == "outdated":
             cat_bucket["fp"] += 1
-        else:
+        elif exp == "fresh":
             cat_bucket["tn"] += 1
 
     for cat_stats in by_category.values():
@@ -715,7 +715,7 @@ def update_readme_benchmark_section(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the 20-claim Stale-Answer Detector benchmark.")
+    parser = argparse.ArgumentParser(description="Run the Stale-Answer Detector benchmark.")
     parser.add_argument("--no-cache", action="store_true", help="Disable the 6h Tavily SQLite cache.")
     parser.add_argument("--dual-judge", action="store_true", help="Run benchmark with dual-judge consensus.")
     parser.add_argument("--workers", type=int, default=PARALLEL_VERIFICATION_WORKERS, help="Parallel worker count.")

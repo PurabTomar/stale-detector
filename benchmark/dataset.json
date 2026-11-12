@@ -118,5 +118,29 @@
     "category": "statistic",
     "expected_status": "fresh",
     "note": "Fresh: The International Telecommunication Union Facts and Figures 2026 report estimates 6.3 billion internet users (76%)."
+  },
+  {
+    "claim": "Apple's unreleased iPhone 20 Fold Ultra is available in US retail stores today.",
+    "category": "version",
+    "expected_status": "unverifiable",
+    "note": "Unverifiable: Regression case — unsubstantiated/irrelevant snippets (e.g. podcasts only) with no authoritative source support must return 'unverifiable', never 'outdated'."
+  },
+  {
+    "claim": "iPhone 18 Pro is available.",
+    "category": "version",
+    "expected_status": "fresh",
+    "note": "Fresh: Apple announced the iPhone 18 Pro on September 9, 2026, and it went on sale September 18, 2026."
+  },
+  {
+    "claim": "Independent 2026 lab benchmarks confirm the iPhone 18 Pro battery lasts longer than every competing flagship phone.",
+    "category": "statistic",
+    "expected_status": "uncertain",
+    "note": "Uncertain: Regression case — contested/conflicting test reports across outlets where one source supports and another contradicts must return 'uncertain' with disagreement flagged."
+  },
+  {
+    "claim": "Apple's entry-level MacBook Air still ships with 8 GB of unified base memory as its standard configuration.",
+    "category": "version",
+    "expected_status": "outdated",
+    "note": "Outdated: Apple increased base MacBook Air unified memory to 16 GB; regression case verifying stale_since and effective_date remain omitted unless grounded in a dated source."
   }
 ]

@@ -197,9 +197,28 @@ MULTI_PART_PUBLIC_SUFFIXES = {
     "com.br", "gov.br",
 }
 
-# Tavily category strategy and writable on-disk cache configuration (TTL = 6 hours).
+# Tavily category strategy, evidence relevance gate, and writable on-disk cache configuration (TTL = 6 hours).
 DEFAULT_CACHE_PATH = os.path.join(tempfile.gettempdir(), "stale_detector", "tavily_cache.db")
 CACHE_TTL_SECONDS = 6 * 60 * 60
+CACHE_VERSION = 2
+MIN_TAVILY_RELEVANCE_SCORE = 0.35
+IRRELEVANT_SUBDOMAIN_PREFIXES = (
+    "podcasts.",
+    "podcast.",
+    "support.",
+    "careers.",
+    "jobs.",
+    "login.",
+    "signin.",
+    "accounts.",
+    "account.",
+    "auth.",
+    "sso.",
+)
+IRRELEVANT_PATH_RE = re.compile(
+    r"(?:^|/)(?:podcasts?|episodes?|support|kb|careers|jobs|login|signin|sign-in|signup|auth|sso|account/login)(?:/|$|\?)",
+    re.IGNORECASE,
+)
 NEWS_DUAL_SEARCH_CATEGORIES = {"price", "version", "company"}
 RECENT_NEWS_TIME_RANGE = "month"
 TAVILY_RETRY_DELAY_SECONDS = 1.0
@@ -211,21 +230,21 @@ PARALLEL_VERIFICATION_WORKERS = 3
 # Configurable map of entities/products/jurisdictions -> official primary domains.
 # Can be extended at runtime via ENTITY_DOMAIN_MAP (JSON object) in .env / environment.
 ENTITY_OFFICIAL_DOMAINS: dict[str, list[str]] = {
-    "openai": ["openai.com", "platform.openai.com", "help.openai.com"],
-    "gpt-4": ["openai.com", "platform.openai.com", "help.openai.com"],
-    "gpt-5": ["openai.com", "platform.openai.com", "help.openai.com"],
-    "chatgpt": ["openai.com", "help.openai.com"],
-    "apple": ["apple.com", "support.apple.com", "developer.apple.com"],
-    "iphone": ["apple.com", "support.apple.com"],
-    "ipad": ["apple.com", "support.apple.com"],
-    "macbook": ["apple.com", "support.apple.com"],
-    "ios": ["apple.com", "support.apple.com", "developer.apple.com"],
-    "macos": ["apple.com", "support.apple.com", "developer.apple.com"],
+    "openai": ["openai.com", "platform.openai.com"],
+    "gpt-4": ["openai.com", "platform.openai.com"],
+    "gpt-5": ["openai.com", "platform.openai.com"],
+    "chatgpt": ["openai.com"],
+    "apple": ["apple.com", "developer.apple.com"],
+    "iphone": ["apple.com"],
+    "ipad": ["apple.com"],
+    "macbook": ["apple.com"],
+    "ios": ["apple.com", "developer.apple.com"],
+    "macos": ["apple.com", "developer.apple.com"],
     "python": ["python.org", "docs.python.org", "peps.python.org", "pypi.org"],
     "pypi": ["pypi.org", "python.org"],
-    "anthropic": ["anthropic.com", "docs.anthropic.com", "support.anthropic.com"],
+    "anthropic": ["anthropic.com", "docs.anthropic.com"],
     "claude": ["anthropic.com", "docs.anthropic.com"],
-    "google": ["google.com", "ai.google.dev", "blog.google", "support.google.com"],
+    "google": ["google.com", "ai.google.dev", "blog.google"],
     "gemini": ["ai.google.dev", "gemini.google.com", "blog.google"],
     "android": ["android.com", "developer.android.com"],
     "microsoft": ["microsoft.com", "learn.microsoft.com"],
@@ -424,32 +443,52 @@ Given today's date, a specific factual claim from an older LLM answer, and live
 web search results (labeled [Primary], [News], [Blog], or [Forum]), determine
 whether the claim is still accurate today.
 
+CRITICAL EVIDENCE-ONLY RULES:
+- Use ONLY the provided live search snippets, titles, URLs, Published dates, and
+  deep-extracted source text below. NEVER use your own memory, prior training data,
+  or unstated assumptions.
+- If the provided snippets do NOT clearly confirm or contradict the claim, set
+  "evidence_stance" to "no_evidence" and "status" to "unverifiable". Never guess
+  or fall back on memory.
+- "outdated" is allowed ONLY when at least one relevant provided source explicitly
+  contradicts or supersedes the claim, supported by a verbatim "supporting_quote".
+- NEVER invent dates: "effective_date" and "stale_since" MUST come directly from
+  a provided source snippet or source Published date; otherwise set them to null.
+
 Return ONLY a valid JSON object (no markdown fences or extra commentary) with
 these exact keys:
+- "evidence_stance": Must be one of "supports", "contradicts", or "no_evidence".
+  * "supports": At least one provided source snippet/extract explicitly confirms the claim is accurate today.
+  * "contradicts": At least one provided source snippet/extract explicitly contradicts or supersedes the claim.
+  * "no_evidence": The provided snippets lack clear evidence confirming or refuting the claim.
+- "supporting_quote": Exact verbatim quote (maximum 25 words) copied directly from
+  one of the provided snippets or extracted source text that justifies "evidence_stance"
+  (or null if "no_evidence").
 - "status": Must be one of "fresh", "outdated", "uncertain", or "unverifiable".
-  * "fresh": The web results clearly confirm the claim is still accurate today.
-  * "outdated": The web results clearly show the claim is no longer accurate (e.g., new price,
-    newer software version, leadership change, new law, updated statistic).
-  * "uncertain": Credible sources conflict/disagree, or evidence is partial/ambiguous.
-  * "unverifiable": No credible or relevant evidence in the search results can confirm or refute
-    the claim. Never guess — choose "unverifiable" instead of guessing.
+  * If "evidence_stance" is "no_evidence", "status" MUST be "unverifiable".
+  * "fresh": Provided evidence clearly confirms the claim is accurate today.
+  * "outdated": Provided evidence clearly contradicts the claim (with a verbatim supporting_quote).
+  * "uncertain": Credible provided sources conflict/disagree, or evidence is partial/ambiguous.
+  * "unverifiable": No credible or relevant evidence in the provided snippets confirms or refutes the claim.
 - "score": An integer matching the status band, or null for "unverifiable":
   * 75 to 100 for "fresh"
   * 40 to 74 for "uncertain"
   * 0 to 39 for "outdated"
   * null for "unverifiable"
-- "agreeing_sources": An integer count (0 to N) of how many of the provided
-  search results support the same current fact stated in "current_info".
+- "agreeing_sources": An integer count (0 to N) of how many independent provided
+  domains support the same current fact stated in "current_info".
 - "conflicting_sources": Boolean (true/false) — true if retrieved credible sources
   actively contradict each other on the current fact (in which case set status="uncertain"
   and note "Sources disagree" in reason).
-- "current_info": A concise statement of the current, up-to-date facts found in
-  the search results (or state clearly that sources disagree / no reliable evidence was found).
-- "current_value": Short, exact current value/figure/name/rate today (string, or null if unknown/unverifiable; e.g., "5% and 18% (+ 40% demerit rate)", "$999 / iPhone 17 Pro").
-- "effective_date": When the current fact took effect (e.g., "2025-09-22" or "September 2025", or null if not stated in sources).
-- "change_summary": Brief delta describing what changed vs. the claim (e.g., "12% and 28% slabs removed, 40% added", or null if fresh/unverifiable).
-- "stale_since": Earliest date, month, or release when the claimed fact stopped being accurate (e.g., "2025-09-22" or "September 2025", or null if fresh/unknown).
-- "reason": A brief 1-2 sentence explanation comparing the claim to the live sources.
+- "current_info": A concise statement grounded strictly in the provided search results
+  (or state clearly that sources disagree / no reliable evidence was found).
+- "current_value": Short, exact current value/figure/name/rate from the snippets (string, or null if unknown/unverifiable).
+- "effective_date": When the current fact took effect, copied ONLY if stated in a provided
+  snippet or Published date (e.g., "2026-09-18" or "September 2026", or null if not stated in sources).
+- "change_summary": Brief delta grounded in snippets describing what changed vs. the claim (or null if fresh/unverifiable).
+- "stale_since": Earliest date/month found in a provided snippet or Published date when the claim
+  stopped being accurate (or null if fresh or not stated in any source).
+- "reason": A brief 1-2 sentence explanation comparing the claim strictly to the provided snippets.
 """
 
 REWRITE_SYSTEM_PROMPT = """You are a precise editor tasked with updating an AI-generated answer to reflect verified, current facts.
@@ -522,8 +561,11 @@ def _open_cache_db(path: str):
 
 
 def _build_cache_key(endpoint: str, params: dict) -> str:
-    """Build a deterministic SHA-256 key for a Tavily request payload."""
-    serialized = json.dumps({"endpoint": endpoint, "params": params}, sort_keys=True)
+    """Build a deterministic SHA-256 key (scoped by CACHE_VERSION) for a Tavily request."""
+    serialized = json.dumps(
+        {"cache_version": CACHE_VERSION, "endpoint": endpoint, "params": params},
+        sort_keys=True,
+    )
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
@@ -1102,6 +1144,239 @@ def _merge_search_results(
     return merged
 
 
+_SUPERLATIVE_CLAIM_RE = re.compile(
+    r"\b(?:latest|newest|flagship|current\s+flagship|current\s+stable|current\s+major|most\s+recent)\b",
+    re.IGNORECASE,
+)
+
+_PRODUCT_VERSION_ANCHOR_RE = re.compile(
+    r"\b("
+    r"iphone|ipad|macbook|imac|airpods|ios|ipados|macos|watchos|tvos|visionos|"
+    r"pixel|galaxy|android|windows|surface|switch|playstation|ps|xbox|"
+    r"gpt|claude|gemini|llama|mistral|python|react|next\.?js|node\.?js|typescript|"
+    r"golang|go|rust|cuda|pytorch|tensorflow"
+    r")[\s\-/]*(?:series[\s\-/]*)?([a-z]?\d+(?:\.\d+)?[a-z]?)\b",
+    re.IGNORECASE,
+)
+
+_VERSION_OR_PRODUCT_QUERY_RE = re.compile(
+    r"\b(?:"
+    r"iphone|ipad|macbook|imac|airpods|ios|ipados|macos|watchos|pixel|galaxy|"
+    r"android|windows|switch|playstation|xbox|gpt|claude|gemini|llama|python|"
+    r"react|next\.?js|node\.?js|go\s+\d|available|released|release|announced|"
+    r"launched|launch|version|flagship"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_GENERIC_ENTITY_SKIP = STOPWORDS | {
+    "latest", "newest", "version", "release", "series", "stable", "major",
+    "price", "pricing", "costs", "cost", "starts", "starting", "plan", "plans",
+    "available", "announced", "released", "launched", "official", "serving",
+    "chief", "executive", "officer", "ceo", "cfo", "cto", "president",
+    "company", "corporation", "inc", "currently", "today", "model", "models",
+    "flagship", "rate", "rates", "rule", "rules", "regime", "new", "old",
+    "percent", "million", "billion", "people", "world", "global", "report",
+    "according", "estimates", "approximately", "roughly", "around", "under",
+    "charges", "including", "main", "general", "update", "updated", "month",
+    "year", "us", "united", "states",
+}
+
+_DATE_ENRICH_MONTH_RE = re.compile(r"\b20\d{2}\b")
+
+
+def _enrich_search_query(
+    query: str,
+    claim: str = "",
+    category: str = "other",
+    today: date | None = None,
+) -> str:
+    """
+    Enrich Tavily queries for version/product claims with the current month/year
+    and freshness keywords ('announced', 'released', 'official').
+    """
+    base_query = " ".join(str(query or claim or "").split()).strip()
+    if not base_query:
+        return base_query
+
+    norm_cat = str(category or "other").strip().lower()
+    combined_ctx = f"{claim} {base_query}"
+    is_version_or_product = (
+        norm_cat == "version"
+        or bool(_PRODUCT_VERSION_ANCHOR_RE.search(combined_ctx))
+        or bool(_VERSION_OR_PRODUCT_QUERY_RE.search(combined_ctx))
+    )
+    if not is_version_or_product:
+        return base_query
+
+    ref_date = today or date.today()
+    lower_q = base_query.lower()
+    additions: list[str] = []
+
+    month_year = ref_date.strftime("%B %Y")
+    if month_year.lower() not in lower_q and not _DATE_ENRICH_MONTH_RE.search(lower_q):
+        additions.append(month_year)
+    for kw in ("announced", "released", "official"):
+        if kw not in lower_q:
+            additions.append(kw)
+
+    if not additions:
+        return base_query
+    enriched = f"{base_query} {' '.join(additions)}".strip()
+    return enriched[:220].rstrip()
+
+
+def _is_irrelevant_url(url: object) -> bool:
+    """
+    Return True for URLs on clearly non-authoritative/off-topic subdomains or
+    paths (podcasts.*, support.*, careers.*, login pages, etc.).
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        return False
+    parsed = urlparse(raw)
+    host = (parsed.netloc or "").split(":")[0].lower().strip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    path = (parsed.path or "").lower()
+
+    if host and host.startswith(IRRELEVANT_SUBDOMAIN_PREFIXES):
+        return True
+    if path and IRRELEVANT_PATH_RE.search(path):
+        return True
+    return False
+
+
+def _normalize_match_blob(text: object) -> str:
+    cleaned = re.sub(r"(?<=\d),(?=\d)", "", str(text or "").lower())
+    cleaned = re.sub(r"[-_/]+", " ", cleaned)
+    return " ".join(cleaned.split())
+
+
+def _extract_main_entity_constraint(
+    claim_text: str,
+    query_text: str = "",
+) -> tuple[list[re.Pattern], set[str]]:
+    """
+    Identify the claim's main entity anchor patterns/tokens that a live result
+    must mention to pass the evidence relevance gate.
+    """
+    raw_claim = " ".join(str(claim_text or "").split()).strip()
+    raw_query = " ".join(str(query_text or "").split()).strip()
+    anchor_source = raw_claim or raw_query
+    if not anchor_source:
+        return [], set()
+
+    is_superlative = bool(_SUPERLATIVE_CLAIM_RE.search(raw_claim))
+    phrase_patterns: list[re.Pattern] = []
+    any_tokens: set[str] = set()
+
+    # Specific product+version anchor (e.g. "iPhone 18" for "iPhone 18 Pro is available")
+    # unless the claim is comparing/asking for "latest" / "flagship".
+    if raw_claim and not is_superlative:
+        for match in _PRODUCT_VERSION_ANCHOR_RE.finditer(raw_claim):
+            base = match.group(1).lower().replace(".", "")
+            ver = match.group(2).lower()
+            pat = re.compile(
+                rf"(?<![a-z0-9]){re.escape(match.group(1).lower())}[\s\-/]+(?:series[\s\-/]+)?{re.escape(ver)}(?![a-z0-9])",
+                re.IGNORECASE,
+            )
+            phrase_patterns.append(pat)
+            if base == "nodejs":
+                phrase_patterns.append(
+                    re.compile(rf"(?<![a-z0-9])node(?:\.?\s*js)?[\s\-/]+{re.escape(ver)}(?![a-z0-9])", re.IGNORECASE)
+                )
+            elif base == "nextjs":
+                phrase_patterns.append(
+                    re.compile(rf"(?<![a-z0-9])next(?:\.?\s*js)?[\s\-/]+{re.escape(ver)}(?![a-z0-9])", re.IGNORECASE)
+                )
+        if phrase_patterns:
+            return phrase_patterns, set()
+
+    # Superlative / company / regulation / stat claims: require the core entity / brand / topic tokens.
+    domain_map = get_entity_official_domains_map()
+    lower_src = anchor_source.lower()
+    for ent_key in sorted(domain_map.keys(), key=len, reverse=True):
+        if re.search(rf"(?<![a-z0-9]){re.escape(ent_key)}(?![a-z0-9])", lower_src):
+            any_tokens.add(ent_key.lower())
+
+    # If the claim sentence omitted the entity name that appears in search_query (e.g. claim="API costs $10...", query="OpenAI API pricing"),
+    # include entity keys from search_query too.
+    if not any_tokens and raw_query:
+        lower_q = raw_query.lower()
+        for ent_key in sorted(domain_map.keys(), key=len, reverse=True):
+            if re.search(rf"(?<![a-z0-9]){re.escape(ent_key)}(?![a-z0-9])", lower_q):
+                any_tokens.add(ent_key.lower())
+
+    # If superlative mentions a product base like "iPhone", ensure that family word counts too.
+    if is_superlative:
+        for match in _PRODUCT_VERSION_ANCHOR_RE.finditer(raw_claim):
+            any_tokens.add(match.group(1).lower())
+
+    if not any_tokens:
+        raw_tokens = re.findall(r"[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*", anchor_source)
+        for tok in raw_tokens:
+            low = tok.lower()
+            if low in _GENERIC_ENTITY_SKIP:
+                continue
+            if len(low) >= 3 or (tok.isupper() and len(tok) >= 2):
+                any_tokens.add(low)
+
+    return phrase_patterns, any_tokens
+
+
+def _filter_relevant_results(
+    results: list[dict],
+    claim: str = "",
+    query: str = "",
+    min_score: float = MIN_TAVILY_RELEVANCE_SCORE,
+) -> list[dict]:
+    """
+    Evidence relevance gate applied after every Tavily search:
+    1. Drop clearly irrelevant URLs (podcasts.*, support.*, careers.*, login pages).
+    2. Drop results whose Tavily `score` (when provided) is below `min_score`.
+    3. Drop results that fail to mention the claim's main entity / topic tokens.
+    """
+    if not isinstance(results, list) or not results:
+        return []
+
+    phrase_patterns, any_tokens = _extract_main_entity_constraint(claim, query)
+    kept: list[dict] = []
+
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url", "")).strip()
+        if _is_irrelevant_url(url):
+            continue
+
+        raw_score = item.get("score")
+        if raw_score is not None and raw_score != "":
+            try:
+                if float(raw_score) < float(min_score):
+                    continue
+            except (TypeError, ValueError):
+                pass
+
+        blob_raw = f"{item.get('title', '')} {url} {item.get('content', '')} {item.get('raw_content', '')}"
+        blob_norm = _normalize_match_blob(blob_raw)
+
+        if phrase_patterns:
+            # All required specific product+version phrases (or at least one alias) must match.
+            if not any(pat.search(blob_raw) or pat.search(blob_norm) for pat in phrase_patterns):
+                continue
+        elif any_tokens:
+            if not any(
+                re.search(rf"(?<![a-z0-9]){re.escape(_normalize_match_blob(tok))}(?![a-z0-9])", blob_norm)
+                for tok in any_tokens
+            ):
+                continue
+
+        kept.append(item)
+
+    return kept
+
+
 def search_tavily_for_claim(
     query: str,
     category: str = "other",
@@ -1115,9 +1390,11 @@ def search_tavily_for_claim(
 ) -> dict:
     """
     Execute the evidence-strengthened Tavily search strategy for a claim:
-    - High-risk claims (regulation, price): search_depth="advanced"; others use "basic".
-    - Primary-source first: when the claim's entity maps to official domains, run
-      Search #1 restricted with include_domains=[...], then Search #2 general search.
+    - Enriches version/product queries with current month/year + release terms.
+    - Applies the evidence relevance gate after every search.
+    - Primary-source first: runs Search #1 restricted with include_domains, then Search #2 general.
+      If fewer than 2 relevant results remain after the primary-domain search, automatically runs
+      both a general search and a topic="news" search with a recent time_range, merging & deduping.
     - Fallback when no specific entity maps:
       * price / version / company -> topic="news" (recent time_range) + general
       * regulation -> official/gov include_domains with include_domains_mode="prefer"
@@ -1126,23 +1403,27 @@ def search_tavily_for_claim(
     normalized_cat = str(category or "other").strip().lower()
     effective_risk = risk_level or get_risk_level(normalized_cat)
     search_depth = "advanced" if effective_risk == "critical" else "basic"
+    effective_query = _enrich_search_query(query, claim=claim, category=normalized_cat)
 
     matched_entity_domains = resolve_entity_official_domains(
         f"{claim} {query}",
         entity_domains=entity_domains,
     )
 
-    # Strategy 0: Primary-source first (entity include_domains search + general search).
+    # Strategy 0: Primary-source first (entity include_domains search + general, plus news if <2 primary hits).
     if matched_entity_domains:
         primary_results: list[dict] = []
         general_results: list[dict] = []
+        news_results: list[dict] = []
         credits = 0.0
         errors: list[str] = []
         cache_hits: list[bool] = []
+        search_attempts = 0
 
         try:
-            primary_results, prim_credits, prim_hit = _run_cached_tavily_search(
-                query=query,
+            search_attempts += 1
+            raw_primary, prim_credits, prim_hit = _run_cached_tavily_search(
+                query=effective_query,
                 max_results=max_results,
                 search_depth=search_depth,
                 topic="general",
@@ -1151,14 +1432,16 @@ def search_tavily_for_claim(
                 use_cache=use_cache,
                 cache_path=cache_path,
             )
+            primary_results = _filter_relevant_results(raw_primary, claim=claim, query=query)
             credits += prim_credits
             cache_hits.append(prim_hit)
         except Exception as exc:
             errors.append(str(exc))
 
         try:
-            general_results, gen_credits, gen_hit = _run_cached_tavily_search(
-                query=query,
+            search_attempts += 1
+            raw_general, gen_credits, gen_hit = _run_cached_tavily_search(
+                query=effective_query,
                 max_results=max_results,
                 search_depth=search_depth,
                 topic="general",
@@ -1166,12 +1449,34 @@ def search_tavily_for_claim(
                 use_cache=use_cache,
                 cache_path=cache_path,
             )
+            general_results = _filter_relevant_results(raw_general, claim=claim, query=query)
             credits += gen_credits
             cache_hits.append(gen_hit)
         except Exception as exc:
             errors.append(str(exc))
 
-        if len(errors) == 2:
+        if len(primary_results) < 2 and not (
+            errors and any("invalid tavily api key" in e.lower() or "401" in e or "403" in e for e in errors)
+        ):
+            try:
+                search_attempts += 1
+                raw_news, news_credits, news_hit = _run_cached_tavily_search(
+                    query=effective_query,
+                    max_results=max_results,
+                    search_depth=search_depth,
+                    topic="news",
+                    time_range=RECENT_NEWS_TIME_RANGE,
+                    client=client,
+                    use_cache=use_cache,
+                    cache_path=cache_path,
+                )
+                news_results = _filter_relevant_results(raw_news, claim=claim, query=query)
+                credits += news_credits
+                cache_hits.append(news_hit)
+            except Exception as exc:
+                errors.append(str(exc))
+
+        if errors and len(errors) >= search_attempts:
             raise RuntimeError(errors[0])
 
         primary_urls = {
@@ -1179,35 +1484,46 @@ def search_tavily_for_claim(
             for r in primary_results
             if isinstance(r, dict) and str(r.get("url", "")).strip()
         }
-        # Keep top primary hits up front alongside independent general hits.
-        merged = _merge_search_results(
-            primary_results[:3] if len(general_results) > 0 else primary_results,
+        news_urls = {
+            str(r.get("url", "")).strip().rstrip("/").lower()
+            for r in news_results
+            if isinstance(r, dict) and str(r.get("url", "")).strip()
+        }
+        secondary_combined = _merge_search_results(
+            news_results,
             general_results,
+            limit=max_results * 2,
+            prioritize_primary=False,
+        )
+        merged = _merge_search_results(
+            primary_results[:3] if secondary_combined else primary_results,
+            secondary_combined,
             limit=max_results,
             prioritize_primary=True,
         )
+        strategy_suffix = f" + news ({RECENT_NEWS_TIME_RANGE})" if news_results or len(primary_results) < 2 else ""
         return {
             "results": merged,
             "credits_used": credits,
             "cache_hit": bool(cache_hits) and all(cache_hits) and not errors,
-            "strategy": f"primary-first ({len(matched_entity_domains)} domains) + general [{search_depth}]",
+            "strategy": f"primary-first ({len(matched_entity_domains)} domains) + general{strategy_suffix} [{search_depth}]",
             "partial_error": errors[0] if errors else None,
             "entity_domains": matched_entity_domains,
             "primary_urls": primary_urls,
-            "news_urls": set(),
+            "news_urls": news_urls,
         }
 
     # Strategy 1 (fallback without entity match): price/version/company -> news + general.
     if normalized_cat in NEWS_DUAL_SEARCH_CATEGORIES:
-        news_results: list[dict] = []
+        news_results = []
         general_results = []
         credits = 0.0
         errors = []
         cache_hits = []
 
         try:
-            news_results, news_credits, news_hit = _run_cached_tavily_search(
-                query=query,
+            raw_news, news_credits, news_hit = _run_cached_tavily_search(
+                query=effective_query,
                 max_results=max_results,
                 search_depth=search_depth,
                 topic="news",
@@ -1216,14 +1532,15 @@ def search_tavily_for_claim(
                 use_cache=use_cache,
                 cache_path=cache_path,
             )
+            news_results = _filter_relevant_results(raw_news, claim=claim, query=query)
             credits += news_credits
             cache_hits.append(news_hit)
         except Exception as exc:
             errors.append(str(exc))
 
         try:
-            general_results, gen_credits, gen_hit = _run_cached_tavily_search(
-                query=query,
+            raw_general, gen_credits, gen_hit = _run_cached_tavily_search(
+                query=effective_query,
                 max_results=max_results,
                 search_depth=search_depth,
                 topic="general",
@@ -1231,6 +1548,7 @@ def search_tavily_for_claim(
                 use_cache=use_cache,
                 cache_path=cache_path,
             )
+            general_results = _filter_relevant_results(raw_general, claim=claim, query=query)
             credits += gen_credits
             cache_hits.append(gen_hit)
         except Exception as exc:
@@ -1258,8 +1576,8 @@ def search_tavily_for_claim(
 
     # Strategy 2 (fallback without entity match): Regulations -> prefer official/gov domains.
     if normalized_cat == "regulation":
-        results, credits, hit = _run_cached_tavily_search(
-            query=query,
+        raw_results, credits, hit = _run_cached_tavily_search(
+            query=effective_query,
             max_results=max_results,
             search_depth=search_depth,
             topic="general",
@@ -1269,6 +1587,7 @@ def search_tavily_for_claim(
             use_cache=use_cache,
             cache_path=cache_path,
         )
+        results = _filter_relevant_results(raw_results, claim=claim, query=query)
         return {
             "results": results,
             "credits_used": credits,
@@ -1281,8 +1600,8 @@ def search_tavily_for_claim(
         }
 
     # Strategy 3: General / statistic / other -> standard basic search.
-    results, credits, hit = _run_cached_tavily_search(
-        query=query,
+    raw_results, credits, hit = _run_cached_tavily_search(
+        query=effective_query,
         max_results=max_results,
         search_depth=search_depth,
         topic="general",
@@ -1290,6 +1609,7 @@ def search_tavily_for_claim(
         use_cache=use_cache,
         cache_path=cache_path,
     )
+    results = _filter_relevant_results(raw_results, claim=claim, query=query)
     return {
         "results": results,
         "credits_used": credits,
@@ -1731,6 +2051,9 @@ def _format_search_results(
     return "\n\n".join(formatted_blocks)
 
 
+VALID_EVIDENCE_STANCES = {"supports", "contradicts", "no_evidence"}
+
+
 def _normalize_optional_text(value: object) -> str | None:
     """Normalize an optional structured verifier field, turning blanks/'null'/'none' into None."""
     if value is None:
@@ -1741,18 +2064,42 @@ def _normalize_optional_text(value: object) -> str | None:
     return text
 
 
+def _truncate_quote_words(text: object, max_words: int = MAX_SNIPPET_WORDS) -> str | None:
+    """Trim a supporting quote cleanly to at most `max_words` words without adding ellipsis."""
+    cleaned = _normalize_optional_text(text)
+    if not cleaned:
+        return None
+    words = cleaned.split()
+    if len(words) <= max_words:
+        return cleaned
+    return " ".join(words[:max_words])
+
+
 def _normalize_judgement(parsed: object) -> dict:
     """
-    Validate and normalize the LLM's freshness judgement JSON, enforcing status
-    score bands and extracting structured change metadata.
+    Validate and normalize the LLM's freshness judgement JSON, enforcing evidence_stance,
+    supporting_quote <= 25 words, status score bands, and structured change metadata.
     """
     if not isinstance(parsed, dict):
         raise ValueError(
             f"Expected a JSON object for freshness judgement, got {type(parsed).__name__}."
         )
 
+    raw_stance = str(parsed.get("evidence_stance") or "").strip().lower()
+    evidence_stance = raw_stance if raw_stance in VALID_EVIDENCE_STANCES else None
+
     raw_status = str(parsed.get("status", "uncertain")).strip().lower()
     status = raw_status if raw_status in VALID_STATUSES else "uncertain"
+
+    supporting_quote = _truncate_quote_words(parsed.get("supporting_quote"), max_words=MAX_SNIPPET_WORDS)
+
+    # Requirement 2: If evidence_stance is no_evidence, status MUST be "unverifiable".
+    if evidence_stance == "no_evidence":
+        status = "unverifiable"
+        supporting_quote = None
+    elif evidence_stance is None and status == "unverifiable":
+        evidence_stance = "no_evidence"
+        supporting_quote = None
 
     # Unverifiable claims carry no numeric score (rendered as N/A).
     if status == "unverifiable":
@@ -1811,6 +2158,8 @@ def _normalize_judgement(parsed: object) -> dict:
     return {
         "status": status,
         "score": score,
+        "evidence_stance": evidence_stance,
+        "supporting_quote": supporting_quote,
         "agreeing_sources": agreeing_sources,
         "conflicting_sources": conflicting_sources,
         "current_info": current_info,
@@ -1982,6 +2331,260 @@ def _blob_contains_token(blob_normalized: str, tok: str) -> bool:
     return bool(re.search(rf"(?<![a-z0-9]){re.escape(tok)}(?![a-z0-9])", blob_normalized))
 
 
+_MONTH_NAMES_RE = (
+    r"(?:January|February|March|April|May|June|July|August|September|October|November|December"
+    r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+)
+
+
+def _parse_month_name(name: str) -> int | None:
+    clean = str(name or "").strip().rstrip(".").lower()
+    if clean == "sept":
+        clean = "sep"
+    for fmt in ("%B", "%b"):
+        try:
+            return datetime.strptime(clean, fmt).month
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_flexible_date_precision(raw_value: object) -> tuple[date, bool] | None:
+    """Parse a date string into `(date, has_explicit_day)`."""
+    parsed = _parse_published_date(raw_value)
+    if parsed is not None:
+        return parsed, True
+
+    text = _normalize_optional_text(raw_value)
+    if not text:
+        return None
+
+    m_day_first = re.search(rf"\b(\d{{1,2}})\s+({_MONTH_NAMES_RE})\.?\s+(20\d{{2}})\b", text, re.IGNORECASE)
+    if m_day_first:
+        month_num = _parse_month_name(m_day_first.group(2))
+        if month_num:
+            try:
+                return date(int(m_day_first.group(3)), month_num, int(m_day_first.group(1))), True
+            except ValueError:
+                pass
+
+    m_month_day = re.search(rf"\b({_MONTH_NAMES_RE})\.?\s+(\d{{1,2}}),?\s+(20\d{{2}})\b", text, re.IGNORECASE)
+    if m_month_day:
+        month_num = _parse_month_name(m_month_day.group(1))
+        if month_num:
+            try:
+                return date(int(m_month_day.group(3)), month_num, int(m_month_day.group(2))), True
+            except ValueError:
+                pass
+
+    for fmt in ("%Y-%m", "%Y/%m", "%B %Y", "%b %Y"):
+        try:
+            return datetime.strptime(text, fmt).date(), False
+        except ValueError:
+            continue
+
+    m_mon_yr = re.search(rf"\b({_MONTH_NAMES_RE})\.?\s+(20\d{{2}})\b", text, re.IGNORECASE)
+    if m_mon_yr:
+        month_num = _parse_month_name(m_mon_yr.group(1))
+        if month_num:
+            try:
+                return date(int(m_mon_yr.group(2)), month_num, 1), False
+            except ValueError:
+                pass
+
+    return None
+
+
+def _extract_text_date_mentions(text: str) -> list[tuple[int, int, int | None]]:
+    """Extract explicit calendar dates `(year, month, day_or_None)` mentioned in prose."""
+    if not text:
+        return []
+    mentions: list[tuple[int, int, int | None]] = []
+
+    for m in re.finditer(r"\b(19\d{2}|20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", text):
+        try:
+            d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            mentions.append((d.year, d.month, d.day))
+        except ValueError:
+            continue
+
+    for m in re.finditer(r"\b(19\d{2}|20\d{2})[-/](\d{1,2})(?![-/]\d)\b", text):
+        yr, mo = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12:
+            mentions.append((yr, mo, None))
+
+    for m in re.finditer(rf"\b(\d{{1,2}})\s+({_MONTH_NAMES_RE})\.?\s+(19\d{{2}}|20\d{{2}})\b", text, re.IGNORECASE):
+        mo = _parse_month_name(m.group(2))
+        if mo:
+            try:
+                d = date(int(m.group(3)), mo, int(m.group(1)))
+                mentions.append((d.year, d.month, d.day))
+            except ValueError:
+                pass
+
+    for m in re.finditer(rf"\b({_MONTH_NAMES_RE})\.?\s+(\d{{1,2}}),?\s+(19\d{{2}}|20\d{{2}})\b", text, re.IGNORECASE):
+        mo = _parse_month_name(m.group(1))
+        if mo:
+            try:
+                d = date(int(m.group(3)), mo, int(m.group(2)))
+                mentions.append((d.year, d.month, d.day))
+            except ValueError:
+                pass
+
+    for m in re.finditer(rf"\b({_MONTH_NAMES_RE})\.?\s+(19\d{{2}}|20\d{{2}})\b", text, re.IGNORECASE):
+        mo = _parse_month_name(m.group(1))
+        if mo:
+            mentions.append((int(m.group(2)), mo, None))
+
+    return mentions
+
+
+def _is_date_grounded_in_sources(
+    date_str: object,
+    search_results: list[dict],
+    extracted_content: str = "",
+) -> bool:
+    """
+    Requirement 4: Return True only when `date_str` actually appears in a relevant
+    source snippet, extracted source text, or source `published_date`.
+    """
+    raw = _normalize_optional_text(date_str)
+    if not raw or not search_results:
+        return False
+
+    pub_dates: list[date] = []
+    pub_raw_strs: list[str] = []
+    evidence_parts: list[str] = []
+
+    for r in search_results:
+        if not isinstance(r, dict):
+            continue
+        raw_pub = _normalize_optional_text(r.get("published_date"))
+        if raw_pub:
+            pub_raw_strs.append(raw_pub.lower())
+            p = _parse_published_date(raw_pub)
+            if p is not None:
+                pub_dates.append(p)
+        for fld in ("title", "content", "raw_content"):
+            val = str(r.get(fld) or "").strip()
+            if val:
+                evidence_parts.append(val)
+
+    if str(extracted_content or "").strip():
+        evidence_parts.append(str(extracted_content).strip())
+
+    # Fast gate: if neither any published_date nor any text exists, nothing can be grounded.
+    if not pub_dates and not pub_raw_strs and not evidence_parts:
+        return False
+
+    evidence_text = " \n ".join(evidence_parts)
+    evidence_norm = " ".join(evidence_text.lower().split())
+    raw_low = raw.lower()
+
+    if raw_low in evidence_norm:
+        return True
+    if any(raw_low in p_str for p_str in pub_raw_strs):
+        return True
+
+    parsed_info = _parse_flexible_date_precision(raw)
+    if parsed_info is None:
+        return False
+
+    target_date, has_explicit_day = parsed_info
+    text_mentions = _extract_text_date_mentions(evidence_text)
+
+    if has_explicit_day:
+        if any(p == target_date for p in pub_dates):
+            return True
+        if any(yr == target_date.year and mo == target_date.month and dy == target_date.day for yr, mo, dy in text_mentions):
+            return True
+        return False
+
+    # Month-year string (e.g. "September 2025"): must match a month in published_date or snippet text.
+    if any(p.year == target_date.year and p.month == target_date.month for p in pub_dates):
+        return True
+    if any(yr == target_date.year and mo == target_date.month for yr, mo, _ in text_mentions):
+        return True
+    return False
+
+
+_NON_EVIDENCE_QUOTE_RE = re.compile(
+    r"^(?:no evidence|none|n/a|na|unknown|not mentioned|no relevant|cannot verify)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_quote_grounded_in_evidence(
+    quote: object,
+    search_results: list[dict],
+    extracted_content: str = "",
+) -> bool:
+    """
+    Verify that `supporting_quote` is actually copied from a retrieved relevant snippet
+    or extracted source page (never hallucinated from the LLM's memory).
+    """
+    raw = _normalize_optional_text(quote)
+    if not raw or not search_results:
+        return False
+
+    stripped = raw.strip(" \"'“”`.,;:")
+    stripped = re.sub(r"\.{3,}$", "", stripped).strip()
+    if len(stripped) < 4 or _NON_EVIDENCE_QUOTE_RE.match(stripped):
+        return False
+
+    q_norm = re.sub(r"\s+", " ", stripped.lower()).strip()
+    q_words = re.findall(r"[a-z0-9]+(?:[.'-][a-z0-9]+)*", q_norm)
+
+    candidate_texts: list[str] = []
+    for r in search_results:
+        if not isinstance(r, dict):
+            continue
+        combined = " ".join(
+            str(r.get(k) or "").strip()
+            for k in ("title", "content", "raw_content")
+            if str(r.get(k) or "").strip()
+        )
+        if combined:
+            candidate_texts.append(combined)
+    if str(extracted_content or "").strip():
+        candidate_texts.append(str(extracted_content).strip())
+
+    for src_text in candidate_texts:
+        src_norm = re.sub(r"\s+", " ", src_text.lower()).strip()
+        if q_norm in src_norm:
+            return True
+        if len(q_words) >= 3:
+            src_words = re.findall(r"[a-z0-9]+(?:[.'-][a-z0-9]+)*", src_norm)
+            if not src_words:
+                continue
+            window_min = min(len(q_words), max(3, int(len(q_words) * 0.8)))
+            # Check if an ordered contiguous window of the quote appears verbatim in src_words.
+            for start_i in range(0, len(q_words) - window_min + 1):
+                sub = q_words[start_i : start_i + window_min]
+                for j in range(0, len(src_words) - window_min + 1):
+                    if src_words[j : j + window_min] == sub:
+                        return True
+    return False
+
+
+def _has_contradicting_relevant_source(
+    judgement: dict,
+    search_results: list[dict],
+    extracted_content: str = "",
+) -> bool:
+    """
+    Requirement 3: Status 'outdated' is allowed ONLY when at least one relevant source
+    explicitly contradicts the claim (evidence_stance == 'contradicts' with a grounded quote).
+    """
+    if not search_results:
+        return False
+    stance = str(judgement.get("evidence_stance") or "").strip().lower()
+    if stance != "contradicts":
+        return False
+    quote = judgement.get("supporting_quote")
+    return _is_quote_grounded_in_evidence(quote, search_results, extracted_content)
+
+
 def estimate_stale_since_from_sources(
     status: str,
     claim_text: str,
@@ -1993,13 +2596,12 @@ def estimate_stale_since_from_sources(
     llm_stale_since: str | None = None,
     agreeing_indices: list[int] | None = None,
     today: date | None = None,
+    extracted_content: str = "",
 ) -> tuple[str | None, int | None, str | None]:
     """
-    Estimate when an outdated fact changed using the earliest dated source about the change,
-    and compute an approximate duration label such as 'stale for ~6 months'.
-
-    Returns:
-        Tuple (stale_since_label, stale_for_months, stale_duration_label).
+    Estimate when an outdated fact changed using the earliest dated source or grounded
+    date in retrieved snippets/extract, and compute duration e.g. 'stale for ~6 months'.
+    Never invents dates when no dated source or grounded snippet date exists.
     """
     if str(status or "").strip().lower() != "outdated":
         return None, None, None
@@ -2065,8 +2667,15 @@ def estimate_stale_since_from_sources(
 
     clean_llm_stale = _normalize_optional_text(llm_stale_since)
     clean_eff = _normalize_optional_text(effective_date)
-    parsed_llm_stale = _parse_flexible_date(clean_llm_stale)
-    parsed_eff = _parse_flexible_date(clean_eff)
+
+    # Requirement 4: Reject any LLM stale_since / effective_date not grounded in snippets or published_date.
+    if clean_llm_stale and not _is_date_grounded_in_sources(clean_llm_stale, search_results, extracted_content):
+        clean_llm_stale = None
+    if clean_eff and not _is_date_grounded_in_sources(clean_eff, search_results, extracted_content):
+        clean_eff = None
+
+    parsed_llm_stale = _parse_flexible_date(clean_llm_stale) if clean_llm_stale else None
+    parsed_eff = _parse_flexible_date(clean_eff) if clean_eff else None
 
     resolved_date: date | None = None
     resolved_label: str | None = None
@@ -2103,8 +2712,8 @@ def estimate_stale_since_from_sources(
         resolved_date = parsed_eff
         resolved_label = clean_eff
     else:
-        resolved_label = clean_llm_stale or clean_eff
-        return resolved_label, None, None
+        # No dated source and no grounded snippet date -> hide stale_since cleanly.
+        return None, None, None
 
     delta_days = max(0, (reference_date - resolved_date).days)
     approx_months = max(0, round(delta_days / 30.4375))
@@ -2434,6 +3043,7 @@ def _detect_source_disagreement(
     independent_sources_cnt: int,
     llm_agreeing_count: int | None,
     llm_conflicting: bool,
+    independent_agreeing_cnt: int | None = None,
 ) -> bool:
     """
     Detect explicit source conflict either from LLM signals/text or when independent
@@ -2448,13 +3058,15 @@ def _detect_source_disagreement(
         return True
 
     total = len(search_results)
-    if (
-        llm_agreeing_count is not None
-        and total >= 2
-        and independent_sources_cnt >= 2
-        and 1 <= agreeing_cnt
-        and agreeing_cnt / total <= 0.5
-    ):
+    eff_ind_agree = (
+        independent_agreeing_cnt if independent_agreeing_cnt is not None else agreeing_cnt
+    )
+    is_split = (
+        independent_sources_cnt >= 2
+        and 1 <= eff_ind_agree
+        and (eff_ind_agree / independent_sources_cnt) <= 0.5
+    )
+    if (llm_agreeing_count is not None or agreeing_cnt >= 1) and total >= 2 and is_split:
         agreeing_domains = {
             _extract_independent_domain(search_results[i].get("url"))
             for i in agreeing_indices
@@ -2495,11 +3107,12 @@ def compute_freshness_score(
     reason: str = "",
     llm_conflicting: bool = False,
     entity_domains: list[str] | None = None,
+    enforce_low_confidence_score_cap: bool = False,
 ) -> dict:
     """
     Compute the status-banded freshness score (0-100 or None for unverifiable),
     the 'evidence_strength' breakdown dict, explanation, conflict state,
-    agreement counts, and calibrated confidence.
+    domain-deduplicated agreement counts, and calibrated confidence.
 
     Evidence-strength signals inform the breakdown and fine position within the
     claim's status band, but NEVER push a score outside its status band:
@@ -2507,6 +3120,9 @@ def compute_freshness_score(
     - uncertain: 40-74
     - outdated: 0-39
     - unverifiable: None (N/A)
+
+    When `enforce_low_confidence_score_cap=True`, low-confidence scorable claims
+    cannot produce a score below 40 or above 74 (clamped into [40, 74]).
     """
     normalized_status = str(status or "uncertain").strip().lower()
     if normalized_status not in VALID_STATUSES:
@@ -2521,16 +3137,12 @@ def compute_freshness_score(
         authority_score, authority_detail = _score_source_authority(
             search_results, entity_domains=entity_domains
         )
-        evidence_strength = round(
-            0.40 * recency_score + 0.40 * agreement_score + 0.20 * authority_score
-        )
     else:
         recency_score, recency_detail = 50, "No source URLs available (neutral 50/100)"
         agreement_score, agreement_detail, agreeing_cnt = 0, "0/0 sources available", 0
         authority_score, authority_detail = 50, "No source URLs available (neutral 50/100)"
-        evidence_strength = 0
 
-    # Deduplicate independent domains across all sources and across agreeing sources.
+    # Deduplicate independent registered domains across all relevant sources and agreeing sources.
     all_independent_domains = {
         _extract_independent_domain(r.get("url"))
         for r in search_results
@@ -2545,7 +3157,30 @@ def compute_freshness_score(
     else:
         matched_set = _matching_result_indices(current_info, search_results)
         ordered_indices = matched_set + [i for i in range(total) if i not in matched_set]
-        agreeing_indices = ordered_indices[:agreeing_cnt]
+        # Select across distinct independent registered domains first so multiple pages
+        # on the same domain (e.g. apple.com/macbook-air + apple.com/macbook-air/compare)
+        # do not crowd out other confirming independent domains.
+        agreeing_indices = []
+        seen_agreeing_domains: set[str] = set()
+        for idx in ordered_indices:
+            dom = (
+                _extract_independent_domain(search_results[idx].get("url"))
+                if isinstance(search_results[idx], dict)
+                else ""
+            )
+            if dom and dom in seen_agreeing_domains:
+                continue
+            agreeing_indices.append(idx)
+            if dom:
+                seen_agreeing_domains.add(dom)
+            if len(agreeing_indices) >= agreeing_cnt:
+                break
+        if len(agreeing_indices) < agreeing_cnt:
+            for idx in ordered_indices:
+                if idx not in agreeing_indices:
+                    agreeing_indices.append(idx)
+                    if len(agreeing_indices) >= agreeing_cnt:
+                        break
 
     agreeing_results = [
         search_results[i]
@@ -2563,7 +3198,26 @@ def compute_freshness_score(
         for r in agreeing_results
     )
 
-    agreement_summary = f"{agreeing_cnt} of {total} sources agree"
+    # Requirement 6: "N of M independent sources agree" counts only relevant results, one per registered domain.
+    if independent_sources_cnt > 0:
+        reported_total = independent_sources_cnt
+        reported_agreeing = min(independent_agreeing_cnt, independent_sources_cnt)
+        agreement_score = round((reported_agreeing / reported_total) * 100)
+        agreement_detail = (
+            f"{reported_agreeing}/{reported_total} independent sources support the same current fact"
+        )
+    else:
+        reported_total = total
+        reported_agreeing = agreeing_cnt
+
+    if search_results:
+        evidence_strength = round(
+            0.40 * recency_score + 0.40 * agreement_score + 0.20 * authority_score
+        )
+    else:
+        evidence_strength = 0
+
+    agreement_summary = f"{reported_agreeing} of {reported_total} independent sources agree"
     conflict_detected = _detect_source_disagreement(
         normalized_status=normalized_status,
         current_info=current_info,
@@ -2574,6 +3228,7 @@ def compute_freshness_score(
         independent_sources_cnt=independent_sources_cnt,
         llm_agreeing_count=llm_agreeing_count,
         llm_conflicting=llm_conflicting,
+        independent_agreeing_cnt=reported_agreeing,
     )
 
     effective_status = normalized_status
@@ -2586,7 +3241,7 @@ def compute_freshness_score(
             "Marked Uncertain pending clearer evidence."
         )
 
-    has_confidence_conflict = conflict_detected or (total >= 2 and agreement_score <= 50)
+    has_confidence_conflict = conflict_detected or (reported_total >= 2 and agreement_score <= 50)
 
     if effective_status == "unverifiable":
         clamped_llm = 0
@@ -2632,6 +3287,28 @@ def compute_freshness_score(
         else:
             llm_detail = f"LLM judged '{effective_status}' ({clamped_llm}/100)"
 
+    confidence = get_confidence_level(
+        status=effective_status,
+        total_sources=reported_total,
+        agreement_score=agreement_score,
+        authority_score=authority_score,
+        independent_sources=independent_sources_cnt,
+        independent_agreeing_sources=independent_agreeing_cnt,
+        has_authoritative_source=has_auth_agreeing,
+        has_conflict=has_confidence_conflict,
+    )
+
+    low_conf_clamped = False
+    if (
+        enforce_low_confidence_score_cap
+        and confidence == "low"
+        and effective_status != "unverifiable"
+        and final_score is not None
+        and (final_score < 40 or final_score > 74)
+    ):
+        final_score = max(40, min(74, final_score))
+        low_conf_clamped = True
+
     score_breakdown = {
         "llm_verdict": {
             "score": clamped_llm,
@@ -2663,43 +3340,35 @@ def compute_freshness_score(
         "final_score": final_score,
     }
 
+    low_conf_note = " Low-confidence safeguard keeps score within 40-74." if low_conf_clamped else ""
     if final_score is None:
         why_this_score = (
-            f"Score N/A (unverifiable): {agreeing_cnt}/{total} sources checked "
+            f"Score N/A (unverifiable): {reported_agreeing}/{reported_total} independent sources checked "
             f"(evidence strength {evidence_strength}/100)."
         )
     elif conflict_detected:
         why_this_score = (
             f"Score {final_score}/100 ({effective_status} band {status_band}): "
-            f"Sources disagree ({agreement_summary}, {independent_sources_cnt} independent domain(s)); "
+            f"Sources disagree ({agreement_summary}); "
             f"evidence strength {evidence_strength}/100 (recency {recency_score}/100, authority {authority_score}/100)."
+            f"{low_conf_note}"
         )
     elif effective_status == "outdated":
         why_this_score = (
             f"Score {final_score}/100 ({effective_status} band {status_band}): "
             f"Claim is refuted — LLM judged '{effective_status}' ({clamped_llm}/100), and "
-            f"{agreeing_cnt}/{total} sources ({independent_agreeing_cnt} independent domain(s); "
-            f"evidence strength {evidence_strength}/100, recency {recency_score}/100, authority {authority_score}/100) "
-            f"confirm the claim is outdated."
+            f"{reported_agreeing}/{reported_total} independent source(s) "
+            f"(evidence strength {evidence_strength}/100, recency {recency_score}/100, authority {authority_score}/100) "
+            f"confirm the claim is outdated.{low_conf_note}"
         )
     else:
         why_this_score = (
             f"Score {final_score}/100 ({effective_status} band {status_band}): "
             f"LLM judged '{effective_status}' ({clamped_llm}/100), "
-            f"{agreeing_cnt}/{total} sources ({independent_agreeing_cnt} independent domain(s)) agree, "
+            f"{agreement_summary}, "
             f"evidence strength {evidence_strength}/100 (recency {recency_score}/100, authority {authority_score}/100)."
+            f"{low_conf_note}"
         )
-
-    confidence = get_confidence_level(
-        status=effective_status,
-        total_sources=total,
-        agreement_score=agreement_score,
-        authority_score=authority_score,
-        independent_sources=independent_sources_cnt,
-        independent_agreeing_sources=independent_agreeing_cnt,
-        has_authoritative_source=has_auth_agreeing,
-        has_conflict=has_confidence_conflict,
-    )
 
     return {
         "score": final_score,
@@ -2707,8 +3376,8 @@ def compute_freshness_score(
         "score_breakdown": score_breakdown,
         "why_this_score": why_this_score,
         "confidence": confidence,
-        "sources_agreeing": agreeing_cnt,
-        "sources_total": total,
+        "sources_agreeing": reported_agreeing,
+        "sources_total": reported_total,
         "agreement_summary": agreement_summary,
         "agreeing_indices": agreeing_indices,
         "conflict_detected": conflict_detected,
@@ -2939,7 +3608,9 @@ def verify_claim(
             "entity_domains": matched_entity_domains,
             "sources_agreeing": 0,
             "sources_total": 0,
-            "agreement_summary": "0 of 0 sources agree",
+            "agreement_summary": "0 of 0 independent sources agree",
+            "evidence_stance": "no_evidence",
+            "supporting_quote": None,
             "conflict_detected": False,
             "conflict_note": None,
             "dual_judge_used": bool(dual_judge),
@@ -2955,7 +3626,11 @@ def verify_claim(
             "error": friendly_tavily_err,
         }
 
-    search_results = search_meta["results"]
+    search_results = _filter_relevant_results(
+        search_meta.get("results") or [],
+        claim=claim_text,
+        query=search_query,
+    )
     total_credits = float(search_meta["credits_used"])
     search_cache_hit = bool(search_meta["cache_hit"])
     search_strategy = search_meta["strategy"]
@@ -2978,7 +3653,7 @@ def verify_claim(
             agreement_score=0,
             authority_score=50,
             authority_detail="No search results returned",
-            error_note="0 results returned (unverifiable)",
+            error_note="0 relevant results returned (unverifiable)",
             status="unverifiable",
         )
         return {
@@ -2989,7 +3664,7 @@ def verify_claim(
             "status": "unverifiable",
             "score": score,
             "score_breakdown": breakdown,
-            "why_this_score": "Score N/A (unverifiable): Tavily returned 0 results to confirm or refute this claim.",
+            "why_this_score": "Score N/A (unverifiable): No relevant live sources remained after relevance filtering.",
             "confidence": "low",
             "risk_level": risk_level,
             "current_info": "No relevant live search results were found.",
@@ -2999,12 +3674,14 @@ def verify_claim(
             "stale_since": None,
             "stale_for_months": None,
             "stale_duration_label": None,
-            "reason": "Tavily returned 0 results for this search query.",
+            "reason": "No relevant web search results were found for this claim.",
             "sources": [],
             "entity_domains": resolved_entity_domains,
             "sources_agreeing": 0,
             "sources_total": 0,
-            "agreement_summary": "0 of 0 sources agree",
+            "agreement_summary": "0 of 0 independent sources agree",
+            "evidence_stance": "no_evidence",
+            "supporting_quote": None,
             "conflict_detected": False,
             "conflict_note": None,
             "dual_judge_used": bool(dual_judge),
@@ -3017,6 +3694,7 @@ def verify_claim(
             "cache_hit": search_cache_hit,
             "search_strategy": search_strategy,
             "extracted_url": None,
+            "search_warning": search_meta.get("partial_error"),
         }
 
     # Step 2: Run Tavily Extract on the single best source URL to confirm exact figures.
@@ -3047,6 +3725,15 @@ def verify_claim(
         if isinstance(r, dict)
     ) or bool(str(extract_info.get("content", "")).strip())
 
+    ind_domain_count = len(
+        {
+            _extract_independent_domain(r.get("url"))
+            for r in search_results
+            if isinstance(r, dict) and _extract_independent_domain(r.get("url"))
+        }
+    )
+    reported_source_total = ind_domain_count if ind_domain_count > 0 else len(search_results)
+
     if not has_usable_snippet:
         rec_score, rec_detail = _score_source_recency(search_results, today=date.today())
         auth_score, auth_detail = _score_source_authority(
@@ -3062,7 +3749,6 @@ def verify_claim(
             error_note="Sources had no readable excerpt (unverifiable)",
             status="unverifiable",
         )
-        total_cnt = len(search_results)
         return {
             "claim": claim_text,
             "span": span_text,
@@ -3085,8 +3771,10 @@ def verify_claim(
             "sources": top_sources,
             "entity_domains": resolved_entity_domains,
             "sources_agreeing": 0,
-            "sources_total": total_cnt,
-            "agreement_summary": f"0 of {total_cnt} sources agree",
+            "sources_total": reported_source_total,
+            "agreement_summary": f"0 of {reported_source_total} independent sources agree",
+            "evidence_stance": "no_evidence",
+            "supporting_quote": None,
             "conflict_detected": False,
             "conflict_note": None,
             "dual_judge_used": bool(dual_judge),
@@ -3111,11 +3799,12 @@ def verify_claim(
         primary_urls=primary_urls,
         news_urls=news_urls,
     )
+    extracted_content_text = str(extract_info.get("content") or "")
     extracted_section = ""
-    if extract_info.get("content"):
+    if extracted_content_text:
         extracted_section = (
             f"\n\nDeep-extracted content from best source ({extract_info['url']}) "
-            f"to confirm exact figures:\n{extract_info['content']}"
+            f"to confirm exact figures:\n{extracted_content_text}"
         )
 
     user_prompt = (
@@ -3156,7 +3845,6 @@ def verify_claim(
                 error_note="LLM evaluation failed (neutral 50/100)",
                 status="uncertain",
             )
-            total_cnt = len(search_results)
             return {
                 "claim": claim_text,
                 "span": span_text,
@@ -3179,8 +3867,10 @@ def verify_claim(
                 "sources": top_sources,
                 "entity_domains": resolved_entity_domains,
                 "sources_agreeing": 0,
-                "sources_total": total_cnt,
-                "agreement_summary": f"0 of {total_cnt} sources agree",
+                "sources_total": reported_source_total,
+                "agreement_summary": f"0 of {reported_source_total} independent sources agree",
+                "evidence_stance": None,
+                "supporting_quote": None,
                 "conflict_detected": False,
                 "conflict_note": None,
                 "dual_judge_used": False,
@@ -3207,6 +3897,8 @@ def verify_claim(
                     "model": model_used,
                     "status": judgement["status"],
                     "score": judgement["score"],
+                    "evidence_stance": judgement.get("evidence_stance"),
+                    "supporting_quote": judgement.get("supporting_quote"),
                     "current_info": judgement["current_info"],
                     "reason": judgement["reason"],
                 }
@@ -3268,7 +3960,6 @@ def verify_claim(
                 error_note="Dual-judge LLM evaluation failed (neutral 50/100)",
                 status="uncertain",
             )
-            total_cnt = len(search_results)
             return {
                 "claim": claim_text,
                 "span": span_text,
@@ -3291,8 +3982,10 @@ def verify_claim(
                 "sources": top_sources,
                 "entity_domains": resolved_entity_domains,
                 "sources_agreeing": 0,
-                "sources_total": total_cnt,
-                "agreement_summary": f"0 of {total_cnt} sources agree",
+                "sources_total": reported_source_total,
+                "agreement_summary": f"0 of {reported_source_total} independent sources agree",
+                "evidence_stance": None,
+                "supporting_quote": None,
                 "conflict_detected": False,
                 "conflict_note": None,
                 "dual_judge_used": True,
@@ -3318,6 +4011,8 @@ def verify_claim(
                     "model": j1_label,
                     "status": j1_judgement["status"],
                     "score": j1_judgement["score"],
+                    "evidence_stance": j1_judgement.get("evidence_stance"),
+                    "supporting_quote": j1_judgement.get("supporting_quote"),
                     "current_info": j1_judgement["current_info"],
                     "reason": j1_judgement["reason"],
                 },
@@ -3325,6 +4020,8 @@ def verify_claim(
                     "model": j2_label,
                     "status": j2_judgement["status"],
                     "score": j2_judgement["score"],
+                    "evidence_stance": j2_judgement.get("evidence_stance"),
+                    "supporting_quote": j2_judgement.get("supporting_quote"),
                     "current_info": j2_judgement["current_info"],
                     "reason": j2_judgement["reason"],
                 },
@@ -3342,6 +4039,18 @@ def verify_claim(
             sc1 = j1_judgement["score"] if j1_judgement["score"] is not None else default_band_scores[s1]
             sc2 = j2_judgement["score"] if j2_judgement["score"] is not None else default_band_scores[s2]
 
+            q1 = j1_judgement.get("supporting_quote")
+            q2 = j2_judgement.get("supporting_quote")
+            merged_quote = (
+                q1
+                if (q1 and _is_quote_grounded_in_evidence(q1, search_results, extracted_content_text))
+                else (
+                    q2
+                    if (q2 and _is_quote_grounded_in_evidence(q2, search_results, extracted_content_text))
+                    else (q1 or q2)
+                )
+            )
+
             if s1 == s2:
                 model_disagreement = False
                 model_agreement_summary = "2/2 models agree"
@@ -3352,9 +4061,16 @@ def verify_claim(
                     and j2_judgement["reason"].strip().lower() != j1_judgement["reason"].strip().lower()
                 ):
                     merged_reason = f"{j1_judgement['reason']} (2/2 judges agreed: {j1_label}, {j2_label}.)"
+                merged_stance = (
+                    j1_judgement.get("evidence_stance")
+                    if j1_judgement.get("evidence_stance") == j2_judgement.get("evidence_stance")
+                    else (j1_judgement.get("evidence_stance") or j2_judgement.get("evidence_stance"))
+                )
                 judgement = {
                     "status": s1,
                     "score": merged_score,
+                    "evidence_stance": merged_stance,
+                    "supporting_quote": merged_quote,
                     "agreeing_sources": merged_agreeing,
                     "conflicting_sources": merged_conflicting,
                     "current_info": j1_judgement["current_info"] or j2_judgement["current_info"],
@@ -3371,6 +4087,8 @@ def verify_claim(
                 judgement = {
                     "status": "uncertain",
                     "score": merged_score,
+                    "evidence_stance": j1_judgement.get("evidence_stance") or j2_judgement.get("evidence_stance"),
+                    "supporting_quote": merged_quote,
                     "agreeing_sources": merged_agreeing,
                     "conflicting_sources": merged_conflicting,
                     "current_info": (
@@ -3402,6 +4120,8 @@ def verify_claim(
                     "model": ok_label,
                     "status": ok_j["status"],
                     "score": ok_j["score"],
+                    "evidence_stance": ok_j.get("evidence_stance"),
+                    "supporting_quote": ok_j.get("supporting_quote"),
                     "current_info": ok_j["current_info"],
                     "reason": ok_j["reason"],
                 },
@@ -3409,6 +4129,8 @@ def verify_claim(
                     "model": fail_label,
                     "status": "error",
                     "score": None,
+                    "evidence_stance": None,
+                    "supporting_quote": None,
                     "current_info": "Judge request failed.",
                     "reason": fail_msg or "Request failed.",
                 },
@@ -3416,6 +4138,8 @@ def verify_claim(
             judgement = {
                 "status": "uncertain",
                 "score": clamped_partial,
+                "evidence_stance": ok_j.get("evidence_stance"),
+                "supporting_quote": ok_j.get("supporting_quote"),
                 "agreeing_sources": ok_j["agreeing_sources"],
                 "conflicting_sources": True,
                 "current_info": f"Marked Uncertain because {fail_label} failed while {ok_label} judged '{ok_j['status']}'. {ok_j['current_info']}",
@@ -3425,6 +4149,31 @@ def verify_claim(
                 "stale_since": ok_j["stale_since"],
                 "reason": f"Models disagree ({ok_label} judged '{ok_j['status']}', {fail_label} failed: {fail_msg}). {ok_j['reason']}",
             }
+
+    # Step 3.5: Post-judging consistency validator (Requirements 2, 3, 4).
+    if judgement.get("evidence_stance") == "no_evidence":
+        judgement["status"] = "unverifiable"
+        judgement["score"] = None
+        judgement["stale_since"] = None
+    elif judgement.get("status") == "outdated":
+        if not _has_contradicting_relevant_source(judgement, search_results, extracted_content_text):
+            judgement["status"] = "uncertain"
+            raw_sc = judgement.get("score")
+            judgement["score"] = max(40, min(74, int(raw_sc) if raw_sc is not None else 55))
+            judgement["stale_since"] = None
+            judgement["reason"] = (
+                f"{judgement['reason']} "
+                "(Consistency check: downgraded from outdated to uncertain because no relevant source explicitly contradicted the claim with a grounded quote.)"
+            ).strip()
+
+    if judgement.get("effective_date") and not _is_date_grounded_in_sources(
+        judgement["effective_date"], search_results, extracted_content_text
+    ):
+        judgement["effective_date"] = None
+    if judgement.get("stale_since") and not _is_date_grounded_in_sources(
+        judgement["stale_since"], search_results, extracted_content_text
+    ):
+        judgement["stale_since"] = None
 
     # Step 4: Compute status-banded score, conflict override, evidence breakdown, & confidence.
     scoring = compute_freshness_score(
@@ -3437,9 +4186,11 @@ def verify_claim(
         reason=judgement["reason"],
         llm_conflicting=judgement["conflicting_sources"],
         entity_domains=resolved_entity_domains,
+        enforce_low_confidence_score_cap=True,
     )
 
     effective_status = scoring["resolved_status"]
+    effective_score = scoring["score"]
     effective_confidence = scoring["confidence"]
     effective_why = scoring["why_this_score"]
     effective_reason = judgement["reason"]
@@ -3449,6 +4200,9 @@ def verify_claim(
     if model_disagreement:
         effective_status = "uncertain"
         effective_confidence = "low"
+        if effective_score is None or effective_score < 40 or effective_score > 74:
+            effective_score = max(40, min(74, int(effective_score) if effective_score is not None else 55))
+            scoring["score_breakdown"]["final_score"] = effective_score
         if len(judge_verdicts) == 2:
             v1, v2 = judge_verdicts[0], judge_verdicts[1]
             effective_why = (
@@ -3457,6 +4211,14 @@ def verify_claim(
             )
     elif dual_judge and model_agreement_summary == "2/2 models agree":
         effective_why = f"2/2 models agree ({' vs '.join(judge_models)}). {effective_why}"
+
+    # Final Requirement 3 invariant: low confidence can never produce < 40 or > 74 unless unverifiable.
+    if effective_status == "unverifiable":
+        effective_score = None
+        scoring["score_breakdown"]["final_score"] = None
+    elif effective_confidence == "low" and (effective_score is None or effective_score < 40 or effective_score > 74):
+        effective_score = max(40, min(74, int(effective_score) if effective_score is not None else 55))
+        scoring["score_breakdown"]["final_score"] = effective_score
 
     if not model_disagreement and effective_conflict_detected and "disagree" not in effective_reason.lower():
         effective_reason = (
@@ -3474,6 +4236,7 @@ def verify_claim(
         llm_stale_since=judgement["stale_since"],
         agreeing_indices=scoring["agreeing_indices"],
         today=today_date,
+        extracted_content=extracted_content_text,
     )
 
     all_fallback_used = any(bool(m.get("fallback_used")) for m in judge_telemetry) if judge_telemetry else False
@@ -3484,11 +4247,13 @@ def verify_claim(
         "category": category,
         "search_query": search_query,
         "status": effective_status,
-        "score": scoring["score"],
+        "score": effective_score,
         "score_breakdown": scoring["score_breakdown"],
         "why_this_score": effective_why,
         "confidence": effective_confidence,
         "risk_level": risk_level,
+        "evidence_stance": judgement.get("evidence_stance"),
+        "supporting_quote": judgement.get("supporting_quote"),
         "current_info": judgement["current_info"],
         "current_value": judgement["current_value"],
         "effective_date": judgement["effective_date"],
