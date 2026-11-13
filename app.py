@@ -1717,6 +1717,643 @@ button[data-testid^="stBaseButton-"]:disabled:active {
 
 
 # ---------------------------------------------------------------------------
+# Light theme CSS overrides (activated when Dark mode switch is OFF)
+# ---------------------------------------------------------------------------
+LIGHT_THEME_CSS = """
+<style>
+/* ---------------------------------------------------------------------------
+   Light Mode Theme Overrides
+   Activated when dark_mode switch is toggled OFF
+   --------------------------------------------------------------------------- */
+:root {
+    color-scheme: light !important;
+}
+
+/* Main background & base text */
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+    background-color: #F8FAFC !important;
+    color: #0F172A !important;
+}
+
+/* Header & toolbar */
+header[data-testid="stHeader"], [data-testid="stHeader"] {
+    background-color: rgba(248, 250, 252, 0.95) !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+}
+
+/* Sidebar styling */
+section[data-testid="stSidebar"], [data-testid="stSidebar"] > div:first-child {
+    background-color: #F1F5F9 !important;
+    border-right: 1px solid #E2E8F0 !important;
+}
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+section[data-testid="stSidebar"] [data-testid="stText"] {
+    color: #334155 !important;
+}
+section[data-testid="stSidebar"] [data-testid="stHeadingWithActionElements"] h1,
+section[data-testid="stSidebar"] [data-testid="stHeadingWithActionElements"] h2,
+section[data-testid="stSidebar"] [data-testid="stHeadingWithActionElements"] h3 {
+    color: #0F172A !important;
+}
+
+/* Hero card */
+.sad-hero {
+    background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 50%, #F5F3FF 100%) !important;
+    border: 1px solid #C7D2FE !important;
+    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.08) !important;
+}
+.sad-hero-title {
+    color: #1E1B4B !important;
+}
+.sad-hero-tagline {
+    color: #475569 !important;
+}
+.sad-tech-badge {
+    color: #4338CA !important;
+    background: rgba(99, 102, 241, 0.12) !important;
+    border: 1px solid rgba(99, 102, 241, 0.32) !important;
+}
+
+/* Score ring card */
+.sad-score-card {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06) !important;
+}
+.sad-ring-wrap {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.12) !important;
+}
+.sad-ring-inner {
+    background: #FFFFFF !important;
+}
+.sad-ring-num {
+    color: #0F172A !important;
+}
+.sad-ring-denom {
+    color: #64748B !important;
+}
+.sad-score-meta h3 {
+    color: #0F172A !important;
+}
+.sad-score-meta p {
+    color: #475569 !important;
+}
+.sad-model-label {
+    color: #64748B !important;
+}
+.sad-model-tag {
+    color: #334155 !important;
+    background: #F1F5F9 !important;
+    border: 1px solid #CBD5E1 !important;
+}
+
+/* Claim cards */
+.sad-claim-card {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04) !important;
+}
+.sad-claim-card:target {
+    border-color: #6366F1 !important;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35), 0 0 20px rgba(99, 102, 241, 0.18) !important;
+}
+.sad-cat-badge,
+.sad-meta-pill {
+    background: #F1F5F9 !important;
+    border: 1px solid #CBD5E1 !important;
+    color: #334155 !important;
+}
+.sad-score-track {
+    background: #E2E8F0 !important;
+}
+.sad-score-text {
+    color: #0F172A !important;
+}
+
+/* Dual-judge details */
+.sad-dual-judge-box {
+    background: #F8FAFC !important;
+    border: 1px solid #E2E8F0 !important;
+    color: #1E293B !important;
+}
+.sad-dual-judge-box.disagree {
+    background: #FFFBEB !important;
+    border-color: #FCD34D !important;
+}
+.sad-dual-judge-head {
+    color: #4F46E5 !important;
+}
+.sad-dual-judge-box.disagree .sad-dual-judge-head {
+    color: #B45309 !important;
+}
+.sad-dual-judge-row {
+    color: #334155 !important;
+}
+
+/* Claim status pills in light mode */
+.pill-fresh {
+    color: #15803D !important;
+    background: rgba(34, 197, 94, 0.12) !important;
+    border: 1px solid rgba(34, 197, 94, 0.35) !important;
+}
+.pill-uncertain {
+    color: #B45309 !important;
+    background: rgba(245, 158, 11, 0.12) !important;
+    border: 1px solid rgba(245, 158, 11, 0.35) !important;
+}
+.pill-outdated {
+    color: #B91C1C !important;
+    background: rgba(239, 68, 68, 0.12) !important;
+    border: 1px solid rgba(239, 68, 68, 0.35) !important;
+}
+.pill-unverifiable {
+    color: #475569 !important;
+    background: rgba(148, 163, 184, 0.14) !important;
+    border: 1px solid rgba(148, 163, 184, 0.35) !important;
+}
+
+/* Risk pills in light mode */
+.risk-critical {
+    color: #B91C1C !important;
+    background: rgba(239, 68, 68, 0.10) !important;
+    border-color: rgba(239, 68, 68, 0.30) !important;
+}
+.risk-moderate {
+    color: #B45309 !important;
+    background: rgba(245, 158, 11, 0.10) !important;
+    border-color: rgba(245, 158, 11, 0.30) !important;
+}
+.risk-low {
+    color: #475569 !important;
+    background: rgba(148, 163, 184, 0.10) !important;
+    border-color: rgba(148, 163, 184, 0.25) !important;
+}
+
+/* Comparison side-by-side grid */
+.sad-compare-box {
+    background: #F8FAFC !important;
+    border: 1px solid #E2E8F0 !important;
+}
+.sad-compare-actual {
+    border-color: #C7D2FE !important;
+    background: #EEF2FF !important;
+}
+.sad-compare-label {
+    color: #64748B !important;
+}
+.sad-compare-actual .sad-compare-label {
+    color: #4338CA !important;
+}
+.sad-compare-body {
+    color: #0F172A !important;
+}
+.sad-actual-meta {
+    border-top: 1px dashed rgba(99, 102, 241, 0.35) !important;
+    color: #334155 !important;
+}
+.sad-actual-meta-label {
+    color: #4338CA !important;
+}
+.sad-reason {
+    color: #334155 !important;
+}
+.sad-reason strong {
+    color: #0F172A !important;
+}
+.sad-error-note {
+    background: #FFFBEB !important;
+    border-color: #FDE68A !important;
+    color: #92400E !important;
+}
+.sad-conflict-note {
+    background: #FFFBEB !important;
+    border-color: #FDE68A !important;
+    color: #92400E !important;
+}
+
+/* Source chips & snippets */
+.sad-source-chip {
+    color: #4338CA !important;
+    background: rgba(99, 102, 241, 0.10) !important;
+    border: 1px solid rgba(99, 102, 241, 0.28) !important;
+}
+.sad-source-chip:hover {
+    background: rgba(99, 102, 241, 0.20) !important;
+    border-color: #6366F1 !important;
+    color: #312E81 !important;
+    box-shadow: 0 3px 10px rgba(99, 102, 241, 0.18) !important;
+}
+.sad-snippet-card {
+    background: #F8FAFC !important;
+    border: 1px solid #E2E8F0 !important;
+}
+.sad-snippet-link {
+    color: #4F46E5 !important;
+}
+.sad-snippet-text {
+    color: #334155 !important;
+}
+.sad-card-footer {
+    color: #64748B !important;
+}
+
+/* Empty states */
+.sad-empty-state {
+    background: #FFFFFF !important;
+    border: 1px dashed #CBD5E1 !important;
+    color: #64748B !important;
+}
+.sad-empty-state h4 {
+    color: #0F172A !important;
+}
+.sad-empty-pill {
+    color: #334155 !important;
+    background: #F1F5F9 !important;
+    border: 1px solid #CBD5E1 !important;
+}
+
+/* Demo mode banner */
+.sad-demo-banner {
+    background: #ECFDF5 !important;
+    border: 1px solid #A7F3D0 !important;
+    color: #065F46 !important;
+}
+.sad-demo-pill {
+    background: rgba(34, 197, 94, 0.16) !important;
+    border: 1px solid rgba(34, 197, 94, 0.40) !important;
+    color: #15803D !important;
+}
+
+/* Gateway & credits cards */
+.sad-credits-card,
+.sad-gw-card {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+}
+.sad-credits-label {
+    color: #64748B !important;
+}
+.sad-credits-value {
+    color: #0F172A !important;
+}
+.sad-credits-pill {
+    color: #4338CA !important;
+    background: rgba(99, 102, 241, 0.10) !important;
+    border: 1px solid rgba(99, 102, 241, 0.28) !important;
+}
+.sad-gw-link {
+    color: #4F46E5 !important;
+}
+.sad-gw-sub {
+    color: #64748B !important;
+}
+.sad-gw-stat {
+    background: #F8FAFC !important;
+    border: 1px solid #E2E8F0 !important;
+}
+.sad-gw-stat-label {
+    color: #64748B !important;
+}
+.sad-gw-stat-value {
+    color: #0F172A !important;
+}
+.sad-gw-log-row {
+    background: #F8FAFC !important;
+    border: 1px solid #E2E8F0 !important;
+    color: #334155 !important;
+}
+.sad-gw-log-head {
+    color: #0F172A !important;
+}
+.sad-gw-tasks {
+    background: #F8FAFC !important;
+    border: 1px solid #E2E8F0 !important;
+    color: #334155 !important;
+}
+.sad-gw-tasks strong {
+    color: #4338CA !important;
+}
+.sad-gw-details {
+    border-top: 1px solid #E2E8F0 !important;
+}
+.sad-gw-details summary {
+    color: #4F46E5 !important;
+}
+.sad-gw-details summary:hover {
+    background-color: rgba(99, 102, 241, 0.08) !important;
+    color: #3730A3 !important;
+}
+
+/* Annotated card, ask card & URL card */
+.sad-ask-card,
+.sad-annotated-card {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04) !important;
+}
+.sad-annotated-head {
+    border-bottom: 1px solid #E2E8F0 !important;
+}
+.sad-annotated-title {
+    color: #0F172A !important;
+}
+.sad-annotated-hint {
+    color: #64748B !important;
+}
+.sad-ask-question {
+    color: #475569 !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+}
+.sad-ask-body {
+    color: #0F172A !important;
+}
+.sad-url-source-bar {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    color: #334155 !important;
+}
+.sad-url-source-bar a {
+    color: #4F46E5 !important;
+}
+.sad-hl-legend {
+    border-top: 1px solid #E2E8F0 !important;
+    color: #64748B !important;
+}
+
+/* Inline highlights in light mode */
+.sad-hl-outdated,
+a.sad-hl-link.sad-hl-outdated,
+a.sad-hl-link.sad-hl-outdated:visited {
+    background: rgba(239, 68, 68, 0.15) !important;
+    color: #991B1B !important;
+    text-decoration-color: #EF4444 !important;
+}
+.sad-hl-fresh,
+a.sad-hl-link.sad-hl-fresh,
+a.sad-hl-link.sad-hl-fresh:visited {
+    background: rgba(34, 197, 94, 0.16) !important;
+    color: #166534 !important;
+    text-decoration-color: #22C55E !important;
+}
+.sad-hl-uncertain,
+a.sad-hl-link.sad-hl-uncertain,
+a.sad-hl-link.sad-hl-uncertain:visited {
+    background: rgba(245, 158, 11, 0.18) !important;
+    color: #92400E !important;
+    text-decoration-color: #F59E0B !important;
+}
+.sad-hl-unverifiable,
+a.sad-hl-link.sad-hl-unverifiable,
+a.sad-hl-link.sad-hl-unverifiable:visited {
+    background: rgba(148, 163, 184, 0.22) !important;
+    color: #334155 !important;
+    text-decoration-color: #94A3B8 !important;
+}
+
+/* Tooltips in light mode */
+a.sad-hl-link[data-tooltip]:hover::after {
+    background: #0F172A !important;
+    border: 1px solid #334155 !important;
+    color: #F8FAFC !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Diff cards */
+.sad-diff-card {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+}
+.sad-diff-header {
+    border-bottom: 1px solid #E2E8F0 !important;
+}
+.sad-diff-title {
+    color: #334155 !important;
+}
+.sad-diff-body {
+    color: #0F172A !important;
+}
+.sad-diff-del {
+    background: rgba(239, 68, 68, 0.12) !important;
+    color: #991B1B !important;
+    text-decoration-color: #EF4444 !important;
+}
+.sad-diff-ins {
+    background: rgba(34, 197, 94, 0.14) !important;
+    color: #166534 !important;
+    border-bottom: 2px solid #22C55E !important;
+}
+.sad-change-card {
+    background: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+}
+
+/* Secondary & download buttons in light mode */
+div.stButton > button[data-testid="stBaseButton-secondary"],
+div.stButton > button[data-testid="baseButton-secondary"],
+div.stButton > button[kind="secondary"],
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"],
+div[data-testid="stButton"] button[data-testid="baseButton-secondary"],
+div[data-testid="stButton"] button[kind="secondary"],
+button[data-testid="stBaseButton-secondary"],
+button[data-testid="baseButton-secondary"],
+button[kind="secondary"],
+div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]) {
+    background-color: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    color: #1E293B !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
+}
+
+div.stButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
+div.stButton > button[data-testid="baseButton-secondary"]:hover:not(:disabled),
+div.stButton > button[kind="secondary"]:hover:not(:disabled),
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
+div[data-testid="stButton"] button[data-testid="baseButton-secondary"]:hover:not(:disabled),
+div[data-testid="stButton"] button[kind="secondary"]:hover:not(:disabled),
+button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
+button[data-testid="baseButton-secondary"]:hover:not(:disabled),
+button[kind="secondary"]:hover:not(:disabled),
+div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]):hover:not(:disabled) {
+    background-color: #F8FAFC !important;
+    border-color: #818CF8 !important;
+    color: #0F172A !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.16) !important;
+}
+
+div.stButton > button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
+div.stButton > button[data-testid="baseButton-secondary"]:active:not(:disabled),
+div.stButton > button[kind="secondary"]:active:not(:disabled),
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
+div[data-testid="stButton"] button[data-testid="baseButton-secondary"]:active:not(:disabled),
+div[data-testid="stButton"] button[kind="secondary"]:active:not(:disabled),
+button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
+button[data-testid="baseButton-secondary"]:active:not(:disabled),
+button[kind="secondary"]:active:not(:disabled),
+div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]):active:not(:disabled) {
+    background-color: #F1F5F9 !important;
+    border-color: #6366F1 !important;
+    color: #0F172A !important;
+}
+
+/* Download buttons in light mode */
+div.stDownloadButton > button,
+div[data-testid="stDownloadButton"] button,
+[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"],
+[data-testid="stDownloadButton"] button[data-testid^="baseButton-"] {
+    background-color: rgba(99, 102, 241, 0.08) !important;
+    border: 1px solid rgba(99, 102, 241, 0.35) !important;
+    color: #4338CA !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
+}
+
+div.stDownloadButton > button:hover:not(:disabled),
+div[data-testid="stDownloadButton"] button:hover:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:hover:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid^="baseButton-"]:hover:not(:disabled) {
+    background-color: rgba(99, 102, 241, 0.16) !important;
+    border-color: #6366F1 !important;
+    color: #312E81 !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.20) !important;
+}
+
+div.stDownloadButton > button:active:not(:disabled),
+div[data-testid="stDownloadButton"] button:active:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:active:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid^="baseButton-"]:active:not(:disabled) {
+    background-color: rgba(99, 102, 241, 0.22) !important;
+    border-color: #6366F1 !important;
+    color: #1E1B4B !important;
+}
+
+/* Disabled buttons in light mode */
+div.stButton > button:disabled,
+div.stButton > button:disabled:hover,
+div.stButton > button:disabled:active,
+[data-testid="stButton"] button:disabled,
+[data-testid="stButton"] button:disabled:hover,
+[data-testid="stButton"] button:disabled:active,
+div.stDownloadButton > button:disabled,
+div.stDownloadButton > button:disabled:hover,
+div.stDownloadButton > button:disabled:active,
+[data-testid="stDownloadButton"] button:disabled,
+[data-testid="stDownloadButton"] button:disabled:hover,
+[data-testid="stDownloadButton"] button:disabled:active,
+button[data-testid^="stBaseButton-"]:disabled,
+button[data-testid^="stBaseButton-"]:disabled:hover,
+button[data-testid^="stBaseButton-"]:disabled:active {
+    background-color: #F1F5F9 !important;
+    border-color: #CBD5E1 !important;
+    color: #94A3B8 !important;
+}
+
+/* Streamlit native inputs, textareas & selectboxes */
+[data-baseweb="textarea"] textarea,
+[data-baseweb="input"] input,
+div[data-baseweb="textarea"],
+div[data-baseweb="input"] {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    border-color: #CBD5E1 !important;
+}
+[data-baseweb="textarea"] textarea:focus,
+[data-baseweb="input"] input:focus {
+    border-color: #6366F1 !important;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.20) !important;
+}
+[data-testid="stWidgetLabel"] p,
+[data-testid="stWidgetLabel"] label,
+label[data-testid="stWidgetLabel"] {
+    color: #0F172A !important;
+    font-weight: 600 !important;
+}
+
+/* Expanders in light mode */
+[data-testid="stExpander"] details {
+    background-color: #FFFFFF !important;
+    border-color: #E2E8F0 !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+}
+[data-testid="stExpander"] details:hover {
+    border-color: rgba(99, 102, 241, 0.40) !important;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08) !important;
+}
+[data-testid="stExpander"] details > summary {
+    color: #0F172A !important;
+}
+[data-testid="stExpander"] details > summary:hover {
+    background-color: rgba(99, 102, 241, 0.06) !important;
+    color: #4338CA !important;
+}
+[data-testid="stExpander"] details > summary svg {
+    fill: #475569 !important;
+}
+
+/* Tabs in light mode */
+[data-testid="stTabs"] [data-testid="stTab"] {
+    color: #475569 !important;
+}
+[data-testid="stTabs"] [data-testid="stTab"]:hover:not([data-disabled]) {
+    background-color: rgba(99, 102, 241, 0.08) !important;
+    color: #4338CA !important;
+}
+[data-testid="stTabs"] [data-testid="stTab"][aria-selected="true"] {
+    color: #4338CA !important;
+    border-bottom-color: #6366F1 !important;
+}
+
+/* Segmented controls & button groups */
+[data-testid="stButtonGroup"] button[data-variant="segmented_control"] {
+    background-color: #F1F5F9 !important;
+    border-color: #CBD5E1 !important;
+    color: #334155 !important;
+}
+[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:hover:not([data-disabled]) {
+    background-color: #E2E8F0 !important;
+    color: #0F172A !important;
+}
+
+/* Dataframe & table wrappers */
+[data-testid="stDataFrame"], [data-testid="stTable"] {
+    background-color: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 10px;
+}
+
+/* Skeleton animation for light mode */
+.sad-skeleton-box {
+    background: linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%) !important;
+    border: 1px solid #CBD5E1 !important;
+}
+
+/* Markdown typography in light mode */
+.stMarkdown p, .stMarkdown li, .stMarkdown span {
+    color: #1E293B;
+}
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+    color: #0F172A !important;
+}
+.stMarkdown code:not(pre code) {
+    background-color: #F1F5F9 !important;
+    color: #4338CA !important;
+    border: 1px solid #E2E8F0 !important;
+}
+[data-testid="stCode"] pre {
+    background-color: #F1F5F9 !important;
+    border: 1px solid #E2E8F0 !important;
+    color: #0F172A !important;
+}
+[data-testid="stCode"] code {
+    color: #0F172A !important;
+}
+</style>
+"""
+
+
+# ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
 def escape_markdown(text: str) -> str:
@@ -2444,6 +3081,7 @@ def init_session_state() -> None:
         "keep_status_expanded": False,
         "simulate_outage": False,
         "dual_judge_mode": False,
+        "dark_mode": True,
         "tavily_credits_used": 0.0,
         "gateway_requests": [],
         "last_audit_time_ms": 0.0,
@@ -2452,6 +3090,16 @@ def init_session_state() -> None:
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+    try:
+        if hasattr(st, "query_params") and "_dark_mode_initialized" not in st.session_state:
+            st.session_state["_dark_mode_initialized"] = True
+            qp_theme = str(st.query_params.get("theme", "")).strip().lower()
+            if qp_theme == "light":
+                st.session_state["dark_mode"] = False
+            elif qp_theme == "dark":
+                st.session_state["dark_mode"] = True
+    except Exception:
+        pass
     pending = st.session_state.pop("_pending_widget_updates", None)
     if isinstance(pending, dict):
         for p_key, p_val in pending.items():
@@ -4630,7 +5278,11 @@ def build_benchmark_tables(
 init_session_state()
 use_bifrost_mode = is_use_bifrost()
 set_simulate_outage(bool(st.session_state.get("simulate_outage", False)) and use_bifrost_mode)
+
+is_dark_theme = bool(st.session_state.get("dark_mode", True))
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+if not is_dark_theme:
+    st.markdown(LIGHT_THEME_CSS, unsafe_allow_html=True)
 
 is_busy_armed = bool(st.session_state.pop("_busy_armed", False))
 current_busy = st.session_state.get("busy_action")
@@ -4640,9 +5292,22 @@ if current_busy and not is_busy_armed:
 is_any_busy = bool(current_busy)
 
 # ---------------------------------------------------------------------------
-# Sidebar: Demo mode, 4 Sample examples, Gateway panel, Tavily credits, How it works, Settings
+# Sidebar: Dark/Light switch, Demo mode, 4 Sample examples, Gateway panel, etc.
 # ---------------------------------------------------------------------------
 with st.sidebar:
+    # -----------------------------------------------------------------------
+    # Appearance: Light and Dark mode switch
+    # -----------------------------------------------------------------------
+    dark_mode_on = st.toggle(
+        "Dark mode",
+        key="dark_mode",
+        help="Switch between Dark mode and Light mode.",
+    )
+    if dark_mode_on:
+        st.caption("Theme: 🌙 Dark mode")
+    else:
+        st.caption("Theme: ☀️ Light mode")
+
     demo_mode_on = st.toggle(
         "Demo mode",
         key="demo_mode",
@@ -4839,6 +5504,7 @@ with st.sidebar:
             f"**LLM / Gemini key:** {'Configured' if llm_key_ok else 'Missing'}  \n"
             f"{vk_line}"
             f"**Tavily key:** {'Configured' if tavily_ok else 'Missing'}  \n"
+            f"**Appearance:** {'Dark mode (🌙)' if dark_mode_on else 'Light mode (☀️)'}  \n"
             "**Tavily cache:** `6h temp SQLite TTL`"
         )
         st.toggle("Show search queries on cards", key="show_search_queries")
