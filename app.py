@@ -1333,16 +1333,32 @@ a.sad-hl-link.sad-hl-unverifiable:visited {
     --sad-btn-duration: 180ms;
 }
 
-[data-testid="stButton"] button,
-[data-testid="stDownloadButton"] button {
+/* Ensure button containers do not clip the 2px lift elevation & soft glow shadow */
+div.stButton,
+div[data-testid="stButton"],
+div.stDownloadButton,
+div[data-testid="stDownloadButton"] {
+    overflow: visible !important;
+}
+
+div.stButton > button,
+div[data-testid="stButton"] button,
+div.stDownloadButton > button,
+div[data-testid="stDownloadButton"] button,
+button[data-testid^="stBaseButton-"],
+button[data-testid^="baseButton-"],
+button[kind="primary"],
+button[kind="secondary"] {
+    position: relative !important;
     transition:
         transform var(--sad-btn-duration) var(--sad-btn-ease),
         background-color var(--sad-btn-duration) ease,
         border-color var(--sad-btn-duration) ease,
         color var(--sad-btn-duration) ease,
         box-shadow 200ms var(--sad-btn-ease),
-        opacity 150ms ease;
-    will-change: transform;
+        filter var(--sad-btn-duration) ease,
+        opacity 150ms ease !important;
+    will-change: transform, box-shadow !important;
 }
 
 [data-testid="stButton"] button:focus-visible,
@@ -1357,87 +1373,171 @@ a.sad-hl-link.sad-hl-unverifiable:visited {
 [data-testid="stExpandSidebarButton"] button:focus-visible,
 a.sad-source-chip:focus-visible,
 a.sad-gw-link:focus-visible {
-    outline: 2px solid #A5B4FC;
-    outline-offset: 2px;
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.24);
+    outline: 2px solid #A5B4FC !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.24) !important;
 }
 
 /* Primary action buttons: Check Freshness, Ask & Audit, Audit URL,
    Generate/Regenerate corrected answer, Re-run benchmark */
-[data-testid="stButton"] button[data-testid="stBaseButton-primary"] {
-    background-color: #6366F1;
-    border: 1px solid #6366F1;
-    color: #F8FAFC;
-    font-weight: 600;
-    box-shadow: 0 2px 6px rgba(11, 15, 25, 0.38), 0 0 0 1px rgba(129, 140, 248, 0.22);
+div.stButton > button[data-testid="stBaseButton-primary"],
+div.stButton > button[data-testid="baseButton-primary"],
+div.stButton > button[kind="primary"],
+div[data-testid="stButton"] button[data-testid="stBaseButton-primary"],
+div[data-testid="stButton"] button[data-testid="baseButton-primary"],
+div[data-testid="stButton"] button[kind="primary"],
+button[data-testid="stBaseButton-primary"],
+button[data-testid="baseButton-primary"],
+button[kind="primary"] {
+    background-color: #6366F1 !important;
+    border: 1px solid #6366F1 !important;
+    color: #F8FAFC !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 6px rgba(11, 15, 25, 0.38), 0 0 0 1px rgba(129, 140, 248, 0.22) !important;
 }
-[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:hover:not(:disabled) {
+
+div.stButton > button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
+div.stButton > button[data-testid="baseButton-primary"]:hover:not(:disabled),
+div.stButton > button[kind="primary"]:hover:not(:disabled),
+div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
+div[data-testid="stButton"] button[data-testid="baseButton-primary"]:hover:not(:disabled),
+div[data-testid="stButton"] button[kind="primary"]:hover:not(:disabled),
+button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
+button[data-testid="baseButton-primary"]:hover:not(:disabled),
+button[kind="primary"]:hover:not(:disabled) {
     transform: translateY(-2px);
-    background-color: #7073F7;
-    border-color: #818CF8;
-    color: #FFFFFF;
-    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.30), 0 2px 6px rgba(11, 15, 25, 0.45);
+    background-color: #7073F7 !important;
+    border-color: #818CF8 !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.30), 0 2px 6px rgba(11, 15, 25, 0.45) !important;
+    filter: brightness(1.08) !important;
+    cursor: pointer !important;
 }
-[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:active:not(:disabled) {
+
+div.stButton > button[data-testid="stBaseButton-primary"]:active:not(:disabled),
+div.stButton > button[data-testid="baseButton-primary"]:active:not(:disabled),
+div.stButton > button[kind="primary"]:active:not(:disabled),
+div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:active:not(:disabled),
+div[data-testid="stButton"] button[data-testid="baseButton-primary"]:active:not(:disabled),
+div[data-testid="stButton"] button[kind="primary"]:active:not(:disabled),
+button[data-testid="stBaseButton-primary"]:active:not(:disabled),
+button[data-testid="baseButton-primary"]:active:not(:disabled),
+button[kind="primary"]:active:not(:disabled) {
     transform: translateY(0) scale(0.985);
-    background-color: #5457E0;
-    border-color: #6366F1;
-    color: #F8FAFC;
-    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.22);
+    background-color: #5457E0 !important;
+    border-color: #6366F1 !important;
+    color: #F8FAFC !important;
+    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.22) !important;
+    filter: brightness(0.96) !important;
 }
 
 /* Export Audit Report & Benchmark Download buttons */
-[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"] {
-    background-color: rgba(99, 102, 241, 0.14);
-    border: 1px solid rgba(99, 102, 241, 0.42);
-    color: #E0E7FF;
-    font-weight: 600;
-    box-shadow: 0 2px 5px rgba(11, 15, 25, 0.30);
+div.stDownloadButton > button,
+div[data-testid="stDownloadButton"] button,
+[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"],
+[data-testid="stDownloadButton"] button[data-testid^="baseButton-"] {
+    background-color: rgba(99, 102, 241, 0.14) !important;
+    border: 1px solid rgba(99, 102, 241, 0.42) !important;
+    color: #E0E7FF !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 5px rgba(11, 15, 25, 0.30) !important;
 }
-[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:hover:not(:disabled) {
+
+div.stDownloadButton > button:hover:not(:disabled),
+div[data-testid="stDownloadButton"] button:hover:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:hover:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid^="baseButton-"]:hover:not(:disabled) {
     transform: translateY(-2px);
-    background-color: rgba(99, 102, 241, 0.22);
-    border-color: #818CF8;
-    color: #F8FAFC;
-    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.24), 0 2px 6px rgba(11, 15, 25, 0.38);
+    background-color: rgba(99, 102, 241, 0.24) !important;
+    border-color: #818CF8 !important;
+    color: #F8FAFC !important;
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.24), 0 2px 6px rgba(11, 15, 25, 0.38) !important;
+    filter: brightness(1.10) !important;
+    cursor: pointer !important;
 }
-[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:active:not(:disabled) {
+
+div.stDownloadButton > button:active:not(:disabled),
+div[data-testid="stDownloadButton"] button:active:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:active:not(:disabled),
+[data-testid="stDownloadButton"] button[data-testid^="baseButton-"]:active:not(:disabled) {
     transform: translateY(0) scale(0.985);
-    background-color: rgba(99, 102, 241, 0.28);
-    border-color: #6366F1;
-    color: #F8FAFC;
-    box-shadow: 0 2px 5px rgba(11, 15, 25, 0.32);
+    background-color: rgba(99, 102, 241, 0.30) !important;
+    border-color: #6366F1 !important;
+    color: #F8FAFC !important;
+    box-shadow: 0 2px 5px rgba(11, 15, 25, 0.32) !important;
+    filter: brightness(0.96) !important;
 }
 
 /* Secondary buttons: Clear, Sample examples, Clear Tavily cache, Demo recovery */
-[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {
-    background-color: #161F33;
-    border: 1px solid #2A3752;
-    color: #E2E8F0;
-    box-shadow: 0 1px 3px rgba(11, 15, 25, 0.28);
+div.stButton > button[data-testid="stBaseButton-secondary"],
+div.stButton > button[data-testid="baseButton-secondary"],
+div.stButton > button[kind="secondary"],
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"],
+div[data-testid="stButton"] button[data-testid="baseButton-secondary"],
+div[data-testid="stButton"] button[kind="secondary"],
+button[data-testid="stBaseButton-secondary"],
+button[data-testid="baseButton-secondary"],
+button[kind="secondary"],
+div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]) {
+    background-color: #161F33 !important;
+    border: 1px solid #2A3752 !important;
+    color: #E2E8F0 !important;
+    box-shadow: 0 1px 3px rgba(11, 15, 25, 0.28) !important;
 }
-[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover:not(:disabled) {
+
+div.stButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
+div.stButton > button[data-testid="baseButton-secondary"]:hover:not(:disabled),
+div.stButton > button[kind="secondary"]:hover:not(:disabled),
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
+div[data-testid="stButton"] button[data-testid="baseButton-secondary"]:hover:not(:disabled),
+div[data-testid="stButton"] button[kind="secondary"]:hover:not(:disabled),
+button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
+button[data-testid="baseButton-secondary"]:hover:not(:disabled),
+button[kind="secondary"]:hover:not(:disabled),
+div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]):hover:not(:disabled) {
     transform: translateY(-2px);
-    background-color: #1E2942;
-    border-color: rgba(129, 140, 248, 0.55);
-    color: #F8FAFC;
-    box-shadow: 0 5px 14px rgba(11, 15, 25, 0.42), 0 0 0 1px rgba(99, 102, 241, 0.12);
+    background-color: #1E2942 !important;
+    border-color: rgba(129, 140, 248, 0.55) !important;
+    color: #F8FAFC !important;
+    box-shadow: 0 5px 14px rgba(11, 15, 25, 0.42), 0 0 0 1px rgba(99, 102, 241, 0.12) !important;
+    filter: brightness(1.10) !important;
+    cursor: pointer !important;
 }
-[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:active:not(:disabled) {
+
+div.stButton > button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
+div.stButton > button[data-testid="baseButton-secondary"]:active:not(:disabled),
+div.stButton > button[kind="secondary"]:active:not(:disabled),
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
+div[data-testid="stButton"] button[data-testid="baseButton-secondary"]:active:not(:disabled),
+div[data-testid="stButton"] button[kind="secondary"]:active:not(:disabled),
+button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
+button[data-testid="baseButton-secondary"]:active:not(:disabled),
+button[kind="secondary"]:active:not(:disabled),
+div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]):active:not(:disabled) {
     transform: translateY(0) scale(0.985);
-    background-color: #253352;
-    border-color: #6366F1;
-    color: #F8FAFC;
-    box-shadow: 0 1px 3px rgba(11, 15, 25, 0.36);
+    background-color: #253352 !important;
+    border-color: #6366F1 !important;
+    color: #F8FAFC !important;
+    box-shadow: 0 1px 3px rgba(11, 15, 25, 0.36) !important;
+    filter: brightness(0.96) !important;
 }
 
 /* Clear & unmistakable disabled state with zero lift or glow */
+div.stButton > button:disabled,
+div.stButton > button:disabled:hover,
+div.stButton > button:disabled:active,
 [data-testid="stButton"] button:disabled,
 [data-testid="stButton"] button:disabled:hover,
 [data-testid="stButton"] button:disabled:active,
+div.stDownloadButton > button:disabled,
+div.stDownloadButton > button:disabled:hover,
+div.stDownloadButton > button:disabled:active,
 [data-testid="stDownloadButton"] button:disabled,
 [data-testid="stDownloadButton"] button:disabled:hover,
-[data-testid="stDownloadButton"] button:disabled:active {
+[data-testid="stDownloadButton"] button:disabled:active,
+button[data-testid^="stBaseButton-"]:disabled,
+button[data-testid^="stBaseButton-"]:disabled:hover,
+button[data-testid^="stBaseButton-"]:disabled:active {
     opacity: 0.62;
     cursor: not-allowed;
     background-color: rgba(26, 34, 54, 0.72);
@@ -1450,9 +1550,9 @@ a.sad-gw-link:focus-visible {
 [data-testid="stButton"] button[data-testid="stBaseButton-primary"]:disabled,
 [data-testid="stButton"] button[data-testid="stBaseButton-primary"]:disabled:hover,
 [data-testid="stButton"] button[data-testid="stBaseButton-primary"]:disabled:active {
-    background-color: rgba(99, 102, 241, 0.26);
-    border-color: rgba(99, 102, 241, 0.36);
-    color: #E2E8F0;
+    background-color: rgba(99, 102, 241, 0.26) !important;
+    border-color: rgba(99, 102, 241, 0.36) !important;
+    color: #E2E8F0 !important;
 }
 
 /* Keep small top buffer inside expanders so 2px button hover lift is never clipped */
@@ -1470,26 +1570,28 @@ a.sad-gw-link:focus-visible {
         background-color var(--sad-btn-duration) ease,
         border-color var(--sad-btn-duration) ease,
         color var(--sad-btn-duration) ease,
-        box-shadow 180ms ease;
+        box-shadow 180ms ease,
+        filter 180ms ease !important;
 }
 [data-testid="stCode"] button:hover:not(:disabled),
 [data-testid="stElementToolbarButton"] button:hover:not(:disabled) {
-    transform: translateY(-1px);
-    background-color: rgba(99, 102, 241, 0.18);
-    border-color: rgba(129, 140, 248, 0.45);
-    color: #F8FAFC;
-    box-shadow: 0 3px 10px rgba(11, 15, 25, 0.35);
+    transform: translateY(-1px) !important;
+    background-color: rgba(99, 102, 241, 0.18) !important;
+    border-color: rgba(129, 140, 248, 0.45) !important;
+    color: #F8FAFC !important;
+    box-shadow: 0 3px 10px rgba(11, 15, 25, 0.35) !important;
+    filter: brightness(1.10) !important;
 }
 [data-testid="stCode"] button:active:not(:disabled),
 [data-testid="stElementToolbarButton"] button:active:not(:disabled) {
-    transform: scale(0.94);
-    background-color: rgba(99, 102, 241, 0.26);
-    border-color: #6366F1;
+    transform: scale(0.94) !important;
+    background-color: rgba(99, 102, 241, 0.26) !important;
+    border-color: #6366F1 !important;
 }
 [data-testid="stCode"] button[data-copy-state="copied"] {
-    color: #4ADE80;
-    background-color: rgba(34, 197, 94, 0.15);
-    border-color: rgba(34, 197, 94, 0.38);
+    color: #4ADE80 !important;
+    background-color: rgba(34, 197, 94, 0.15) !important;
+    border-color: rgba(34, 197, 94, 0.38) !important;
 }
 
 /* Workspace navigation tabs (smooth hover/active states without underline shift) */
@@ -1498,29 +1600,29 @@ a.sad-gw-link:focus-visible {
     transition:
         transform 150ms var(--sad-btn-ease),
         background-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease;
+        color var(--sad-btn-duration) ease !important;
 }
 [data-testid="stTabs"] [data-testid="stTab"]:not([data-selected]):hover:not([data-disabled]) {
-    background-color: rgba(99, 102, 241, 0.08);
-    color: #C7D2FE;
+    background-color: rgba(99, 102, 241, 0.14) !important;
+    color: #C7D2FE !important;
 }
 [data-testid="stTabs"] [data-testid="stTab"]:active:not([data-disabled]) {
-    transform: scale(0.985);
+    transform: scale(0.985) !important;
 }
 [data-testid="stTabs"] [data-testid="stTabsScrollLeft"],
 [data-testid="stTabs"] [data-testid="stTabsScrollRight"] {
     transition:
         background-color var(--sad-btn-duration) ease,
         color var(--sad-btn-duration) ease,
-        transform 150ms var(--sad-btn-ease);
+        transform 150ms var(--sad-btn-ease) !important;
 }
 [data-testid="stTabs"] [data-testid="stTabsScrollLeft"]:hover,
 [data-testid="stTabs"] [data-testid="stTabsScrollRight"]:hover {
-    color: #C7D2FE;
+    color: #C7D2FE !important;
 }
 [data-testid="stTabs"] [data-testid="stTabsScrollLeft"]:active,
 [data-testid="stTabs"] [data-testid="stTabsScrollRight"]:active {
-    transform: scale(0.94);
+    transform: scale(0.94) !important;
 }
 
 /* Benchmark filter segmented-control buttons (zero flush-border shift) */
@@ -1529,39 +1631,39 @@ a.sad-gw-link:focus-visible {
         transform 140ms var(--sad-btn-ease),
         background-color var(--sad-btn-duration) ease,
         border-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease;
+        color var(--sad-btn-duration) ease !important;
 }
 [data-testid="stButtonGroup"] button[data-variant="segmented_control"]:hover:not([data-disabled]) {
-    background-color: rgba(99, 102, 241, 0.14);
-    color: #F8FAFC;
+    background-color: rgba(99, 102, 241, 0.18) !important;
+    color: #F8FAFC !important;
 }
 [data-testid="stButtonGroup"] button[data-variant="segmented_control"]:active:not([data-disabled]) {
-    transform: scale(0.98);
+    transform: scale(0.98) !important;
 }
 
 /* Expand / collapse controls */
 [data-testid="stExpander"] details {
     transition:
         border-color var(--sad-btn-duration) ease,
-        box-shadow 200ms var(--sad-btn-ease);
+        box-shadow 200ms var(--sad-btn-ease) !important;
 }
 [data-testid="stExpander"] details:hover {
-    border-color: rgba(129, 140, 248, 0.42);
-    box-shadow: 0 4px 12px rgba(11, 15, 25, 0.32);
+    border-color: rgba(129, 140, 248, 0.42) !important;
+    box-shadow: 0 4px 12px rgba(11, 15, 25, 0.32) !important;
 }
 [data-testid="stExpander"] details > summary {
     transition:
         transform 150ms var(--sad-btn-ease),
         background-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease;
+        color var(--sad-btn-duration) ease !important;
 }
 [data-testid="stExpander"] details > summary:hover {
-    background-color: rgba(99, 102, 241, 0.08);
-    color: #F8FAFC;
+    background-color: rgba(99, 102, 241, 0.12) !important;
+    color: #F8FAFC !important;
 }
 [data-testid="stExpander"] details > summary:active {
-    transform: scale(0.995);
-    background-color: rgba(99, 102, 241, 0.14);
+    transform: scale(0.995) !important;
+    background-color: rgba(99, 102, 241, 0.18) !important;
 }
 
 /* Sidebar collapse/expand icon controls */
@@ -1571,63 +1673,27 @@ a.sad-gw-link:focus-visible {
     transition:
         transform 150ms var(--sad-btn-ease),
         background-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease;
+        color var(--sad-btn-duration) ease !important;
 }
 [data-testid="stSidebarCollapseButton"] button:hover,
 [data-testid="stExpandSidebarButton"] button:hover {
-    transform: translateY(-1px);
-    background-color: rgba(99, 102, 241, 0.14);
+    transform: translateY(-1px) !important;
+    background-color: rgba(99, 102, 241, 0.14) !important;
 }
 [data-testid="stSidebarCollapseButton"] button:active,
 [data-testid="stExpandSidebarButton"] button:active {
-    transform: scale(0.95);
+    transform: scale(0.95) !important;
 }
 
-/* Respect reduced-motion accessibility settings */
+/* Respect reduced-motion accessibility settings without breaking button animations */
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto;
     }
-    [data-testid="stButton"] button,
-    [data-testid="stDownloadButton"] button,
-    [data-testid="stCode"] button,
-    [data-testid="stElementToolbarButton"] button,
-    [data-testid="stTabs"] [data-testid="stTab"],
-    [data-testid="stTabs"] [data-testid="stTabsScrollLeft"],
-    [data-testid="stTabs"] [data-testid="stTabsScrollRight"],
-    [data-testid="stButtonGroup"] button[data-variant="segmented_control"],
-    [data-testid="stSidebarCollapseButton"] button,
-    [data-testid="stExpandSidebarButton"] button,
-    [data-testid="stExpander"] details,
-    [data-testid="stExpander"] details > summary,
-    .sad-gw-details summary,
-    .sad-source-chip,
-    .sad-skeleton-box {
+    .sad-skeleton-box,
+    .sad-reduce-motion-target {
         transition: none !important;
         animation: none !important;
-    }
-    [data-testid="stButton"] button:hover,
-    [data-testid="stButton"] button:active,
-    [data-testid="stDownloadButton"] button:hover,
-    [data-testid="stDownloadButton"] button:active,
-    [data-testid="stCode"] button:hover,
-    [data-testid="stCode"] button:active,
-    [data-testid="stElementToolbarButton"] button:hover,
-    [data-testid="stElementToolbarButton"] button:active,
-    [data-testid="stTabs"] [data-testid="stTab"]:hover,
-    [data-testid="stTabs"] [data-testid="stTab"]:active,
-    [data-testid="stTabs"] [data-testid="stTabsScrollLeft"]:active,
-    [data-testid="stTabs"] [data-testid="stTabsScrollRight"]:active,
-    [data-testid="stButtonGroup"] button[data-variant="segmented_control"]:hover,
-    [data-testid="stButtonGroup"] button[data-variant="segmented_control"]:active,
-    [data-testid="stSidebarCollapseButton"] button:hover,
-    [data-testid="stSidebarCollapseButton"] button:active,
-    [data-testid="stExpandSidebarButton"] button:hover,
-    [data-testid="stExpandSidebarButton"] button:active,
-    [data-testid="stExpander"] details > summary:active,
-    .sad-gw-details summary:active,
-    .sad-source-chip:hover,
-    .sad-source-chip:active {
         transform: none !important;
     }
 }
