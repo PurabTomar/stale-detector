@@ -277,15 +277,28 @@ def root_info(request: Request) -> Any:
 
 @app.get("/api")
 @app.get("/api/info")
-def api_info() -> dict[str, Any]:
-    """Programmatic JSON service metadata endpoint."""
-    return {
-        "service": "Stale-Answer Detector API",
-        "version": "1.0.0",
-        "docs_url": "/docs",
-        "health_url": "/health",
-        "verify_endpoint": "POST /verify",
-    }
+def api_info(request: Request) -> Any:
+    """Programmatic JSON service metadata endpoint or Web UI for browsers."""
+    accept = request.headers.get("accept", "").lower()
+    ua = request.headers.get("user-agent", "").lower()
+    format_param = request.query_params.get("format", "").lower()
+
+    if (
+        ("text/html" in accept or "mozilla" in ua)
+        and format_param != "json"
+        and "application/json" not in accept
+    ):
+        return HTMLResponse(content=get_web_ui_html())
+
+    return JSONResponse(
+        {
+            "service": "Stale-Answer Detector API",
+            "version": "1.0.0",
+            "docs_url": "/docs",
+            "health_url": "/health",
+            "verify_endpoint": "POST /verify",
+        }
+    )
 
 
 @app.get("/health")
