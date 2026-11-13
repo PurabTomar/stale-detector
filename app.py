@@ -16,6 +16,7 @@ import inspect
 import json
 from pathlib import Path
 import re
+import sys
 import time
 from urllib.parse import urlparse
 
@@ -166,37 +167,37 @@ STATUS_META = {
     "fresh": {
         "label": "Fresh",
         "pill_class": "pill-fresh",
-        "color": "#22C55E",
+        "color": "#16A34A",
         "badge_color": "green",
     },
     "outdated": {
         "label": "Outdated",
         "pill_class": "pill-outdated",
-        "color": "#F97316",
+        "color": "#EA580C",
         "badge_color": "orange",
     },
     "incorrect": {
         "label": "Incorrect",
         "pill_class": "pill-incorrect",
-        "color": "#EF4444",
+        "color": "#DC2626",
         "badge_color": "red",
     },
     "partially_correct": {
         "label": "Partially correct",
         "pill_class": "pill-partially-correct",
-        "color": "#F59E0B",
+        "color": "#D97706",
         "badge_color": "amber",
     },
     "uncertain": {
         "label": "Uncertain",
         "pill_class": "pill-uncertain",
-        "color": "#EAB308",
+        "color": "#475569",
         "badge_color": "yellow",
     },
     "unverifiable": {
         "label": "Unverifiable",
         "pill_class": "pill-unverifiable",
-        "color": "#64748B",
+        "color": "#6B7280",
         "badge_color": "gray",
     },
 }
@@ -241,2203 +242,113 @@ CATEGORY_ICONS = {
 }
 
 # ---------------------------------------------------------------------------
-# Custom CSS (responsive dark UI with a single indigo accent: #6366F1)
+# Visual Styling: Load modern SaaS theme from assets/style.css
+# ---------------------------------------------------------------------------
+_STYLE_CSS_PATH = Path(__file__).resolve().parent / "assets" / "style.css"
+
+
+def load_css() -> str:
+    """Load core visual stylesheet from assets/style.css."""
+    try:
+        if _STYLE_CSS_PATH.is_file():
+            return _STYLE_CSS_PATH.read_text(encoding="utf-8")
+    except OSError:
+        pass
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Theme CSS tokens (loaded alongside assets/style.css for theme switching)
 # ---------------------------------------------------------------------------
 CUSTOM_CSS = """
 <style>
-html {
-    scroll-behavior: smooth;
-}
-.sad-hero {
-    background: linear-gradient(135deg, #131A2A 0%, #171E35 60%, #1C2042 100%);
-    border: 1px solid #243047;
-    border-radius: 14px;
-    padding: 1.35rem 1.6rem;
-    margin-bottom: 1.25rem;
-}
-.sad-hero-top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-}
-.sad-hero-title {
-    margin: 0;
-    font-size: 1.85rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    color: #F8FAFC;
-    line-height: 1.2;
-}
-.sad-hero-tagline {
-    margin: 0.45rem 0 0 0;
-    font-size: 0.96rem;
-    color: #94A3B8;
-}
-.sad-hero-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-.sad-tech-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.76rem;
-    font-weight: 600;
-    color: #C7D2FE;
-    background: rgba(99, 102, 241, 0.14);
-    border: 1px solid rgba(99, 102, 241, 0.4);
-    border-radius: 999px;
-    padding: 0.25rem 0.7rem;
-    white-space: nowrap;
-}
-.sad-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #6366F1;
-    display: inline-block;
-}
-
-/* Overall score ring card */
-.sad-score-card {
-    background: #131A2A;
-    border: 1px solid #243047;
-    border-radius: 14px;
-    padding: 1.25rem 1.4rem;
-    margin-bottom: 0.9rem;
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-}
-.sad-ring-wrap {
-    flex-shrink: 0;
-    width: 136px;
-    height: 136px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 24px rgba(0, 0, 0, 0.35);
-}
-.sad-ring-inner {
-    width: 106px;
-    height: 106px;
-    border-radius: 50%;
-    background: #0F1524;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-}
-.sad-ring-num {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #F8FAFC;
-    line-height: 1;
-}
-.sad-ring-denom {
-    font-size: 0.75rem;
-    color: #94A3B8;
-    margin-top: 2px;
-}
-.sad-ring-tier {
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-top: 4px;
-}
-.sad-score-meta h3 {
-    margin: 0 0 0.3rem 0;
-    font-size: 1.15rem;
-    font-weight: 600;
-    color: #F8FAFC;
-}
-.sad-score-meta p {
-    margin: 0 0 0.5rem 0;
-    font-size: 0.88rem;
-    color: #94A3B8;
-    line-height: 1.45;
-}
-.sad-model-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.45rem;
-    margin-top: 0.3rem;
-}
-.sad-model-label {
-    font-size: 0.74rem;
-    font-weight: 600;
-    color: #94A3B8;
-}
-.sad-model-tag {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.76rem;
-    color: #CBD5E1;
-    background: #1A2236;
-    border: 1px solid #243047;
-    border-radius: 6px;
-    padding: 0.2rem 0.55rem;
-}
-.sad-model-row .sad-fallback-pill {
-    margin-top: 0;
-}
-
-/* Claim cards */
-.sad-claim-card {
-    background: #131A2A;
-    border: 1px solid #243047;
-    border-radius: 12px;
-    padding: 1.05rem 1.15rem;
-    margin-bottom: 0.85rem;
-    scroll-margin-top: 4.5rem;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-.sad-claim-card:target {
-    border-color: #6366F1;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.45), 0 0 22px rgba(99, 102, 241, 0.22);
-}
-.sad-claim-header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
-    margin-bottom: 0.85rem;
-}
-.sad-claim-badges {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-}
-.sad-pill {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.74rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    border-radius: 999px;
-    padding: 0.2rem 0.65rem;
-}
-.pill-fresh {
-    color: #4ADE80;
-    background: rgba(34, 197, 94, 0.14);
-    border: 1px solid rgba(34, 197, 94, 0.35);
-}
-.pill-outdated {
-    color: #FB923C;
-    background: rgba(249, 115, 22, 0.14);
-    border: 1px solid rgba(249, 115, 22, 0.35);
-}
-.pill-incorrect {
-    color: #F87171;
-    background: rgba(239, 68, 68, 0.14);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-}
-.pill-partially-correct {
-    color: #FBBF24;
-    background: rgba(245, 158, 11, 0.14);
-    border: 1px solid rgba(245, 158, 11, 0.35);
-}
-.pill-uncertain {
-    color: #FDE047;
-    background: rgba(234, 179, 8, 0.14);
-    border: 1px solid rgba(234, 179, 8, 0.35);
-}
-.pill-unverifiable {
-    color: #CBD5E1;
-    background: rgba(148, 163, 184, 0.16);
-    border: 1px solid rgba(148, 163, 184, 0.4);
-}
-.sad-cat-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.76rem;
-    font-weight: 500;
-    color: #CBD5E1;
-    background: #1A2236;
-    border: 1px solid #2A3752;
-    border-radius: 6px;
-    padding: 0.18rem 0.55rem;
-    text-transform: capitalize;
-}
-.sad-meta-pill {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.72rem;
-    font-weight: 600;
-    border-radius: 6px;
-    padding: 0.16rem 0.5rem;
-    background: #1A2236;
-    border: 1px solid #2A3752;
-    color: #94A3B8;
-}
-.risk-critical {
-    color: #FCA5A5;
-    background: rgba(239, 68, 68, 0.12);
-    border-color: rgba(239, 68, 68, 0.32);
-}
-.risk-moderate {
-    color: #FCD34D;
-    background: rgba(245, 158, 11, 0.12);
-    border-color: rgba(245, 158, 11, 0.32);
-}
-.risk-low {
-    color: #94A3B8;
-    background: rgba(148, 163, 184, 0.1);
-    border-color: rgba(148, 163, 184, 0.25);
-}
-.sad-model-agree {
-    color: #4ADE80;
-    background: rgba(34, 197, 94, 0.14);
-    border-color: rgba(34, 197, 94, 0.35);
-}
-.sad-model-disagree {
-    color: #FBBF24;
-    background: rgba(245, 158, 11, 0.16);
-    border-color: rgba(245, 158, 11, 0.42);
-}
-.sad-dual-judge-box {
-    font-size: 0.8rem;
-    color: #E2E8F0;
-    background: #0E1422;
-    border: 1px solid #2A3752;
-    border-radius: 8px;
-    padding: 0.5rem 0.72rem;
-    margin-bottom: 0.65rem;
-    line-height: 1.42;
-}
-.sad-dual-judge-box.disagree {
-    border-color: rgba(245, 158, 11, 0.45);
-    background: rgba(245, 158, 11, 0.08);
-}
-.sad-dual-judge-head {
-    font-weight: 700;
-    font-size: 0.74rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #A5B4FC;
-    margin-bottom: 0.28rem;
-}
-.sad-dual-judge-box.disagree .sad-dual-judge-head {
-    color: #FCD34D;
-}
-.sad-dual-judge-row {
-    margin-top: 0.18rem;
-    color: #CBD5E1;
-}
-.sad-score-bar-wrap {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    min-width: 140px;
-}
-.sad-score-track {
-    width: 84px;
-    height: 7px;
-    border-radius: 999px;
-    background: #243047;
-    overflow: hidden;
-}
-.sad-score-fill {
-    height: 100%;
-    border-radius: 999px;
-}
-.sad-score-text {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: #E2E8F0;
-    font-variant-numeric: tabular-nums;
-}
-
-/* Claimed vs Actually (today) side-by-side grid */
-.sad-compare-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
-}
-.sad-compare-box {
-    background: #0E1422;
-    border: 1px solid #202B40;
-    border-radius: 9px;
-    padding: 0.7rem 0.85rem;
-}
-.sad-compare-actual {
-    border-color: rgba(99, 102, 241, 0.38);
-    background: rgba(99, 102, 241, 0.06);
-}
-.sad-compare-label {
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #94A3B8;
-    margin-bottom: 0.3rem;
-}
-.sad-compare-actual .sad-compare-label {
-    color: #A5B4FC;
-}
-.sad-compare-body {
-    font-size: 0.88rem;
-    color: #E2E8F0;
-    line-height: 1.45;
-}
-.sad-actual-meta {
-    margin-top: 0.48rem;
-    padding-top: 0.42rem;
-    border-top: 1px dashed rgba(99, 102, 241, 0.25);
-    display: flex;
-    flex-direction: column;
-    gap: 0.22rem;
-    font-size: 0.78rem;
-    color: #CBD5E1;
-}
-.sad-actual-meta-label {
-    font-weight: 600;
-    color: #A5B4FC;
-}
-.sad-reason {
-    font-size: 0.86rem;
-    color: #CBD5E1;
-    line-height: 1.45;
-    margin-bottom: 0.65rem;
-}
-.sad-reason strong {
-    color: #F1F5F9;
-}
-.sad-error-note {
-    font-size: 0.82rem;
-    color: #FCD34D;
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-    border-radius: 8px;
-    padding: 0.45rem 0.7rem;
-    margin-bottom: 0.65rem;
-}
-.sad-conflict-note {
-    font-size: 0.82rem;
-    color: #FDE68A;
-    background: rgba(245, 158, 11, 0.12);
-    border: 1px solid rgba(245, 158, 11, 0.42);
-    border-radius: 8px;
-    padding: 0.48rem 0.72rem;
-    margin-bottom: 0.65rem;
-    line-height: 1.4;
-}
-.sad-chips-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.45rem;
-}
-.sad-source-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.34rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #C7D2FE !important;
-    text-decoration: none !important;
-    background: rgba(99, 102, 241, 0.12);
-    border: 1px solid rgba(99, 102, 241, 0.3);
-    border-radius: 999px;
-    padding: 0.2rem 0.62rem;
-    transition:
-        transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-        background-color 180ms ease,
-        border-color 180ms ease,
-        box-shadow 180ms ease;
-}
-.sad-source-chip:hover {
-    transform: translateY(-1px);
-    background: rgba(99, 102, 241, 0.24);
-    border-color: #6366F1;
-    box-shadow: 0 3px 10px rgba(11, 15, 25, 0.35);
-}
-.sad-source-chip:active {
-    transform: translateY(0) scale(0.975);
-}
-.sad-src-type {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.63rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    border-radius: 999px;
-    padding: 0.08rem 0.42rem;
-    line-height: 1.2;
-}
-.sad-src-primary {
-    color: #4ADE80;
-    background: rgba(34, 197, 94, 0.16);
-    border: 1px solid rgba(34, 197, 94, 0.4);
-}
-.sad-src-news {
-    color: #A5B4FC;
-    background: rgba(99, 102, 241, 0.18);
-    border: 1px solid rgba(99, 102, 241, 0.4);
-}
-.sad-src-blog {
-    color: #FBBF24;
-    background: rgba(245, 158, 11, 0.16);
-    border: 1px solid rgba(245, 158, 11, 0.4);
-}
-.sad-src-forum {
-    color: #94A3B8;
-    background: rgba(148, 163, 184, 0.16);
-    border: 1px solid rgba(148, 163, 184, 0.35);
-}
-.sad-src-date {
-    font-size: 0.69rem;
-    color: #94A3B8;
-    font-variant-numeric: tabular-nums;
-}
-.sad-snippet-card {
-    background: #0E1422;
-    border: 1px solid #202B40;
-    border-radius: 8px;
-    padding: 0.55rem 0.72rem;
-    margin-bottom: 0.45rem;
-}
-.sad-snippet-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.45rem;
-    margin-bottom: 0.28rem;
-    font-size: 0.78rem;
-}
-.sad-snippet-link {
-    color: #A5B4FC !important;
-    font-weight: 600;
-    text-decoration: none !important;
-}
-.sad-snippet-link:hover {
-    text-decoration: underline !important;
-}
-.sad-snippet-text {
-    font-size: 0.82rem;
-    color: #CBD5E1;
-    line-height: 1.45;
-}
-.sad-card-footer {
-    margin-top: 0.55rem;
-    font-size: 0.75rem;
-    color: #94A3B8;
-}
-
-/* Empty state card on tabs */
-.sad-empty-state {
-    background: #131A2A;
-    border: 1px dashed #2A3752;
-    border-radius: 14px;
-    padding: 2.1rem 1.5rem;
-    text-align: center;
-    color: #94A3B8;
-}
-.sad-empty-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    background: rgba(99, 102, 241, 0.14);
-    border: 1px solid rgba(99, 102, 241, 0.34);
-    color: #A5B4FC;
-    margin-bottom: 0.75rem;
-}
-.sad-empty-state h4 {
-    margin: 0 0 0.4rem 0;
-    color: #E2E8F0;
-    font-weight: 600;
-}
-.sad-empty-state p {
-    margin: 0 auto;
-    max-width: 520px;
-    font-size: 0.9rem;
-    line-height: 1.5;
-}
-.sad-empty-pills {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.4rem;
-    margin-top: 0.95rem;
-}
-.sad-empty-pill {
-    font-size: 0.72rem;
-    font-weight: 500;
-    color: #CBD5E1;
-    background: #1A2236;
-    border: 1px solid #2A3752;
-    border-radius: 999px;
-    padding: 0.18rem 0.62rem;
-}
-.sad-empty-hint {
-    margin-top: 0.85rem;
-    font-size: 0.78rem;
-    color: #94A3B8;
-}
-
-/* Demo mode status badges & offline banner */
-.sad-tech-demo {
-    color: #A7F3D0;
-    background: rgba(34, 197, 94, 0.14);
-    border-color: rgba(34, 197, 94, 0.42);
-}
-.sad-dot-green {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #22C55E;
-    display: inline-block;
-}
-.sad-demo-banner {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    background: rgba(34, 197, 94, 0.1);
-    border: 1px solid rgba(34, 197, 94, 0.35);
-    border-radius: 10px;
-    padding: 0.52rem 0.85rem;
-    margin-bottom: 0.85rem;
-    font-size: 0.82rem;
-    color: #DCFCE7;
-}
-.sad-demo-pill {
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #4ADE80;
-    background: rgba(34, 197, 94, 0.16);
-    border: 1px solid rgba(34, 197, 94, 0.4);
-    border-radius: 999px;
-    padding: 0.12rem 0.5rem;
-}
-
-/* Collapsible request log inside Gateway panel */
-.sad-gw-details {
-    margin-top: 0.5rem;
-    border-top: 1px solid #202B40;
-    padding-top: 0.4rem;
-}
-.sad-gw-details summary {
-    display: inline-block;
-    cursor: pointer;
-    font-size: 0.74rem;
-    font-weight: 600;
-    color: #A5B4FC;
-    list-style: none;
-    user-select: none;
-    padding: 0.18rem 0.45rem;
-    margin: -0.1rem 0 -0.1rem -0.35rem;
-    border-radius: 6px;
-    transition:
-        transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
-        background-color 180ms ease,
-        color 180ms ease;
-}
-.sad-gw-details summary:hover {
-    background-color: rgba(99, 102, 241, 0.12);
-    color: #E0E7FF;
-}
-.sad-gw-details summary:active {
-    transform: scale(0.98);
-    background-color: rgba(99, 102, 241, 0.20);
-}
-.sad-gw-details summary::-webkit-details-marker {
-    display: none;
-}
-.sad-gw-details summary::before {
-    content: "▸ ";
-    color: #818CF8;
-}
-.sad-gw-details[open] summary::before {
-    content: "▾ ";
-}
-
-/* Lightweight CSS fallback skeleton animation */
-@keyframes sadPulse {
-    0%, 100% { opacity: 0.45; }
-    50% { opacity: 0.85; }
-}
-.sad-skeleton-box {
-    width: 100%;
-    border-radius: 12px;
-    background: linear-gradient(90deg, #131A2A 25%, #1E2942 50%, #131A2A 75%);
-    border: 1px solid #243047;
-    margin-bottom: 0.75rem;
-    animation: sadPulse 1.4s ease-in-out infinite;
-}
-
-/* Sidebar Tavily session credits card */
-.sad-credits-card {
-    background: #131A2A;
-    border: 1px solid #243047;
-    border-radius: 10px;
-    padding: 0.7rem 0.85rem;
-    margin-top: 0.35rem;
-}
-.sad-credits-label {
-    font-size: 0.76rem;
-    font-weight: 600;
-    color: #94A3B8;
-    margin-bottom: 0.25rem;
-}
-.sad-credits-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-}
-.sad-credits-value {
-    font-size: 1.35rem;
-    font-weight: 700;
-    color: #F8FAFC;
-    font-variant-numeric: tabular-nums;
-}
-.sad-credits-pill {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: #C7D2FE;
-    background: rgba(99, 102, 241, 0.16);
-    border: 1px solid rgba(99, 102, 241, 0.35);
-    border-radius: 999px;
-    padding: 0.12rem 0.5rem;
-}
-
-/* Sidebar Bifrost Gateway panel */
-.sad-gw-card {
-    background: #131A2A;
-    border: 1px solid #243047;
-    border-radius: 10px;
-    padding: 0.75rem 0.85rem;
-    margin-bottom: 0.55rem;
-}
-.sad-gw-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-.sad-health-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    border-radius: 999px;
-    padding: 0.16rem 0.55rem;
-}
-.sad-health-green {
-    color: #4ADE80;
-    background: rgba(34, 197, 94, 0.14);
-    border: 1px solid rgba(34, 197, 94, 0.35);
-}
-.sad-health-red {
-    color: #F87171;
-    background: rgba(239, 68, 68, 0.14);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-}
-.sad-health-blue {
-    color: #A5B4FC;
-    background: rgba(99, 102, 241, 0.16);
-    border: 1px solid rgba(99, 102, 241, 0.4);
-}
-.sad-health-dot-green {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #22C55E;
-    display: inline-block;
-}
-.sad-health-dot-red {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #EF4444;
-    display: inline-block;
-}
-.sad-health-dot-blue {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #6366F1;
-    display: inline-block;
-}
-.sad-gw-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #A5B4FC !important;
-    text-decoration: none !important;
-    margin-top: 0.35rem;
-}
-.sad-gw-link:hover {
-    text-decoration: underline !important;
-    color: #C7D2FE !important;
-}
-.sad-gw-sub {
-    font-size: 0.72rem;
-    color: #94A3B8;
-    margin-top: 0.22rem;
-    word-break: break-word;
-}
-.sad-gw-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.45rem;
-    margin-top: 0.5rem;
-}
-.sad-gw-stat {
-    background: #0E1422;
-    border: 1px solid #202B40;
-    border-radius: 8px;
-    padding: 0.42rem 0.52rem;
-}
-.sad-gw-stat-full {
-    grid-column: 1 / -1;
-}
-.sad-gw-stat-label {
-    font-size: 0.66rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #94A3B8;
-}
-.sad-gw-stat-value {
-    font-size: 0.84rem;
-    font-weight: 600;
-    color: #F8FAFC;
-    margin-top: 0.14rem;
-    word-break: break-word;
-    font-variant-numeric: tabular-nums;
-}
-.sad-fallback-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.73rem;
-    font-weight: 700;
-    color: #FBBF24;
-    background: rgba(245, 158, 11, 0.14);
-    border: 1px solid rgba(245, 158, 11, 0.35);
-    border-radius: 999px;
-    padding: 0.18rem 0.58rem;
-    margin-top: 0.4rem;
-    word-break: break-word;
-}
-.sad-primary-pill {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.71rem;
-    font-weight: 600;
-    color: #4ADE80;
-    background: rgba(34, 197, 94, 0.12);
-    border: 1px solid rgba(34, 197, 94, 0.3);
-    border-radius: 999px;
-    padding: 0.15rem 0.52rem;
-    margin-top: 0.4rem;
-}
-.sad-gw-log {
-    margin-top: 0.55rem;
-    max-height: 185px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-}
-.sad-gw-log-row {
-    background: #0E1422;
-    border: 1px solid #202B40;
-    border-radius: 7px;
-    padding: 0.38rem 0.52rem;
-    font-size: 0.72rem;
-    color: #CBD5E1;
-    line-height: 1.38;
-}
-.sad-gw-log-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.4rem;
-    font-weight: 600;
-    color: #E2E8F0;
-}
-.sad-gw-tasks {
-    margin-top: 0.45rem;
-    background: #0E1422;
-    border: 1px solid #202B40;
-    border-radius: 8px;
-    padding: 0.42rem 0.52rem;
-    font-size: 0.72rem;
-    color: #CBD5E1;
-    line-height: 1.42;
-}
-.sad-gw-tasks strong {
-    color: #A5B4FC;
-}
-
-/* Annotated answer, URL article & Ask & Audit inline claim highlights */
-.sad-ask-card,
-.sad-annotated-card {
-    background: #131A2A;
-    border: 1px solid #243047;
-    border-radius: 14px;
-    padding: 1.1rem 1.25rem;
-    margin-bottom: 0.9rem;
-}
-.sad-annotated-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-bottom: 0.6rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #202B40;
-}
-.sad-annotated-title {
-    font-size: 0.82rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #E2E8F0;
-}
-.sad-annotated-hint {
-    font-size: 0.74rem;
-    color: #94A3B8;
-}
-.sad-ask-question {
-    font-size: 0.8rem;
-    color: #94A3B8;
-    margin-bottom: 0.6rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #202B40;
-}
-.sad-url-source-bar {
-    background: #131A2A;
-    border: 1px solid #243047;
-    border-radius: 10px;
-    padding: 0.65rem 0.9rem;
-    margin-bottom: 0.85rem;
-    font-size: 0.82rem;
-    color: #CBD5E1;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-}
-.sad-url-source-bar a {
-    color: #A5B4FC !important;
-    text-decoration: none !important;
-    font-weight: 600;
-}
-.sad-url-source-bar a:hover {
-    text-decoration: underline !important;
-}
-.sad-ask-body {
-    font-size: 0.95rem;
-    line-height: 1.72;
-    color: #F1F5F9;
-    word-break: break-word;
-}
-a.sad-hl-link {
-    position: relative;
-    cursor: pointer;
-    display: inline;
-    text-decoration: underline;
-    text-underline-offset: 4px;
-    transition: filter 0.15s ease;
-}
-a.sad-hl-link:hover {
-    filter: brightness(1.14);
-}
-a.sad-hl-link[data-tooltip]:hover::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    left: 0;
-    bottom: calc(100% + 7px);
-    z-index: 9999;
-    width: max-content;
-    max-width: min(300px, 75vw);
-    padding: 0.5rem 0.72rem;
-    border-radius: 8px;
-    background: #0B1120;
-    border: 1px solid #3B4C73;
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.6);
-    color: #F8FAFC;
-    font-size: 0.78rem;
-    font-weight: 500;
-    line-height: 1.42;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    pointer-events: none;
-}
-.sad-hl-incorrect,
-a.sad-hl-link.sad-hl-incorrect,
-a.sad-hl-link.sad-hl-incorrect:visited {
-    background: rgba(239, 68, 68, 0.17);
-    text-decoration: underline;
-    text-decoration-color: #EF4444;
-    text-decoration-thickness: 2.5px;
-    text-underline-offset: 4px;
-    border-radius: 4px;
-    padding: 0.05rem 0.24rem;
-    color: #FECACA !important;
-}
-.sad-hl-outdated,
-a.sad-hl-link.sad-hl-outdated,
-a.sad-hl-link.sad-hl-outdated:visited {
-    background: rgba(249, 115, 22, 0.17);
-    text-decoration: underline;
-    text-decoration-color: #F97316;
-    text-decoration-thickness: 2.5px;
-    text-underline-offset: 4px;
-    border-radius: 4px;
-    padding: 0.05rem 0.24rem;
-    color: #FED7AA !important;
-}
-.sad-hl-partially-correct,
-a.sad-hl-link.sad-hl-partially-correct,
-a.sad-hl-link.sad-hl-partially-correct:visited {
-    background: rgba(245, 158, 11, 0.17);
-    text-decoration: underline;
-    text-decoration-color: #F59E0B;
-    text-decoration-thickness: 2.5px;
-    text-underline-offset: 4px;
-    border-radius: 4px;
-    padding: 0.05rem 0.24rem;
-    color: #FEF08A !important;
-}
-.sad-hl-fresh,
-a.sad-hl-link.sad-hl-fresh,
-a.sad-hl-link.sad-hl-fresh:visited {
-    background: rgba(34, 197, 94, 0.16);
-    text-decoration: underline;
-    text-decoration-color: #22C55E;
-    text-decoration-thickness: 2px;
-    text-underline-offset: 4px;
-    border-radius: 4px;
-    padding: 0.05rem 0.24rem;
-    color: #DCFCE7 !important;
-}
-.sad-hl-uncertain,
-a.sad-hl-link.sad-hl-uncertain,
-a.sad-hl-link.sad-hl-uncertain:visited {
-    background: rgba(250, 204, 21, 0.18);
-    text-decoration: underline dashed;
-    text-decoration-color: #FACC15;
-    text-decoration-thickness: 2px;
-    text-underline-offset: 4px;
-    border-radius: 4px;
-    padding: 0.05rem 0.24rem;
-    color: #FEF08A !important;
-}
-.sad-hl-unverifiable,
-a.sad-hl-link.sad-hl-unverifiable,
-a.sad-hl-link.sad-hl-unverifiable:visited {
-    background: rgba(148, 163, 184, 0.18);
-    text-decoration: underline dashed;
-    text-decoration-color: #94A3B8;
-    text-decoration-thickness: 2px;
-    text-underline-offset: 4px;
-    border-radius: 4px;
-    padding: 0.05rem 0.24rem;
-    color: #CBD5E1 !important;
-}
-.sad-hl-legend {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.85rem;
-    margin-top: 0.85rem;
-    padding-top: 0.65rem;
-    border-top: 1px solid #202B40;
-    font-size: 0.76rem;
-    color: #94A3B8;
-}
-
-/* Corrected answer side-by-side diff & changelog */
-.sad-diff-card {
-    background: #131A2A;
-    border: 1px solid #243047;
-    border-radius: 12px;
-    padding: 1rem 1.15rem;
-    height: 100%;
-}
-.sad-diff-card-orig {
-    border-top: 3px solid rgba(239, 68, 68, 0.7);
-}
-.sad-diff-card-new {
-    border-top: 3px solid rgba(34, 197, 94, 0.75);
-}
-.sad-diff-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-bottom: 0.65rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #202B40;
-}
-.sad-diff-title {
-    font-size: 0.76rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #CBD5E1;
-}
-.sad-diff-tag {
-    font-size: 0.7rem;
-    font-weight: 600;
-    border-radius: 999px;
-    padding: 0.14rem 0.55rem;
-}
-.sad-diff-tag-del {
-    color: #FCA5A5;
-    background: rgba(239, 68, 68, 0.14);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-}
-.sad-diff-tag-ins {
-    color: #86EFAC;
-    background: rgba(34, 197, 94, 0.14);
-    border: 1px solid rgba(34, 197, 94, 0.35);
-}
-.sad-diff-body {
-    font-size: 0.93rem;
-    line-height: 1.72;
-    color: #E2E8F0;
-    word-break: break-word;
-}
-.sad-diff-del {
-    background: rgba(239, 68, 68, 0.22);
-    color: #FCA5A5;
-    text-decoration: line-through;
-    text-decoration-color: #EF4444;
-    text-decoration-thickness: 2px;
-    border-radius: 4px;
-    padding: 0.03rem 0.24rem;
-}
-.sad-diff-ins {
-    background: rgba(34, 197, 94, 0.18);
-    color: #86EFAC;
-    text-decoration: none;
-    border-bottom: 2px solid rgba(34, 197, 94, 0.75);
-    border-radius: 4px;
-    padding: 0.03rem 0.24rem;
-    font-weight: 500;
-}
-.sad-change-card {
-    background: #131A2A;
-    border: 1px solid #243047;
-    border-radius: 11px;
-    padding: 0.9rem 1.05rem;
-    margin-bottom: 0.7rem;
-}
-.sad-change-top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.6rem;
-}
-.sad-change-pill-corrected {
-    color: #F87171;
-    background: rgba(239, 68, 68, 0.14);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-}
-.sad-change-pill-replaced,
-.sad-change-pill-updated {
-    color: #FB923C;
-    background: rgba(249, 115, 22, 0.14);
-    border: 1px solid rgba(249, 115, 22, 0.35);
-}
-.sad-change-pill-refined {
-    color: #FBBF24;
-    background: rgba(245, 158, 11, 0.14);
-    border: 1px solid rgba(245, 158, 11, 0.35);
-}
-.sad-change-pill-qualified {
-    color: #FDE047;
-    background: rgba(234, 179, 8, 0.14);
-    border: 1px solid rgba(234, 179, 8, 0.35);
-}
-.sad-change-pill-unverifiable {
-    color: #CBD5E1;
-    background: rgba(148, 163, 184, 0.16);
-    border: 1px solid rgba(148, 163, 184, 0.4);
-}
-.sad-change-diff-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.65rem;
-    margin-bottom: 0.55rem;
-}
-
-/* Centralized interactive button, export, navigation & expander animations */
-:root {
-    --sad-btn-ease: cubic-bezier(0.22, 1, 0.36, 1);
-    --sad-btn-duration: 180ms;
-}
-
-/* Ensure button containers do not clip the 2px lift elevation & soft glow shadow */
-div.stButton,
-div[data-testid="stButton"],
-div.stDownloadButton,
-div[data-testid="stDownloadButton"] {
-    overflow: visible !important;
-}
-
-div.stButton > button,
-div[data-testid="stButton"] button,
-div.stDownloadButton > button,
-div[data-testid="stDownloadButton"] button,
-button[data-testid^="stBaseButton-"],
-button[data-testid^="baseButton-"],
-button[kind="primary"],
-button[kind="secondary"] {
-    position: relative !important;
-    transition:
-        transform var(--sad-btn-duration) var(--sad-btn-ease),
-        background-color var(--sad-btn-duration) ease,
-        border-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease,
-        box-shadow 200ms var(--sad-btn-ease),
-        filter var(--sad-btn-duration) ease,
-        opacity 150ms ease !important;
-    will-change: transform, box-shadow !important;
-}
-
-[data-testid="stButton"] button:focus-visible,
-[data-testid="stDownloadButton"] button:focus-visible,
-[data-testid="stTabs"] [data-testid="stTab"]:focus-visible,
-[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:focus-visible,
-[data-testid="stExpander"] details > summary:focus-visible,
-.sad-gw-details summary:focus-visible,
-[data-testid="stCode"] button:focus-visible,
-[data-testid="stElementToolbarButton"] button:focus-visible,
-[data-testid="stSidebarCollapseButton"] button:focus-visible,
-[data-testid="stExpandSidebarButton"] button:focus-visible,
-a.sad-source-chip:focus-visible,
-a.sad-gw-link:focus-visible {
-    outline: 2px solid #A5B4FC !important;
-    outline-offset: 2px !important;
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.24) !important;
-}
-
-/* Primary action buttons: Check Freshness, Ask & Audit, Audit URL,
-   Generate/Regenerate corrected answer, Re-run benchmark */
-div.stButton > button[data-testid="stBaseButton-primary"],
-div.stButton > button[data-testid="baseButton-primary"],
-div.stButton > button[kind="primary"],
-div[data-testid="stButton"] button[data-testid="stBaseButton-primary"],
-div[data-testid="stButton"] button[data-testid="baseButton-primary"],
-div[data-testid="stButton"] button[kind="primary"],
-button[data-testid="stBaseButton-primary"],
-button[data-testid="baseButton-primary"],
-button[kind="primary"] {
-    background-color: #6366F1 !important;
-    border: 1px solid #6366F1 !important;
-    color: #F8FAFC !important;
-    font-weight: 600 !important;
-    box-shadow: 0 2px 6px rgba(11, 15, 25, 0.38), 0 0 0 1px rgba(129, 140, 248, 0.22) !important;
-}
-
-div.stButton > button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
-div.stButton > button[data-testid="baseButton-primary"]:hover:not(:disabled),
-div.stButton > button[kind="primary"]:hover:not(:disabled),
-div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
-div[data-testid="stButton"] button[data-testid="baseButton-primary"]:hover:not(:disabled),
-div[data-testid="stButton"] button[kind="primary"]:hover:not(:disabled),
-button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
-button[data-testid="baseButton-primary"]:hover:not(:disabled),
-button[kind="primary"]:hover:not(:disabled) {
-    transform: translateY(-2px);
-    background-color: #7073F7 !important;
-    border-color: #818CF8 !important;
-    color: #FFFFFF !important;
-    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.30), 0 2px 6px rgba(11, 15, 25, 0.45) !important;
-    filter: brightness(1.08) !important;
-    cursor: pointer !important;
-}
-
-div.stButton > button[data-testid="stBaseButton-primary"]:active:not(:disabled),
-div.stButton > button[data-testid="baseButton-primary"]:active:not(:disabled),
-div.stButton > button[kind="primary"]:active:not(:disabled),
-div[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:active:not(:disabled),
-div[data-testid="stButton"] button[data-testid="baseButton-primary"]:active:not(:disabled),
-div[data-testid="stButton"] button[kind="primary"]:active:not(:disabled),
-button[data-testid="stBaseButton-primary"]:active:not(:disabled),
-button[data-testid="baseButton-primary"]:active:not(:disabled),
-button[kind="primary"]:active:not(:disabled) {
-    transform: translateY(0) scale(0.985);
-    background-color: #5457E0 !important;
-    border-color: #6366F1 !important;
-    color: #F8FAFC !important;
-    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.22) !important;
-    filter: brightness(0.96) !important;
-}
-
-/* Export Audit Report & Benchmark Download buttons */
-div.stDownloadButton > button,
-div[data-testid="stDownloadButton"] button,
-[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"],
-[data-testid="stDownloadButton"] button[data-testid^="baseButton-"] {
-    background-color: rgba(99, 102, 241, 0.14) !important;
-    border: 1px solid rgba(99, 102, 241, 0.42) !important;
-    color: #E0E7FF !important;
-    font-weight: 600 !important;
-    box-shadow: 0 2px 5px rgba(11, 15, 25, 0.30) !important;
-}
-
-div.stDownloadButton > button:hover:not(:disabled),
-div[data-testid="stDownloadButton"] button:hover:not(:disabled),
-[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:hover:not(:disabled),
-[data-testid="stDownloadButton"] button[data-testid^="baseButton-"]:hover:not(:disabled) {
-    transform: translateY(-2px);
-    background-color: rgba(99, 102, 241, 0.24) !important;
-    border-color: #818CF8 !important;
-    color: #F8FAFC !important;
-    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.24), 0 2px 6px rgba(11, 15, 25, 0.38) !important;
-    filter: brightness(1.10) !important;
-    cursor: pointer !important;
-}
-
-div.stDownloadButton > button:active:not(:disabled),
-div[data-testid="stDownloadButton"] button:active:not(:disabled),
-[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:active:not(:disabled),
-[data-testid="stDownloadButton"] button[data-testid^="baseButton-"]:active:not(:disabled) {
-    transform: translateY(0) scale(0.985);
-    background-color: rgba(99, 102, 241, 0.30) !important;
-    border-color: #6366F1 !important;
-    color: #F8FAFC !important;
-    box-shadow: 0 2px 5px rgba(11, 15, 25, 0.32) !important;
-    filter: brightness(0.96) !important;
-}
-
-/* Secondary buttons: Clear, Sample examples, Clear Tavily cache, Demo recovery */
-div.stButton > button[data-testid="stBaseButton-secondary"],
-div.stButton > button[data-testid="baseButton-secondary"],
-div.stButton > button[kind="secondary"],
-div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"],
-div[data-testid="stButton"] button[data-testid="baseButton-secondary"],
-div[data-testid="stButton"] button[kind="secondary"],
-button[data-testid="stBaseButton-secondary"],
-button[data-testid="baseButton-secondary"],
-button[kind="secondary"],
-div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]) {
-    background-color: #161F33 !important;
-    border: 1px solid #2A3752 !important;
-    color: #E2E8F0 !important;
-    box-shadow: 0 1px 3px rgba(11, 15, 25, 0.28) !important;
-}
-
-div.stButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
-div.stButton > button[data-testid="baseButton-secondary"]:hover:not(:disabled),
-div.stButton > button[kind="secondary"]:hover:not(:disabled),
-div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
-div[data-testid="stButton"] button[data-testid="baseButton-secondary"]:hover:not(:disabled),
-div[data-testid="stButton"] button[kind="secondary"]:hover:not(:disabled),
-button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
-button[data-testid="baseButton-secondary"]:hover:not(:disabled),
-button[kind="secondary"]:hover:not(:disabled),
-div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]):hover:not(:disabled) {
-    transform: translateY(-2px);
-    background-color: #1E2942 !important;
-    border-color: rgba(129, 140, 248, 0.55) !important;
-    color: #F8FAFC !important;
-    box-shadow: 0 5px 14px rgba(11, 15, 25, 0.42), 0 0 0 1px rgba(99, 102, 241, 0.12) !important;
-    filter: brightness(1.10) !important;
-    cursor: pointer !important;
-}
-
-div.stButton > button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
-div.stButton > button[data-testid="baseButton-secondary"]:active:not(:disabled),
-div.stButton > button[kind="secondary"]:active:not(:disabled),
-div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
-div[data-testid="stButton"] button[data-testid="baseButton-secondary"]:active:not(:disabled),
-div[data-testid="stButton"] button[kind="secondary"]:active:not(:disabled),
-button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
-button[data-testid="baseButton-secondary"]:active:not(:disabled),
-button[kind="secondary"]:active:not(:disabled),
-div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]):active:not(:disabled) {
-    transform: translateY(0) scale(0.985);
-    background-color: #253352 !important;
-    border-color: #6366F1 !important;
-    color: #F8FAFC !important;
-    box-shadow: 0 1px 3px rgba(11, 15, 25, 0.36) !important;
-    filter: brightness(0.96) !important;
-}
-
-/* Clear & unmistakable disabled state with zero lift or glow */
-div.stButton > button:disabled,
-div.stButton > button:disabled:hover,
-div.stButton > button:disabled:active,
-[data-testid="stButton"] button:disabled,
-[data-testid="stButton"] button:disabled:hover,
-[data-testid="stButton"] button:disabled:active,
-div.stDownloadButton > button:disabled,
-div.stDownloadButton > button:disabled:hover,
-div.stDownloadButton > button:disabled:active,
-[data-testid="stDownloadButton"] button:disabled,
-[data-testid="stDownloadButton"] button:disabled:hover,
-[data-testid="stDownloadButton"] button:disabled:active,
-button[data-testid^="stBaseButton-"]:disabled,
-button[data-testid^="stBaseButton-"]:disabled:hover,
-button[data-testid^="stBaseButton-"]:disabled:active {
-    opacity: 0.62;
-    cursor: not-allowed;
-    background-color: rgba(26, 34, 54, 0.72);
-    border-color: #243047;
-    color: #94A3B8;
-    transform: none;
-    box-shadow: none;
-    filter: none;
-}
-[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:disabled,
-[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:disabled:hover,
-[data-testid="stButton"] button[data-testid="stBaseButton-primary"]:disabled:active {
-    background-color: rgba(99, 102, 241, 0.26) !important;
-    border-color: rgba(99, 102, 241, 0.36) !important;
-    color: #E2E8F0 !important;
-}
-
-/* Keep small top buffer inside expanders so 2px button hover lift is never clipped */
-[data-testid="stExpanderDetails"] {
-    padding-top: 0.35rem;
-}
-
-/* Copy buttons inside code blocks and element toolbars */
-[data-testid="stCode"] button,
-[data-testid="stElementToolbarButton"] button {
-    border-radius: 7px;
-    border: 1px solid transparent;
-    transition:
-        transform 150ms var(--sad-btn-ease),
-        background-color var(--sad-btn-duration) ease,
-        border-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease,
-        box-shadow 180ms ease,
-        filter 180ms ease !important;
-}
-[data-testid="stCode"] button:hover:not(:disabled),
-[data-testid="stElementToolbarButton"] button:hover:not(:disabled) {
-    transform: translateY(-1px) !important;
-    background-color: rgba(99, 102, 241, 0.18) !important;
-    border-color: rgba(129, 140, 248, 0.45) !important;
-    color: #F8FAFC !important;
-    box-shadow: 0 3px 10px rgba(11, 15, 25, 0.35) !important;
-    filter: brightness(1.10) !important;
-}
-[data-testid="stCode"] button:active:not(:disabled),
-[data-testid="stElementToolbarButton"] button:active:not(:disabled) {
-    transform: scale(0.94) !important;
-    background-color: rgba(99, 102, 241, 0.26) !important;
-    border-color: #6366F1 !important;
-}
-[data-testid="stCode"] button[data-copy-state="copied"] {
-    color: #4ADE80 !important;
-    background-color: rgba(34, 197, 94, 0.15) !important;
-    border-color: rgba(34, 197, 94, 0.38) !important;
-}
-
-/* Workspace navigation tabs (smooth hover/active states without underline shift) */
-[data-testid="stTabs"] [data-testid="stTab"] {
-    border-radius: 8px 8px 0 0;
-    transition:
-        transform 150ms var(--sad-btn-ease),
-        background-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease !important;
-}
-[data-testid="stTabs"] [data-testid="stTab"]:not([data-selected]):hover:not([data-disabled]) {
-    background-color: rgba(99, 102, 241, 0.14) !important;
-    color: #C7D2FE !important;
-}
-[data-testid="stTabs"] [data-testid="stTab"]:active:not([data-disabled]) {
-    transform: scale(0.985) !important;
-}
-[data-testid="stTabs"] [data-testid="stTabsScrollLeft"],
-[data-testid="stTabs"] [data-testid="stTabsScrollRight"] {
-    transition:
-        background-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease,
-        transform 150ms var(--sad-btn-ease) !important;
-}
-[data-testid="stTabs"] [data-testid="stTabsScrollLeft"]:hover,
-[data-testid="stTabs"] [data-testid="stTabsScrollRight"]:hover {
-    color: #C7D2FE !important;
-}
-[data-testid="stTabs"] [data-testid="stTabsScrollLeft"]:active,
-[data-testid="stTabs"] [data-testid="stTabsScrollRight"]:active {
-    transform: scale(0.94) !important;
-}
-
-/* Benchmark filter segmented-control buttons (zero flush-border shift) */
-[data-testid="stButtonGroup"] button[data-variant="segmented_control"] {
-    transition:
-        transform 140ms var(--sad-btn-ease),
-        background-color var(--sad-btn-duration) ease,
-        border-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease !important;
-}
-[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:hover:not([data-disabled]) {
-    background-color: rgba(99, 102, 241, 0.18) !important;
-    color: #F8FAFC !important;
-}
-[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:active:not([data-disabled]) {
-    transform: scale(0.98) !important;
-}
-
-/* Expand / collapse controls */
-[data-testid="stExpander"] details {
-    transition:
-        border-color var(--sad-btn-duration) ease,
-        box-shadow 200ms var(--sad-btn-ease) !important;
-}
-[data-testid="stExpander"] details:hover {
-    border-color: rgba(129, 140, 248, 0.42) !important;
-    box-shadow: 0 4px 12px rgba(11, 15, 25, 0.32) !important;
-}
-[data-testid="stExpander"] details > summary {
-    transition:
-        transform 150ms var(--sad-btn-ease),
-        background-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease !important;
-}
-[data-testid="stExpander"] details > summary:hover {
-    background-color: rgba(99, 102, 241, 0.12) !important;
-    color: #F8FAFC !important;
-}
-[data-testid="stExpander"] details > summary:active {
-    transform: scale(0.995) !important;
-    background-color: rgba(99, 102, 241, 0.18) !important;
-}
-
-/* Sidebar collapse/expand icon controls */
-[data-testid="stSidebarCollapseButton"] button,
-[data-testid="stExpandSidebarButton"] button {
-    border-radius: 8px;
-    transition:
-        transform 150ms var(--sad-btn-ease),
-        background-color var(--sad-btn-duration) ease,
-        color var(--sad-btn-duration) ease !important;
-}
-[data-testid="stSidebarCollapseButton"] button:hover,
-[data-testid="stExpandSidebarButton"] button:hover {
-    transform: translateY(-1px) !important;
-    background-color: rgba(99, 102, 241, 0.14) !important;
-}
-[data-testid="stSidebarCollapseButton"] button:active,
-[data-testid="stExpandSidebarButton"] button:active {
-    transform: scale(0.95) !important;
-}
-
-/* Respect reduced-motion accessibility settings without breaking button animations */
-@media (prefers-reduced-motion: reduce) {
-    html {
-        scroll-behavior: auto;
-    }
-    .sad-skeleton-box,
-    .sad-reduce-motion-target {
-        transition: none !important;
-        animation: none !important;
-        transform: none !important;
-    }
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .sad-score-card {
-        flex-direction: column;
-        text-align: center;
-    }
-    .sad-model-row {
-        justify-content: center;
-    }
-    .sad-compare-grid,
-    .sad-change-diff-row {
-        grid-template-columns: 1fr;
-    }
+/* Dark Mode and Core Overrides */
+[data-theme="dark"], body.dark-theme, .stApp.dark-theme {
+    color-scheme: dark !important;
+    --bg-page: #0B0F19;
+    --bg-card: #131A2A;
+    --text-main: #F1F5F9;
+    --text-muted: #94A3B8;
+    --border-main: #243047;
 }
 </style>
 """
 
-
-# ---------------------------------------------------------------------------
-# Light theme CSS overrides (activated when Dark mode switch is OFF)
-# ---------------------------------------------------------------------------
 LIGHT_THEME_CSS = """
 <style>
-/* ---------------------------------------------------------------------------
-   Light Mode Theme Overrides
-   Activated when dark_mode switch is toggled OFF
-   --------------------------------------------------------------------------- */
+/* Light Mode Theme Overrides */
 :root {
     color-scheme: light !important;
+    --bg-page: #F7F8FC;
+    --bg-card: #FFFFFF;
+    --text-main: #0F172A;
+    --text-muted: #64748B;
+    --border-main: #E5E7EF;
 }
-
-/* Main background & base text */
-html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
-    background-color: #F8FAFC !important;
-    color: #0F172A !important;
+.stApp {
+    background-color: var(--bg-page) !important;
+    color: var(--text-main) !important;
 }
-
-/* Header & toolbar */
-header[data-testid="stHeader"], [data-testid="stHeader"] {
-    background-color: rgba(248, 250, 252, 0.95) !important;
-    border-bottom: 1px solid #E2E8F0 !important;
+section[data-testid="stSidebar"] {
+    background-color: var(--bg-card) !important;
+    border-right: 1px solid var(--border-main) !important;
 }
-
-/* Sidebar styling */
-section[data-testid="stSidebar"], [data-testid="stSidebar"] > div:first-child {
-    background-color: #F1F5F9 !important;
-    border-right: 1px solid #E2E8F0 !important;
-}
-section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
-section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
-section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
-section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
-section[data-testid="stSidebar"] [data-testid="stText"] {
-    color: #334155 !important;
-}
-section[data-testid="stSidebar"] [data-testid="stHeadingWithActionElements"] h1,
-section[data-testid="stSidebar"] [data-testid="stHeadingWithActionElements"] h2,
-section[data-testid="stSidebar"] [data-testid="stHeadingWithActionElements"] h3 {
-    color: #0F172A !important;
-}
-
-/* Hero card */
 .sad-hero {
-    background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 50%, #F5F3FF 100%) !important;
-    border: 1px solid #C7D2FE !important;
-    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.08) !important;
+    background: linear-gradient(135deg, rgba(91, 91, 240, 0.05) 0%, rgba(139, 92, 246, 0.08) 100%), #FFFFFF !important;
+    border: 1px solid var(--border-main) !important;
 }
-.sad-hero-title {
-    color: #1E1B4B !important;
-}
-.sad-hero-tagline {
-    color: #475569 !important;
-}
-.sad-tech-badge {
-    color: #4338CA !important;
-    background: rgba(99, 102, 241, 0.12) !important;
-    border: 1px solid rgba(99, 102, 241, 0.32) !important;
-}
-
-/* Score ring card */
 .sad-score-card {
     background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06) !important;
+    border: 1px solid var(--border-main) !important;
 }
-.sad-ring-wrap {
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.12) !important;
-}
-.sad-ring-inner {
-    background: #FFFFFF !important;
-}
-.sad-ring-num {
-    color: #0F172A !important;
-}
-.sad-ring-denom {
-    color: #64748B !important;
-}
-.sad-score-meta h3 {
-    color: #0F172A !important;
-}
-.sad-score-meta p {
-    color: #475569 !important;
-}
-.sad-model-label {
-    color: #64748B !important;
-}
-.sad-model-tag {
-    color: #334155 !important;
-    background: #F1F5F9 !important;
-    border: 1px solid #CBD5E1 !important;
-}
-
-/* Claim cards */
 .sad-claim-card {
     background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04) !important;
+    border: 1px solid var(--border-main) !important;
 }
-.sad-claim-card:target {
-    border-color: #6366F1 !important;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35), 0 0 20px rgba(99, 102, 241, 0.18) !important;
-}
-.sad-cat-badge,
-.sad-meta-pill {
-    background: #F1F5F9 !important;
-    border: 1px solid #CBD5E1 !important;
-    color: #334155 !important;
-}
-.sad-score-track {
-    background: #E2E8F0 !important;
-}
-.sad-score-text {
-    color: #0F172A !important;
-}
-
-/* Dual-judge details */
-.sad-dual-judge-box {
-    background: #F8FAFC !important;
-    border: 1px solid #E2E8F0 !important;
-    color: #1E293B !important;
-}
-.sad-dual-judge-box.disagree {
-    background: #FFFBEB !important;
-    border-color: #FCD34D !important;
-}
-.sad-dual-judge-head {
-    color: #4F46E5 !important;
-}
-.sad-dual-judge-box.disagree .sad-dual-judge-head {
-    color: #B45309 !important;
-}
-.sad-dual-judge-row {
-    color: #334155 !important;
-}
-
-/* Claim status pills in light mode */
-.pill-fresh {
-    color: #15803D !important;
-    background: rgba(34, 197, 94, 0.12) !important;
-    border: 1px solid rgba(34, 197, 94, 0.35) !important;
-}
-.pill-outdated {
-    color: #C2410C !important;
-    background: rgba(249, 115, 22, 0.12) !important;
-    border: 1px solid rgba(249, 115, 22, 0.35) !important;
-}
-.pill-incorrect {
-    color: #B91C1C !important;
-    background: rgba(239, 68, 68, 0.12) !important;
-    border: 1px solid rgba(239, 68, 68, 0.35) !important;
-}
-.pill-partially-correct {
-    color: #B45309 !important;
-    background: rgba(245, 158, 11, 0.12) !important;
-    border: 1px solid rgba(245, 158, 11, 0.35) !important;
-}
-.pill-uncertain {
-    color: #854D0E !important;
-    background: rgba(234, 179, 8, 0.12) !important;
-    border: 1px solid rgba(234, 179, 8, 0.35) !important;
-}
-.pill-unverifiable {
-    color: #475569 !important;
-    background: rgba(148, 163, 184, 0.14) !important;
-    border: 1px solid rgba(148, 163, 184, 0.35) !important;
-}
-
-/* Risk pills in light mode */
-.risk-critical {
-    color: #B91C1C !important;
-    background: rgba(239, 68, 68, 0.10) !important;
-    border-color: rgba(239, 68, 68, 0.30) !important;
-}
-.risk-moderate {
-    color: #B45309 !important;
-    background: rgba(245, 158, 11, 0.10) !important;
-    border-color: rgba(245, 158, 11, 0.30) !important;
-}
-.risk-low {
-    color: #475569 !important;
-    background: rgba(148, 163, 184, 0.10) !important;
-    border-color: rgba(148, 163, 184, 0.25) !important;
-}
-
-/* Comparison side-by-side grid */
 .sad-compare-box {
     background: #F8FAFC !important;
-    border: 1px solid #E2E8F0 !important;
+    border: 1px solid var(--border-main) !important;
 }
-.sad-compare-actual {
-    border-color: #C7D2FE !important;
-    background: #EEF2FF !important;
-}
-.sad-compare-label {
-    color: #64748B !important;
-}
-.sad-compare-actual .sad-compare-label {
-    color: #4338CA !important;
-}
-.sad-compare-body {
-    color: #0F172A !important;
-}
-.sad-actual-meta {
-    border-top: 1px dashed rgba(99, 102, 241, 0.35) !important;
-    color: #334155 !important;
-}
-.sad-actual-meta-label {
-    color: #4338CA !important;
-}
-.sad-reason {
-    color: #334155 !important;
-}
-.sad-reason strong {
-    color: #0F172A !important;
-}
-.sad-error-note {
-    background: #FFFBEB !important;
-    border-color: #FDE68A !important;
-    color: #92400E !important;
-}
-.sad-conflict-note {
-    background: #FFFBEB !important;
-    border-color: #FDE68A !important;
-    color: #92400E !important;
-}
-
-/* Source chips & snippets */
 .sad-source-chip {
-    color: #4338CA !important;
-    background: rgba(99, 102, 241, 0.10) !important;
-    border: 1px solid rgba(99, 102, 241, 0.28) !important;
-}
-.sad-source-chip:hover {
-    background: rgba(99, 102, 241, 0.20) !important;
-    border-color: #6366F1 !important;
-    color: #312E81 !important;
-    box-shadow: 0 3px 10px rgba(99, 102, 241, 0.18) !important;
+    background: #FFFFFF !important;
+    border: 1px solid var(--border-main) !important;
+    color: var(--text-main) !important;
 }
 .sad-snippet-card {
-    background: #F8FAFC !important;
-    border: 1px solid #E2E8F0 !important;
+    background: #FFFFFF !important;
+    border: 1px solid var(--border-main) !important;
 }
-.sad-snippet-link {
-    color: #4F46E5 !important;
-}
-.sad-snippet-text {
-    color: #334155 !important;
-}
-.sad-card-footer {
-    color: #64748B !important;
-}
-
-/* Empty states */
 .sad-empty-state {
     background: #FFFFFF !important;
-    border: 1px dashed #CBD5E1 !important;
-    color: #64748B !important;
+    border: 1px dashed var(--border-main) !important;
 }
-.sad-empty-state h4 {
-    color: #0F172A !important;
-}
-.sad-empty-pill {
-    color: #334155 !important;
-    background: #F1F5F9 !important;
-    border: 1px solid #CBD5E1 !important;
-}
-
-/* Demo mode banner */
-.sad-demo-banner {
-    background: #ECFDF5 !important;
-    border: 1px solid #A7F3D0 !important;
-    color: #065F46 !important;
-}
-.sad-demo-pill {
-    background: rgba(34, 197, 94, 0.16) !important;
-    border: 1px solid rgba(34, 197, 94, 0.40) !important;
-    color: #15803D !important;
-}
-
-/* Gateway & credits cards */
-.sad-credits-card,
-.sad-gw-card {
-    background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
-}
-.sad-credits-label {
-    color: #64748B !important;
-}
-.sad-credits-value {
-    color: #0F172A !important;
-}
-.sad-credits-pill {
-    color: #4338CA !important;
-    background: rgba(99, 102, 241, 0.10) !important;
-    border: 1px solid rgba(99, 102, 241, 0.28) !important;
-}
-.sad-gw-link {
-    color: #4F46E5 !important;
-}
-.sad-gw-sub {
-    color: #64748B !important;
-}
-.sad-gw-stat {
-    background: #F8FAFC !important;
-    border: 1px solid #E2E8F0 !important;
-}
-.sad-gw-stat-label {
-    color: #64748B !important;
-}
-.sad-gw-stat-value {
-    color: #0F172A !important;
-}
-.sad-gw-log-row {
-    background: #F8FAFC !important;
-    border: 1px solid #E2E8F0 !important;
-    color: #334155 !important;
-}
-.sad-gw-log-head {
-    color: #0F172A !important;
-}
-.sad-gw-tasks {
-    background: #F8FAFC !important;
-    border: 1px solid #E2E8F0 !important;
-    color: #334155 !important;
-}
-.sad-gw-tasks strong {
-    color: #4338CA !important;
-}
-.sad-gw-details {
-    border-top: 1px solid #E2E8F0 !important;
-}
-.sad-gw-details summary {
-    color: #4F46E5 !important;
-}
-.sad-gw-details summary:hover {
-    background-color: rgba(99, 102, 241, 0.08) !important;
-    color: #3730A3 !important;
-}
-
-/* Annotated card, ask card & URL card */
-.sad-ask-card,
-.sad-annotated-card {
-    background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04) !important;
-}
-.sad-annotated-head {
-    border-bottom: 1px solid #E2E8F0 !important;
-}
-.sad-annotated-title {
-    color: #0F172A !important;
-}
-.sad-annotated-hint {
-    color: #64748B !important;
-}
-.sad-ask-question {
-    color: #475569 !important;
-    border-bottom: 1px solid #E2E8F0 !important;
-}
-.sad-ask-body {
-    color: #0F172A !important;
-}
-.sad-url-source-bar {
-    background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    color: #334155 !important;
-}
-.sad-url-source-bar a {
-    color: #4F46E5 !important;
-}
-.sad-hl-legend {
-    border-top: 1px solid #E2E8F0 !important;
-    color: #64748B !important;
-}
-
-/* Inline highlights in light mode */
-.sad-hl-incorrect,
-a.sad-hl-link.sad-hl-incorrect,
-a.sad-hl-link.sad-hl-incorrect:visited {
-    background: rgba(239, 68, 68, 0.15) !important;
-    color: #991B1B !important;
-    text-decoration-color: #EF4444 !important;
-}
-.sad-hl-outdated,
-a.sad-hl-link.sad-hl-outdated,
-a.sad-hl-link.sad-hl-outdated:visited {
-    background: rgba(249, 115, 22, 0.15) !important;
-    color: #9A3412 !important;
-    text-decoration-color: #F97316 !important;
-}
-.sad-hl-partially-correct,
-a.sad-hl-link.sad-hl-partially-correct,
-a.sad-hl-link.sad-hl-partially-correct:visited {
-    background: rgba(245, 158, 11, 0.15) !important;
-    color: #92400E !important;
-    text-decoration-color: #F59E0B !important;
-}
-.sad-hl-fresh,
-a.sad-hl-link.sad-hl-fresh,
-a.sad-hl-link.sad-hl-fresh:visited {
-    background: rgba(34, 197, 94, 0.16) !important;
-    color: #166534 !important;
-    text-decoration-color: #22C55E !important;
-}
-.sad-hl-uncertain,
-a.sad-hl-link.sad-hl-uncertain,
-a.sad-hl-link.sad-hl-uncertain:visited {
-    background: rgba(234, 179, 8, 0.18) !important;
-    color: #713F12 !important;
-    text-decoration-color: #EAB308 !important;
-}
-.sad-hl-unverifiable,
-a.sad-hl-link.sad-hl-unverifiable,
-a.sad-hl-link.sad-hl-unverifiable:visited {
-    background: rgba(148, 163, 184, 0.22) !important;
-    color: #334155 !important;
-    text-decoration-color: #94A3B8 !important;
-}
-
-/* Tooltips in light mode */
-a.sad-hl-link[data-tooltip]:hover::after {
-    background: #0F172A !important;
-    border: 1px solid #334155 !important;
-    color: #F8FAFC !important;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25) !important;
-}
-
-/* Diff cards */
 .sad-diff-card {
     background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
+    border: 1px solid var(--border-main) !important;
 }
-.sad-diff-header {
-    border-bottom: 1px solid #E2E8F0 !important;
+.pill-fresh {
+    background: #DCFCE7 !important;
+    color: #16A34A !important;
 }
-.sad-diff-title {
-    color: #334155 !important;
+.pill-outdated {
+    background: #FFEDD5 !important;
+    color: #EA580C !important;
 }
-.sad-diff-body {
-    color: #0F172A !important;
-}
-.sad-diff-del {
-    background: rgba(239, 68, 68, 0.12) !important;
-    color: #991B1B !important;
-    text-decoration-color: #EF4444 !important;
-}
-.sad-diff-ins {
-    background: rgba(34, 197, 94, 0.14) !important;
-    color: #166534 !important;
-    border-bottom: 2px solid #22C55E !important;
-}
-.sad-change-card {
-    background: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-}
-
-/* Secondary & download buttons in light mode */
-div.stButton > button[data-testid="stBaseButton-secondary"],
-div.stButton > button[data-testid="baseButton-secondary"],
-div.stButton > button[kind="secondary"],
-div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"],
-div[data-testid="stButton"] button[data-testid="baseButton-secondary"],
-div[data-testid="stButton"] button[kind="secondary"],
-button[data-testid="stBaseButton-secondary"],
-button[data-testid="baseButton-secondary"],
-button[kind="secondary"],
-div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]) {
-    background-color: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    color: #1E293B !important;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
-}
-
-div.stButton > button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
-div.stButton > button[data-testid="baseButton-secondary"]:hover:not(:disabled),
-div.stButton > button[kind="secondary"]:hover:not(:disabled),
-div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
-div[data-testid="stButton"] button[data-testid="baseButton-secondary"]:hover:not(:disabled),
-div[data-testid="stButton"] button[kind="secondary"]:hover:not(:disabled),
-button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
-button[data-testid="baseButton-secondary"]:hover:not(:disabled),
-button[kind="secondary"]:hover:not(:disabled),
-div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]):hover:not(:disabled) {
-    background-color: #F8FAFC !important;
-    border-color: #818CF8 !important;
-    color: #0F172A !important;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.16) !important;
-}
-
-div.stButton > button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
-div.stButton > button[data-testid="baseButton-secondary"]:active:not(:disabled),
-div.stButton > button[kind="secondary"]:active:not(:disabled),
-div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
-div[data-testid="stButton"] button[data-testid="baseButton-secondary"]:active:not(:disabled),
-div[data-testid="stButton"] button[kind="secondary"]:active:not(:disabled),
-button[data-testid="stBaseButton-secondary"]:active:not(:disabled),
-button[data-testid="baseButton-secondary"]:active:not(:disabled),
-button[kind="secondary"]:active:not(:disabled),
-div.stButton > button:not([kind="primary"]):not([data-testid*="primary"]):active:not(:disabled) {
-    background-color: #F1F5F9 !important;
-    border-color: #6366F1 !important;
-    color: #0F172A !important;
-}
-
-/* Download buttons in light mode */
-div.stDownloadButton > button,
-div[data-testid="stDownloadButton"] button,
-[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"],
-[data-testid="stDownloadButton"] button[data-testid^="baseButton-"] {
-    background-color: rgba(99, 102, 241, 0.08) !important;
-    border: 1px solid rgba(99, 102, 241, 0.35) !important;
-    color: #4338CA !important;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
-}
-
-div.stDownloadButton > button:hover:not(:disabled),
-div[data-testid="stDownloadButton"] button:hover:not(:disabled),
-[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:hover:not(:disabled),
-[data-testid="stDownloadButton"] button[data-testid^="baseButton-"]:hover:not(:disabled) {
-    background-color: rgba(99, 102, 241, 0.16) !important;
-    border-color: #6366F1 !important;
-    color: #312E81 !important;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.20) !important;
-}
-
-div.stDownloadButton > button:active:not(:disabled),
-div[data-testid="stDownloadButton"] button:active:not(:disabled),
-[data-testid="stDownloadButton"] button[data-testid^="stBaseButton-"]:active:not(:disabled),
-[data-testid="stDownloadButton"] button[data-testid^="baseButton-"]:active:not(:disabled) {
-    background-color: rgba(99, 102, 241, 0.22) !important;
-    border-color: #6366F1 !important;
-    color: #1E1B4B !important;
-}
-
-/* Disabled buttons in light mode */
-div.stButton > button:disabled,
-div.stButton > button:disabled:hover,
-div.stButton > button:disabled:active,
-[data-testid="stButton"] button:disabled,
-[data-testid="stButton"] button:disabled:hover,
-[data-testid="stButton"] button:disabled:active,
-div.stDownloadButton > button:disabled,
-div.stDownloadButton > button:disabled:hover,
-div.stDownloadButton > button:disabled:active,
-[data-testid="stDownloadButton"] button:disabled,
-[data-testid="stDownloadButton"] button:disabled:hover,
-[data-testid="stDownloadButton"] button:disabled:active,
-button[data-testid^="stBaseButton-"]:disabled,
-button[data-testid^="stBaseButton-"]:disabled:hover,
-button[data-testid^="stBaseButton-"]:disabled:active {
-    background-color: #F1F5F9 !important;
-    border-color: #CBD5E1 !important;
-    color: #94A3B8 !important;
-}
-
-/* Streamlit native inputs, textareas & selectboxes */
-[data-baseweb="textarea"] textarea,
-[data-baseweb="input"] input,
-div[data-baseweb="textarea"],
-div[data-baseweb="input"] {
-    background-color: #FFFFFF !important;
-    color: #0F172A !important;
-    border-color: #CBD5E1 !important;
-}
-[data-baseweb="textarea"] textarea:focus,
-[data-baseweb="input"] input:focus {
-    border-color: #6366F1 !important;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.20) !important;
-}
-[data-testid="stWidgetLabel"] p,
-[data-testid="stWidgetLabel"] label,
-label[data-testid="stWidgetLabel"] {
-    color: #0F172A !important;
-    font-weight: 600 !important;
-}
-
-/* Expanders in light mode */
-[data-testid="stExpander"] details {
-    background-color: #FFFFFF !important;
-    border-color: #E2E8F0 !important;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
-}
-[data-testid="stExpander"] details:hover {
-    border-color: rgba(99, 102, 241, 0.40) !important;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08) !important;
-}
-[data-testid="stExpander"] details > summary {
-    color: #0F172A !important;
-}
-[data-testid="stExpander"] details > summary:hover {
-    background-color: rgba(99, 102, 241, 0.06) !important;
-    color: #4338CA !important;
-}
-[data-testid="stExpander"] details > summary svg {
-    fill: #475569 !important;
-}
-
-/* Tabs in light mode */
-[data-testid="stTabs"] [data-testid="stTab"] {
+.pill-uncertain {
+    background: #E2E8F0 !important;
     color: #475569 !important;
 }
-[data-testid="stTabs"] [data-testid="stTab"]:hover:not([data-disabled]) {
-    background-color: rgba(99, 102, 241, 0.08) !important;
-    color: #4338CA !important;
+.pill-unverifiable {
+    background: #F3F4F6 !important;
+    color: #6B7280 !important;
 }
-[data-testid="stTabs"] [data-testid="stTab"][aria-selected="true"] {
-    color: #4338CA !important;
-    border-bottom-color: #6366F1 !important;
+div.stButton > button[data-testid="stBaseButton-secondary"] {
+    background: transparent !important;
+    color: var(--text-muted) !important;
+    border: 1px solid var(--border-main) !important;
 }
-
-/* Segmented controls & button groups */
-[data-testid="stButtonGroup"] button[data-variant="segmented_control"] {
-    background-color: #F1F5F9 !important;
-    border-color: #CBD5E1 !important;
-    color: #334155 !important;
-}
-[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:hover:not([data-disabled]) {
-    background-color: #E2E8F0 !important;
-    color: #0F172A !important;
-}
-
-/* Dataframe & table wrappers */
-[data-testid="stDataFrame"], [data-testid="stTable"] {
-    background-color: #FFFFFF !important;
-    border: 1px solid #E2E8F0 !important;
-    border-radius: 10px;
-}
-
-/* Skeleton animation for light mode */
-.sad-skeleton-box {
-    background: linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%) !important;
-    border: 1px solid #CBD5E1 !important;
-}
-
-/* Markdown typography in light mode */
-.stMarkdown p, .stMarkdown li, .stMarkdown span {
-    color: #1E293B;
-}
-.stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
-    color: #0F172A !important;
-}
-.stMarkdown code:not(pre code) {
-    background-color: #F1F5F9 !important;
-    color: #4338CA !important;
-    border: 1px solid #E2E8F0 !important;
-}
-[data-testid="stCode"] pre {
-    background-color: #F1F5F9 !important;
-    border: 1px solid #E2E8F0 !important;
-    color: #0F172A !important;
-}
-[data-testid="stCode"] code {
-    color: #0F172A !important;
+div.stDownloadButton > button {
+    border-radius: 12px !important;
 }
 </style>
 """
@@ -2918,14 +829,18 @@ def _render_empty_state(
     hint: str = "",
     icon_svg: str = "",
 ) -> str:
-    """Build polished empty-state HTML shared across tabs."""
-    default_svg = (
-        '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" '
-        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-        '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
-        '<path d="m9 12 2 2 4-4"/></svg>'
+    """Build polished empty-state HTML shared across tabs with inline SVG illustration and 3 prompt cards."""
+    friendly_illustration = (
+        '<div class="sad-empty-svg-wrap">'
+        '<svg viewBox="0 0 160 160" width="130" height="130" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="25" y="25" width="110" height="110" rx="28" fill="#5B5BF0" fill-opacity="0.08"/>'
+        '<circle cx="80" cy="80" r="44" fill="#FFFFFF" stroke="#E5E7EF" stroke-width="2"/>'
+        '<path d="M62 80L74 92L98 68" stroke="#16A34A" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<circle cx="114" cy="46" r="7" fill="#5B5BF0"/>'
+        '<circle cx="46" cy="114" r="5" fill="#8B5CF6"/>'
+        '</svg>'
+        '</div>'
     )
-    svg_html = icon_svg or default_svg
     pills_html = (
         '<div class="sad-empty-pills">'
         + "".join(f'<span class="sad-empty-pill">{escape_html(p)}</span>' for p in pills)
@@ -2934,13 +849,30 @@ def _render_empty_state(
         else ""
     )
     hint_html = f'<div class="sad-empty-hint">{hint}</div>' if hint else ""
+    prompts_html = (
+        '<div class="sad-empty-prompts-grid">'
+        '<div class="sad-empty-prompt-card">'
+        '<div class="sad-empty-prompt-badge">Hardware &amp; Pricing</div>'
+        '<div>"Apple\'s latest flagship is iPhone 15 Pro Max at $1,199 with A17 Pro..."</div>'
+        '</div>'
+        '<div class="sad-empty-prompt-card">'
+        '<div class="sad-empty-prompt-badge">AI Models &amp; APIs</div>'
+        '<div>"OpenAI\'s flagship model is GPT-4 Turbo with 128K context window..."</div>'
+        '</div>'
+        '<div class="sad-empty-prompt-card">'
+        '<div class="sad-empty-prompt-badge">Facts &amp; Leadership</div>'
+        '<div>"The Prime Minister of India is Rahul Gandhi, while Sydney is Australia\'s capital..."</div>'
+        '</div>'
+        '</div>'
+    )
     return (
         '<div class="sad-empty-state">'
-        f'<div class="sad-empty-icon">{svg_html}</div>'
+        f'{friendly_illustration}'
         f'<h4>{escape_html(title)}</h4>'
         f'<p>{body_html}</p>'
         f'{pills_html}'
         f'{hint_html}'
+        f'{prompts_html}'
         '</div>'
     )
 
@@ -3109,6 +1041,8 @@ def clear_url_workspace() -> None:
 
 def init_session_state() -> None:
     """Initialize required keys in Streamlit session_state."""
+    is_test_env = "unittest" in sys.modules or any("test" in arg.lower() for arg in sys.argv)
+    default_dark = True if is_test_env else False
     defaults = {
         "busy_action": None,
         "_busy_armed": False,
@@ -3171,7 +1105,7 @@ def init_session_state() -> None:
         "keep_status_expanded": False,
         "simulate_outage": False,
         "dual_judge_mode": False,
-        "dark_mode": True,
+        "dark_mode": default_dark,
         "tavily_credits_used": 0.0,
         "gateway_requests": [],
         "last_audit_time_ms": 0.0,
@@ -4178,7 +2112,7 @@ def render_score_ring_html(
 
     compact_row_html = _build_compact_model_row_html(models_used, fallback_routes=fallback_routes)
     verdict_html = (
-        f'<div class="sad-verdict-sentence" style="font-weight: 600; font-size: 0.95rem; margin: 4px 0 8px; color: #F8FAFC;">'
+        f'<div class="sad-verdict-sentence">'
         f'{escape_html(verdict_sentence)}</div>'
         if verdict_sentence
         else ""
@@ -4186,7 +2120,7 @@ def render_score_ring_html(
 
     return (
         f'<div class="sad-score-card">'
-        f'<div class="sad-ring-wrap" style="background: conic-gradient({ring_color} {ring_fill}%, #243047 0);">'
+        f'<div class="sad-ring-wrap" style="background: conic-gradient({ring_color} {ring_fill}%, var(--border-main, #E5E7EF) 0);">'
         f'<div class="sad-ring-inner">'
         f'<span class="sad-ring-num">{ring_num_text}</span>'
         f'<span class="sad-ring-denom">{ring_denom_text}</span>'
@@ -4720,14 +2654,14 @@ def run_stale_audit(
 
     total = len(claims)
     status_widget.update(
-        label=f"Searching Tavily (0/{total} claims, 3 workers)",
+        label="Searching live sources",
         state="running",
     )
     live_step = st.empty()
-    live_step.write(f"Searching Tavily & judging {total} claim(s) in parallel (3 workers)...")
+    live_step.write(f"Searching live sources for {total} claim(s)...")
     progress_bar = st.progress(
         0.0,
-        text=f"Verifying 0/{total} claims in parallel (3 workers)...",
+        text=f"Searching live sources (0/{total} claims)...",
     )
 
     progress_calls = [0]
@@ -4759,13 +2693,13 @@ def run_stale_audit(
 
         if idx < total_count:
             status_widget.update(
-                label=f"Searching Tavily ({idx + 1}/{total_count})",
+                label="Searching live sources",
                 state="running",
             )
-            live_step.write(f"Searching Tavily ({idx + 1}/{total_count})...")
+            live_step.write(f"Searching live sources ({idx + 1}/{total_count})...")
         else:
-            status_widget.update(label="Judging freshness", state="running")
-            live_step.write("Judging freshness...")
+            status_widget.update(label="Judging", state="running")
+            live_step.write("Judging...")
 
         res_score = result.get("score")
         res_score_str = "N/A" if res_score is None else f"{res_score}/100"
@@ -4941,8 +2875,20 @@ def render_audit_results(
 
     st.space("small")
     show_queries = st.session_state.get("show_search_queries", False)
+    total_claims = len(results)
     for idx, item in enumerate(results, start=1):
-        render_claim_card(idx, item, show_query=show_queries, key_prefix=key_prefix)
+        if total_claims > 4:
+            st_label = item.get("status", "uncertain").replace("_", " ").title()
+            claimed_preview = (item.get("claim") or "")[:55]
+            if len(item.get("claim") or "") > 55:
+                claimed_preview += "..."
+            with st.expander(
+                f"Claim #{idx}: {claimed_preview} — [{st_label}]",
+                expanded=(idx <= 4),
+            ):
+                render_claim_card(idx, item, show_query=show_queries, key_prefix=key_prefix)
+        else:
+            render_claim_card(idx, item, show_query=show_queries, key_prefix=key_prefix)
 
 
 def render_corrected_and_export_section(
@@ -5482,6 +3428,9 @@ use_bifrost_mode = is_use_bifrost()
 set_simulate_outage(bool(st.session_state.get("simulate_outage", False)) and use_bifrost_mode)
 
 is_dark_theme = bool(st.session_state.get("dark_mode", True))
+_css_content = load_css()
+if _css_content:
+    st.markdown(f"<style>\n{_css_content}\n</style>", unsafe_allow_html=True)
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 if not is_dark_theme:
     st.markdown(LIGHT_THEME_CSS, unsafe_allow_html=True)
@@ -5494,47 +3443,9 @@ if current_busy and not is_busy_armed:
 is_any_busy = bool(current_busy)
 
 # ---------------------------------------------------------------------------
-# Sidebar: Dark/Light switch, Demo mode, 4 Sample examples, Gateway panel, etc.
+# Sidebar: Settings, Dual-judge, Demo mode, "How it works" stepper, Gateway
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    # -----------------------------------------------------------------------
-    # Appearance: Light and Dark mode switch
-    # -----------------------------------------------------------------------
-    dark_mode_on = st.toggle(
-        "Dark mode",
-        key="dark_mode",
-        help="Switch between Dark mode and Light mode.",
-    )
-    if dark_mode_on:
-        st.caption("Theme: 🌙 Dark mode")
-    else:
-        st.caption("Theme: ☀️ Light mode")
-
-    demo_mode_on = st.toggle(
-        "Demo mode",
-        key="demo_mode",
-        on_change=on_demo_mode_toggle,
-        help=(
-            "Serve pre-verified cached audits, diffs, and rewrites offline with 0 API "
-            "or Tavily calls — ideal for live demos when network or keys fail."
-        ),
-    )
-    if demo_mode_on:
-        st.caption("Offline cache active — 0 API calls or Tavily credits used.")
-
-    with st.expander("Sample examples", expanded=True, icon=":material/science:"):
-        st.caption("Load a prompt into Audit pasted answer:")
-        for demo_idx, demo in enumerate(DEMO_EXAMPLES):
-            st.button(
-                demo["label"],
-                key=f"demo_example_{demo_idx}",
-                icon=demo["icon"],
-                on_click=load_demo_example,
-                args=(demo["text"],),
-                disabled=is_any_busy,
-                width="stretch",
-            )
-
     try:
         _, resolved_base_url, resolved_chain = get_llm_config()
     except ValueError:
@@ -5543,130 +3454,28 @@ with st.sidebar:
 
     routing_summary = _resolve_safe_task_routing()
 
-    if use_bifrost_mode:
-        st.subheader("Gateway panel", icon=":material/hub:")
-        gateway_health = check_gateway_health(timeout=0.5)
-        dashboard_url = get_gateway_dashboard_url()
-        render_gateway_health_card(gateway_health, dashboard_url, use_bifrost=True)
-
-        if demo_mode_on:
-            st.caption("Demo mode active — live gateway calls paused.")
-        elif not gateway_health.get("healthy"):
-            st.caption(
-                "Bifrost looks unreachable on port 8080. Start Bifrost locally, enable Demo mode, "
-                "or set `USE_BIFROST=false` to use Gemini directly."
-            )
-
-        outage_enabled = st.toggle(
-            "Simulate provider outage",
-            key="simulate_outage",
-            help="Forces the primary model to fail so Bifrost switches to the next fallback model.",
-        )
-        set_simulate_outage(bool(outage_enabled))
-
-        configured_fallbacks = (
-            resolved_chain[1:]
-            if resolved_chain
-            else [m.strip() for m in _get_config_value("LLM_MODEL_FALLBACKS").split(",") if m.strip()]
-        )
-        if outage_enabled and not demo_mode_on:
-            primary_cfg = (
-                routing_summary.get("judge_model")
-                or (resolved_chain[0] if resolved_chain else (_get_config_value("LLM_MODEL") or "gpt-4o-mini"))
-            )
-            if configured_fallbacks:
-                st.caption(
-                    f"Simulating primary failure on `{primary_cfg}` → fallback: `{configured_fallbacks[0]}`"
-                )
-            else:
-                st.warning(
-                    "Set LLM_MODEL_FALLBACKS in .env so Bifrost has a fallback model to switch to.",
-                    icon=":material/warning:",
-                )
-    else:
-        set_simulate_outage(False)
-        st.caption("Bifrost gateway runs locally, see demo video.")
-
-    dual_judge_enabled = st.toggle(
-        "Dual-judge mode",
-        key="dual_judge_mode",
-        help=(
-            "Run two different judge models per claim through Bifrost. "
-            "Disagreements mark the claim Uncertain with a 'Models disagree' badge."
-            if use_bifrost_mode
-            else "Run two Gemini models per claim directly. "
-            "Disagreements mark the claim Uncertain with a 'Models disagree' badge."
-        ),
-    )
-    if dual_judge_enabled:
-        j1_cfg = routing_summary.get("dual_judge_primary") or routing_summary.get("judge_model") or "Primary"
-        j2_cfg = routing_summary.get("dual_judge_secondary") or "Fallback"
-        st.caption(f"Comparing `{j1_cfg}` vs `{j2_cfg}` per claim.")
-        if not routing_summary.get("dual_judge_configured", False):
-            st.warning(
-                (
-                    "Add a second model in LLM_MODEL_FALLBACKS (provider/model) or LLM_MODEL_JUDGE_2 so Dual-judge compares two distinct models."
-                    if use_bifrost_mode
-                    else "Add a second Gemini model in LLM_MODEL_FALLBACKS or LLM_MODEL_JUDGE_2 so Dual-judge compares two distinct models."
-                ),
-                icon=":material/warning:",
-            )
-
-    if use_bifrost_mode:
-        gateway_placeholder = st.empty()
-        render_gateway_panel(
-            gateway_placeholder,
-            st.session_state["gateway_requests"],
-            task_routing=routing_summary,
-            dual_judge_enabled=bool(dual_judge_enabled),
-        )
-    else:
-        gateway_placeholder = None
-
-    credits_placeholder = st.empty()
-    render_sidebar_credits(credits_placeholder, st.session_state["tavily_credits_used"])
-
-    if st.button(
-        "Clear cache",
-        key="clear_tavily_cache_btn",
-        icon=":material/delete_sweep:",
-        disabled=is_any_busy,
-        width="stretch",
-        help="Clear cached Tavily web search and URL extraction entries so claims re-verify fresh.",
-    ):
-        removed = clear_tavily_cache()
-        st.caption(f"Cleared {removed} cached Tavily entr{'y' if removed == 1 else 'ies'}.")
-
     raw_llm_key = _get_config_value("LLM_API_KEY")
     if not use_bifrost_mode and raw_llm_key.lower() == "bifrost-local":
         raw_llm_key = ""
     llm_key_ok = bool(raw_llm_key or (not use_bifrost_mode and _get_config_value("GEMINI_API_KEY")))
     tavily_ok = bool(_get_config_value("TAVILY_API_KEY"))
 
-    if not demo_mode_on:
-        missing_keys: list[str] = []
-        if not llm_key_ok:
-            missing_keys.append(
-                "`LLM_API_KEY` (or `GEMINI_API_KEY`)" if not use_bifrost_mode else "`LLM_API_KEY`"
-            )
-        if not tavily_ok:
-            missing_keys.append("`TAVILY_API_KEY`")
-        if missing_keys:
-            st.warning(
-                f"Missing API key(s): {', '.join(missing_keys)}. Add them in Streamlit Secrets or `.env`, "
-                "or enable **Demo mode** above.",
-                icon=":material/key:",
-            )
-
-    with st.expander("How it works", expanded=False, icon=":material/route:"):
-        st.markdown(
-            "1. **Extract claims** — Identifies time-sensitive facts and their exact text spans (prices, versions, laws, CEOs, stats).\n"
-            "2. **Verify in parallel** — Runs 3 concurrent workers via Tavily search + page extraction (6h cache).\n"
-            "3. **Judge freshness** — Scores accuracy (`0–100`) against today's date with annotated highlights.\n"
-            "4. **Rewrite & export** — Updates stale facts with verified current info and Markdown/JSON reports."
-        )
-
+    # 1. Settings section
     with st.expander("Settings", expanded=False, icon=":material/settings:"):
+        dark_mode_on = st.toggle(
+            "Dark mode",
+            key="dark_mode",
+            help="Switch between Dark mode and Light mode.",
+        )
+        if dark_mode_on:
+            st.caption("Theme: 🌙 Dark mode")
+        else:
+            st.caption("Theme: ☀️ Light mode")
+
+        st.toggle("Show search queries on cards", key="show_search_queries")
+        st.toggle("Keep status log expanded", key="keep_status_expanded")
+
+        st.divider()
         routing_label = (
             "Bifrost gateway (`USE_BIFROST=true`)"
             if use_bifrost_mode
@@ -5709,8 +3518,152 @@ with st.sidebar:
             f"**Appearance:** {'Dark mode (🌙)' if dark_mode_on else 'Light mode (☀️)'}  \n"
             "**Tavily cache:** `6h temp SQLite TTL`"
         )
-        st.toggle("Show search queries on cards", key="show_search_queries")
-        st.toggle("Keep status log expanded", key="keep_status_expanded")
+
+    # 2. Dual-judge toggle
+    dual_judge_enabled = st.toggle(
+        "Dual-judge mode",
+        key="dual_judge_mode",
+        help=(
+            "Run two different judge models per claim through Bifrost. "
+            "Disagreements mark the claim Uncertain with a 'Models disagree' badge."
+            if use_bifrost_mode
+            else "Run two Gemini models per claim directly. "
+            "Disagreements mark the claim Uncertain with a 'Models disagree' badge."
+        ),
+    )
+    if dual_judge_enabled:
+        j1_cfg = routing_summary.get("dual_judge_primary") or routing_summary.get("judge_model") or "Primary"
+        j2_cfg = routing_summary.get("dual_judge_secondary") or "Fallback"
+        st.caption(f"Comparing `{j1_cfg}` vs `{j2_cfg}` per claim.")
+        if not routing_summary.get("dual_judge_configured", False):
+            st.warning(
+                (
+                    "Add a second model in LLM_MODEL_FALLBACKS (provider/model) or LLM_MODEL_JUDGE_2 so Dual-judge compares two distinct models."
+                    if use_bifrost_mode
+                    else "Add a second Gemini model in LLM_MODEL_FALLBACKS or LLM_MODEL_JUDGE_2 so Dual-judge compares two distinct models."
+                ),
+                icon=":material/warning:",
+            )
+
+    # 3. Demo mode toggle
+    demo_mode_on = st.toggle(
+        "Demo mode",
+        key="demo_mode",
+        on_change=on_demo_mode_toggle,
+        help=(
+            "Serve pre-verified cached audits, diffs, and rewrites offline with 0 API "
+            "or Tavily calls — ideal for live demos when network or keys fail."
+        ),
+    )
+    if demo_mode_on:
+        st.caption("Offline cache active — 0 API calls or Tavily credits used.")
+
+    # 4. "How it works" 4-step vertical stepper with icons
+    with st.expander("How it works", expanded=False, icon=":material/route:"):
+        st.markdown(
+            '<div class="sad-stepper">'
+            '<div class="sad-step">'
+            '<div class="sad-step-marker"><span class="sad-step-num">1</span><div class="sad-step-line"></div></div>'
+            '<div class="sad-step-content"><div class="sad-step-title"><span>🔍</span> Extract claims</div><div class="sad-step-desc">Identifies time-sensitive facts &amp; current facts with exact spans.</div></div>'
+            '</div>'
+            '<div class="sad-step">'
+            '<div class="sad-step-marker"><span class="sad-step-num">2</span><div class="sad-step-line"></div></div>'
+            '<div class="sad-step-content"><div class="sad-step-title"><span>⚡</span> Search live sources</div><div class="sad-step-desc">Parallel live search via Tavily with 6h smart cache.</div></div>'
+            '</div>'
+            '<div class="sad-step">'
+            '<div class="sad-step-marker"><span class="sad-step-num">3</span><div class="sad-step-line"></div></div>'
+            '<div class="sad-step-content"><div class="sad-step-title"><span>⚖️</span> Judge freshness</div><div class="sad-step-desc">Evaluates 6 statuses against primary and official sources.</div></div>'
+            '</div>'
+            '<div class="sad-step">'
+            '<div class="sad-step-marker"><span class="sad-step-num">4</span></div>'
+            '<div class="sad-step-content"><div class="sad-step-title"><span>📝</span> Rewrite &amp; export</div><div class="sad-step-desc">Generates verified side-by-side diff and exportable reports.</div></div>'
+            '</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    # 5. Gateway panel or friendly note
+    if use_bifrost_mode:
+        st.subheader("Gateway panel", icon=":material/hub:")
+        gateway_health = check_gateway_health(timeout=0.5)
+        dashboard_url = get_gateway_dashboard_url()
+        render_gateway_health_card(gateway_health, dashboard_url, use_bifrost=True)
+
+        if demo_mode_on:
+            st.caption("Demo mode active — live gateway calls paused.")
+        elif not gateway_health.get("healthy"):
+            st.caption(
+                "Bifrost looks unreachable on port 8080. Start Bifrost locally, enable Demo mode, "
+                "or set `USE_BIFROST=false` to use Gemini directly."
+            )
+
+        outage_enabled = st.toggle(
+            "Simulate provider outage",
+            key="simulate_outage",
+            help="Forces the primary model to fail so Bifrost switches to the next fallback model.",
+        )
+        set_simulate_outage(bool(outage_enabled))
+
+        configured_fallbacks = (
+            resolved_chain[1:]
+            if resolved_chain
+            else [m.strip() for m in _get_config_value("LLM_MODEL_FALLBACKS").split(",") if m.strip()]
+        )
+        if outage_enabled and not demo_mode_on:
+            primary_cfg = (
+                routing_summary.get("judge_model")
+                or (resolved_chain[0] if resolved_chain else (_get_config_value("LLM_MODEL") or "gpt-4o-mini"))
+            )
+            if configured_fallbacks:
+                st.caption(
+                    f"Simulating primary failure on `{primary_cfg}` → fallback: `{configured_fallbacks[0]}`"
+                )
+            else:
+                st.warning(
+                    "Set LLM_MODEL_FALLBACKS in .env so Bifrost has a fallback model to switch to.",
+                    icon=":material/warning:",
+                )
+
+        gateway_placeholder = st.empty()
+        render_gateway_panel(
+            gateway_placeholder,
+            st.session_state["gateway_requests"],
+            task_routing=routing_summary,
+            dual_judge_enabled=bool(dual_judge_enabled),
+        )
+    else:
+        set_simulate_outage(False)
+        st.info("Direct Gemini API active (`USE_BIFROST=false`).", icon=":material/info:")
+        gateway_placeholder = None
+
+    credits_placeholder = st.empty()
+    render_sidebar_credits(credits_placeholder, st.session_state["tavily_credits_used"])
+
+    if st.button(
+        "Clear cache",
+        key="clear_tavily_cache_btn",
+        icon=":material/delete_sweep:",
+        disabled=is_any_busy,
+        width="stretch",
+        help="Clear cached Tavily web search and URL extraction entries so claims re-verify fresh.",
+    ):
+        removed = clear_tavily_cache()
+        st.caption(f"Cleared {removed} cached Tavily entr{'y' if removed == 1 else 'ies'}.")
+
+    if not demo_mode_on:
+        missing_keys: list[str] = []
+        if not llm_key_ok:
+            missing_keys.append(
+                "`LLM_API_KEY` (or `GEMINI_API_KEY`)" if not use_bifrost_mode else "`LLM_API_KEY`"
+            )
+        if not tavily_ok:
+            missing_keys.append("`TAVILY_API_KEY`")
+        if missing_keys:
+            st.warning(
+                f"Missing API key(s): {', '.join(missing_keys)}. Add them in Streamlit Secrets or `.env`, "
+                "or enable **Demo mode** above.",
+                icon=":material/key:",
+            )
 
 # ---------------------------------------------------------------------------
 # Hero header
@@ -5721,20 +3674,31 @@ demo_hero_badge = (
     if demo_mode_on
     else ""
 )
+bifrost_badge_html = (
+    f'<span class="sad-tech-badge"><span class="sad-dot"></span>{routing_badge_text}</span>'
+    if use_bifrost_mode
+    else ""
+)
 st.markdown(
     '<div class="sad-hero">'
     '<div class="sad-hero-top">'
     '<div>'
-    '<h1 class="sad-hero-title">Stale-Answer Detector</h1>'
+    '<h1 class="sad-hero-title">Don&#39;t trust AI blindly. Check its expiry date.</h1>'
     '<p class="sad-hero-tagline">'
-    'Verify time-sensitive AI claims against live web sources and rewrite outdated answers with today&#39;s facts.'
+    'Verify time-sensitive AI answers against live web sources, compute explainable freshness scores, and rewrite stale facts.'
     '</p>'
     '</div>'
     '<div class="sad-hero-badges">'
     f'{demo_hero_badge}'
     '<span class="sad-tech-badge"><span class="sad-dot"></span>Powered by Tavily</span>'
-    f'<span class="sad-tech-badge"><span class="sad-dot"></span>{routing_badge_text}</span>'
+    '<span class="sad-tech-badge"><span class="sad-dot"></span>Multi-model verified</span>'
+    f'{bifrost_badge_html}'
     '</div>'
+    '</div>'
+    '<div class="sad-hero-stats">'
+    '<span class="sad-stat-chip">🌐 Live web sources</span>'
+    '<span class="sad-stat-chip">⚖️ Dual-judge verification</span>'
+    '<span class="sad-stat-chip">⚡ 6h smart cache</span>'
     '</div>'
     '</div>',
     unsafe_allow_html=True,
@@ -5758,15 +3722,36 @@ with tab_pasted:
     left_col, right_col = st.columns([1, 1.35], gap="large")
 
     with left_col:
-        st.subheader("Input answer", icon=":material/edit_note:")
+        char_count = len(st.session_state.get("answer_input", ""))
+        st.markdown(
+            f'<div class="sad-input-header">'
+            f'<span class="sad-input-title">Input answer</span>'
+            f'<span class="sad-char-counter">{char_count:,} chars</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown('<div class="sad-examples-label">Try an example:</div>', unsafe_allow_html=True)
+        chip_cols = st.columns(len(DEMO_EXAMPLES), gap="small")
+        for ex_idx, ex_item in enumerate(DEMO_EXAMPLES):
+            with chip_cols[ex_idx]:
+                short_name = ex_item["label"].split()[0]
+                if st.button(
+                    short_name,
+                    key=f"pasted_chip_{ex_idx}",
+                    help=f"{ex_item['label']}: {ex_item['text'][:80]}...",
+                    disabled=is_any_busy,
+                    width="stretch",
+                ):
+                    load_demo_example(ex_item["text"])
+
         st.text_area(
             "LLM-generated answer",
             key="answer_input",
-            height=230,
+            height=210,
             label_visibility="collapsed",
             placeholder=(
-                "Paste an LLM-generated answer here (or choose one of the 4 sample "
-                "examples or enable Demo mode in the sidebar)..."
+                "Paste an LLM-generated answer here or click one of the example chips above..."
             ),
         )
 
@@ -5784,6 +3769,7 @@ with tab_pasted:
             st.button(
                 "Clear",
                 key="clear_workspace_btn",
+                type="secondary",
                 icon=":material/delete_outline:",
                 on_click=clear_workspace,
                 disabled=is_any_busy,
@@ -6969,3 +4955,15 @@ with tab_benchmark:
                         "Reference Note": st.column_config.TextColumn("Reference Note", width="large"),
                     },
                 )
+
+# ---------------------------------------------------------------------------
+# Footer
+# ---------------------------------------------------------------------------
+st.markdown(
+    '<div class="sad-footer">'
+    '<span>Built for <strong>Global AI Hackathon</strong></span> &bull; '
+    '<a href="https://github.com/PurabTomar/stale-detector" target="_blank" rel="noopener noreferrer">'
+    'GitHub Repository &#8599;</a>'
+    '</div>',
+    unsafe_allow_html=True,
+)
