@@ -1,0 +1,186 @@
+[
+  {
+    "id": "task_01_iphone_outdated_price",
+    "category": "price",
+    "input_text": "Apple's latest flagship smartphone is the iPhone 15 Pro Max, starting at $1,199 in the United States and powered by the A17 Pro chip.",
+    "expected_status": "outdated",
+    "expected_facts": [
+      "iPhone 16",
+      "A18"
+    ],
+    "needs_human_check": true,
+    "tags": ["hardware", "apple", "pricing"]
+  },
+  {
+    "id": "task_02_gpt4_turbo_pricing",
+    "category": "price",
+    "input_text": "OpenAI's flagship API model is GPT-4 Turbo, which is priced at $10 per million input tokens and $30 per million output tokens.",
+    "expected_status": "outdated",
+    "expected_facts": [
+      "GPT-4o",
+      "2.50",
+      "5.00"
+    ],
+    "needs_human_check": true,
+    "tags": ["ai", "openai", "api-pricing"]
+  },
+  {
+    "id": "task_03_chatgpt_plus_price",
+    "category": "price",
+    "input_text": "OpenAI charges $5 per month for its ChatGPT Plus consumer subscription plan.",
+    "expected_status": "incorrect",
+    "expected_facts": [
+      "$20",
+      "20"
+    ],
+    "needs_human_check": true,
+    "tags": ["openai", "chatgpt", "subscription"]
+  },
+  {
+    "id": "task_04_github_copilot_price",
+    "category": "price",
+    "input_text": "GitHub Copilot for Individuals costs $10 per month or $100 per year.",
+    "expected_status": "fresh",
+    "expected_facts": [
+      "$10",
+      "100"
+    ],
+    "needs_human_check": true,
+    "tags": ["github", "developer-tools", "pricing"]
+  },
+  {
+    "id": "task_05_nextjs_version",
+    "category": "version",
+    "input_text": "The latest production major version of the Next.js web framework is Next.js 13 with the App Router.",
+    "expected_status": "outdated",
+    "expected_facts": [
+      "14",
+      "15"
+    ],
+    "needs_human_check": true,
+    "tags": ["software", "framework", "nextjs"]
+  },
+  {
+    "id": "task_06_python_312_status",
+    "category": "version",
+    "input_text": "Python 3.12 is an officially released, active supported version of the Python programming language.",
+    "expected_status": "fresh",
+    "expected_facts": [
+      "Python 3.12",
+      "supported"
+    ],
+    "needs_human_check": true,
+    "tags": ["python", "runtime", "version"]
+  },
+  {
+    "id": "task_07_uk_vat_rate",
+    "category": "regulation",
+    "input_text": "Under United Kingdom tax law, the standard rate of Value Added Tax (VAT) is 17.5%.",
+    "expected_status": "outdated",
+    "expected_facts": [
+      "20%",
+      "20 percent",
+      "20"
+    ],
+    "needs_human_check": true,
+    "tags": ["tax", "uk", "regulation"]
+  },
+  {
+    "id": "task_08_india_gst_slabs",
+    "category": "regulation",
+    "input_text": "Under India's Goods and Services Tax (GST) system, goods and services fall under four primary tax slabs: 5%, 12%, 18%, and 28%.",
+    "expected_status": "fresh",
+    "expected_facts": [
+      "5%",
+      "12%",
+      "18%",
+      "28%"
+    ],
+    "needs_human_check": true,
+    "tags": ["india", "gst", "tax"]
+  },
+  {
+    "id": "task_09_india_gst_threshold_partial",
+    "category": "regulation",
+    "input_text": "In India, GST registration is uniformly required for all businesses selling goods or services once turnover exceeds ₹20 lakh.",
+    "expected_status": "partially_correct",
+    "expected_facts": [
+      "40 lakh",
+      "goods"
+    ],
+    "needs_human_check": true,
+    "tags": ["india", "gst", "threshold"]
+  },
+  {
+    "id": "task_10_twitter_ceo_parag",
+    "category": "company",
+    "input_text": "Parag Agrawal serves as the Chief Executive Officer of Twitter (now X).",
+    "expected_status": "outdated",
+    "expected_facts": [
+      "Linda Yaccarino",
+      "Elon Musk"
+    ],
+    "needs_human_check": true,
+    "tags": ["company", "leadership", "twitter"]
+  },
+  {
+    "id": "task_11_apple_ceo_tim_cook",
+    "category": "company",
+    "input_text": "Tim Cook is the Chief Executive Officer of Apple Inc.",
+    "expected_status": "fresh",
+    "expected_facts": [
+      "Tim Cook",
+      "Apple"
+    ],
+    "needs_human_check": true,
+    "tags": ["apple", "leadership", "executive"]
+  },
+  {
+    "id": "task_12_india_pm_rahul",
+    "category": "leadership",
+    "input_text": "The Prime Minister of India is Rahul Gandhi.",
+    "expected_status": "incorrect",
+    "expected_facts": [
+      "Narendra Modi",
+      "Modi"
+    ],
+    "needs_human_check": true,
+    "tags": ["politics", "india", "leadership"]
+  },
+  {
+    "id": "task_13_australia_capital_sydney",
+    "category": "geography",
+    "input_text": "The capital city of Australia is Sydney.",
+    "expected_status": "incorrect",
+    "expected_facts": [
+      "Canberra"
+    ],
+    "needs_human_check": true,
+    "tags": ["geography", "capital", "australia"]
+  },
+  {
+    "id": "task_14_everest_location_alps",
+    "category": "geography",
+    "input_text": "Mount Everest is located in the European Alps along the Swiss-Italian border.",
+    "expected_status": "incorrect",
+    "expected_facts": [
+      "Himalayas",
+      "Nepal"
+    ],
+    "needs_human_check": true,
+    "tags": ["geography", "mountains"]
+  },
+  {
+    "id": "task_15_ceo_split_partial",
+    "category": "company",
+    "input_text": "Sam Altman is the CEO of OpenAI, while Linda Yaccarino serves as the CEO of Google.",
+    "expected_status": "partially_correct",
+    "expected_facts": [
+      "X",
+      "Twitter",
+      "Sundar Pichai"
+    ],
+    "needs_human_check": true,
+    "tags": ["company", "leadership", "split"]
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "gpt-4o-mini": {
+    "input_per_million": 0.15,
+    "output_per_million": 0.60
+  },
+  "gpt-4o": {
+    "input_per_million": 2.50,
+    "output_per_million": 10.00
+  },
+  "gemini-2.5-flash": {
+    "input_per_million": 0.075,
+    "output_per_million": 0.30
+  },
+  "gemini-2.0-flash": {
+    "input_per_million": 0.10,
+    "output_per_million": 0.40
+  },
+  "gemini-1.5-flash": {
+    "input_per_million": 0.075,
+    "output_per_million": 0.30
+  },
+  "custom-model": null,
+  "placeholder-model": null,
+  "default": null
+}
