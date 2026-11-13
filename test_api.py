@@ -27,6 +27,29 @@ class TestVerifyAPI(unittest.TestCase):
             self.skipTest("FastAPI is not installed; skipping REST API tests")
         self.client = TestClient(api.app)
 
+    def test_root_info_serves_html_for_browser_and_json_for_api(self):
+        # 1. Browser request with text/html -> returns HTML single-page app
+        resp_browser = self.client.get("/", headers={"accept": "text/html,application/xhtml+xml"})
+        self.assertEqual(resp_browser.status_code, 200)
+        self.assertIn("text/html", resp_browser.headers.get("content-type", ""))
+        self.assertIn("<!DOCTYPE html>", resp_browser.text)
+        self.assertIn("Stale-Answer Detector", resp_browser.text)
+        self.assertIn("themeToggleBtn", resp_browser.text)
+        self.assertIn("Light mode", resp_browser.text)
+        self.assertIn("sadPulse", resp_browser.text)
+
+        # 2. API / curl request with application/json -> returns JSON
+        resp_api = self.client.get("/", headers={"accept": "application/json"})
+        self.assertEqual(resp_api.status_code, 200)
+        self.assertIn("application/json", resp_api.headers.get("content-type", ""))
+        data = resp_api.json()
+        self.assertEqual(data["service"], "Stale-Answer Detector API")
+
+        # 3. GET /api explicit endpoint -> returns JSON
+        resp_direct_api = self.client.get("/api")
+        self.assertEqual(resp_direct_api.status_code, 200)
+        self.assertEqual(resp_direct_api.json()["service"], "Stale-Answer Detector API")
+
     def test_health_endpoint_bifrost_and_direct_gemini(self):
         with patch(
             "api.check_gateway_health",

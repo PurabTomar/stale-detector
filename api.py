@@ -11,13 +11,15 @@ Run locally with:
 import time
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from extractor import extract_claims, get_last_gateway_metrics as get_extract_metrics
 from llm import check_gateway_health, is_use_bifrost
 from reporting import build_report_payload
 from verifier import verify_claims
+from web_ui import get_web_ui_html
 
 # ---------------------------------------------------------------------------
 # Request & response schemas (powers OpenAPI docs at /docs)
@@ -249,8 +251,35 @@ def _first_clean_line(text: str) -> str:
 
 
 @app.get("/")
-def root_info() -> dict[str, Any]:
-    """Root info endpoint providing service metadata and links."""
+def root_info(request: Request) -> Any:
+    """
+    Root endpoint.
+    Serves the interactive single-page Web UI with animations and Light/Dark mode
+    when requested by a browser (Accept: text/html). Returns service JSON metadata
+    when requested by API clients (Accept: application/json) or when requested
+    without browser text/html.
+    """
+    accept = request.headers.get("accept", "").lower()
+    format_param = request.query_params.get("format", "").lower()
+
+    if "text/html" in accept and format_param != "json":
+        return HTMLResponse(content=get_web_ui_html())
+
+    return JSONResponse(
+        {
+            "service": "Stale-Answer Detector API",
+            "version": "1.0.0",
+            "docs_url": "/docs",
+            "health_url": "/health",
+            "verify_endpoint": "POST /verify",
+        }
+    )
+
+
+@app.get("/api")
+@app.get("/api/info")
+def api_info() -> dict[str, Any]:
+    """Programmatic JSON service metadata endpoint."""
     return {
         "service": "Stale-Answer Detector API",
         "version": "1.0.0",
