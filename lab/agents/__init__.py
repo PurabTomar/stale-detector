@@ -20,7 +20,7 @@ _IN_PROCESS_AGENTS = {
 
 def list_agents() -> list[str]:
     """Return list of standard registered agent identifiers."""
-    return list(_IN_PROCESS_AGENTS.keys()) + ["external_http"]
+    return list(_IN_PROCESS_AGENTS.keys()) + ["external_http", "external_agent"]
 
 
 def get_agent(name: str, **kwargs: Any) -> AgentAdapter:
@@ -29,7 +29,7 @@ def get_agent(name: str, **kwargs: Any) -> AgentAdapter:
     if name_clean in _IN_PROCESS_AGENTS:
         return PythonAdapter(_IN_PROCESS_AGENTS[name_clean], name=name_clean)
 
-    if name_clean in {"external_http", "http"}:
+    if name_clean in {"external_http", "http", "external_agent"}:
         url = kwargs.get("url") or kwargs.get("endpoint_url") or "http://localhost:9001/verify"
         return HttpAdapter(endpoint_url=url, timeout_seconds=float(kwargs.get("timeout_seconds", 90.0)))
 

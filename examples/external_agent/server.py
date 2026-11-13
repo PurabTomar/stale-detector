@@ -20,6 +20,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import requests
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 app = FastAPI(title="External Research Agent (Query-Rewriting)")
 
 
