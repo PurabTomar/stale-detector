@@ -248,6 +248,18 @@ def _first_clean_line(text: str) -> str:
     return ""
 
 
+@app.get("/")
+def root_info() -> dict[str, Any]:
+    """Root info endpoint providing service metadata and links."""
+    return {
+        "service": "Stale-Answer Detector API",
+        "version": "1.0.0",
+        "docs_url": "/docs",
+        "health_url": "/health",
+        "verify_endpoint": "POST /verify",
+    }
+
+
 @app.get("/health")
 def health_check() -> dict[str, Any]:
     """Check API liveness and active LLM routing mode (Bifrost vs. Direct Gemini)."""
