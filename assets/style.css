@@ -493,6 +493,56 @@ div.stDownloadButton > button {
   margin: 0 0 0.5rem 0;
 }
 
+/* Model and Fallback Row */
+.sad-model-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+.sad-model-label {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 2px;
+}
+.sad-model-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: var(--bg-secondary, #F1F5F9);
+  color: var(--text-main, #0F172A);
+  border: 1px solid var(--border-main, #E5E7EF);
+  border-radius: var(--radius-sm, 8px);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.sad-fallback-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--status-partial-bg, #FEF3C7);
+  color: var(--status-partial-text, #D97706);
+  border: 1px solid var(--status-partial-border, rgba(217, 119, 6, 0.35));
+  border-radius: var(--radius-sm, 8px);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sad-fallback-arrow {
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
 /* Metric Cards with Colored Top Borders */
 [data-testid="stMetric"] {
   background: var(--bg-card) !important;
@@ -515,35 +565,54 @@ div.stDownloadButton > button {
   left: 0 !important;
   right: 0 !important;
   height: 4px !important;
+  background: var(--primary-color, #5B5BF0);
 }
 /* 1. Fresh */
-div[data-testid="stHorizontalBlock"] > div:nth-child(1) [data-testid="stMetric"]::before,
-div[data-testid="column"]:nth-child(1) [data-testid="stMetric"]::before {
+div[data-testid="stGrid"]:has(> div:nth-child(6)) > div:nth-child(1) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:first-child:nth-last-child(6) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:nth-child(1) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(1) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div:nth-child(1) [data-testid="stMetric"]::before {
   background: var(--status-fresh-text) !important;
 }
 /* 2. Outdated */
-div[data-testid="stHorizontalBlock"] > div:nth-child(2) [data-testid="stMetric"]::before,
-div[data-testid="column"]:nth-child(2) [data-testid="stMetric"]::before {
+div[data-testid="stGrid"]:has(> div:nth-child(6)) > div:nth-child(2) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:first-child:nth-last-child(6) ~ div:nth-child(2) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:nth-child(2) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(2) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div:nth-child(2) [data-testid="stMetric"]::before {
   background: var(--status-outdated-text) !important;
 }
 /* 3. Incorrect */
-div[data-testid="stHorizontalBlock"] > div:nth-child(3) [data-testid="stMetric"]::before,
-div[data-testid="column"]:nth-child(3) [data-testid="stMetric"]::before {
+div[data-testid="stGrid"]:has(> div:nth-child(6)) > div:nth-child(3) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:first-child:nth-last-child(6) ~ div:nth-child(3) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:nth-child(3) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div:nth-child(3) [data-testid="stMetric"]::before {
   background: var(--status-incorrect-text) !important;
 }
 /* 4. Partially Correct */
-div[data-testid="stHorizontalBlock"] > div:nth-child(4) [data-testid="stMetric"]::before,
-div[data-testid="column"]:nth-child(4) [data-testid="stMetric"]::before {
+div[data-testid="stGrid"]:has(> div:nth-child(6)) > div:nth-child(4) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:first-child:nth-last-child(6) ~ div:nth-child(4) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:nth-child(4) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(4) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div:nth-child(4) [data-testid="stMetric"]::before {
   background: var(--status-partial-text) !important;
 }
 /* 5. Uncertain */
-div[data-testid="stHorizontalBlock"] > div:nth-child(5) [data-testid="stMetric"]::before,
-div[data-testid="column"]:nth-child(5) [data-testid="stMetric"]::before {
+div[data-testid="stGrid"]:has(> div:nth-child(6)) > div:nth-child(5) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:first-child:nth-last-child(6) ~ div:nth-child(5) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:nth-child(5) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(5) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div:nth-child(5) [data-testid="stMetric"]::before {
   background: var(--status-uncertain-text) !important;
 }
 /* 6. Unverifiable */
-div[data-testid="stHorizontalBlock"] > div:nth-child(6) [data-testid="stMetric"]::before,
-div[data-testid="column"]:nth-child(6) [data-testid="stMetric"]::before {
+div[data-testid="stGrid"]:has(> div:nth-child(6)) > div:nth-child(6) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:first-child:nth-last-child(6) ~ div:nth-child(6) [data-testid="stMetric"]::before,
+div[data-testid="stGrid"] > div:nth-child(6) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(6) [data-testid="stMetric"]::before,
+div[data-testid="stHorizontalBlock"] > div:nth-child(6) [data-testid="stMetric"]::before {
   background: var(--status-unverifiable-text) !important;
 }
 

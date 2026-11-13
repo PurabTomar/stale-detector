@@ -29,6 +29,7 @@ from benchmark import (
     load_dataset as load_benchmark_dataset,
     run_benchmark,
 )
+from lab.ui import render_agent_lab_tab
 from demo_data import (
     find_cached_pasted_audit,
     get_cached_ask_audit,
@@ -376,7 +377,10 @@ def extract_domain(url: str) -> str:
     return domain
 
 
-def get_overall_tier(score: int | None) -> tuple[str, str, str]:
+def get_overall_tier(
+    score: int | None,
+    results: list[dict] | None = None,
+) -> tuple[str, str, str]:
     """
     Map a risk-weighted overall freshness score (0-100 or None) to
     (label, ring_color, description).
@@ -384,9 +388,12 @@ def get_overall_tier(score: int | None) -> tuple[str, str, str]:
     Thresholds:
     - Fresh: 80-100
     - Mixed: 40-79
-    - Stale: 0-39
+    - Stale / Incorrect: 0-39
     - Unverifiable: None (no scorable claims had reliable evidence)
     """
+    incorrect_count = sum(1 for r in results if r.get("status") == "incorrect") if results else 0
+    outdated_count = sum(1 for r in results if r.get("status") == "outdated") if results else 0
+
     if score is None:
         return (
             "Unverifiable",
@@ -394,10 +401,20 @@ def get_overall_tier(score: int | None) -> tuple[str, str, str]:
             "No reliable web evidence was found to score these claims yet.",
         )
     if score >= 80:
-        return "Fresh", "#22C55E", "Risk-weighted claims align closely with current live web sources."
+        return "Fresh", "#16A34A", "Risk-weighted claims align closely with current live web sources."
     if score >= 40:
-        return "Mixed", "#F59E0B", "Risk-weighted check shows some details are outdated or uncertain."
-    return "Stale", "#EF4444", "Key high-impact facts are outdated compared to today's sources."
+        if incorrect_count > 0 and outdated_count > 0:
+            return "Mixed", "#D97706", "Risk-weighted check shows some details are incorrect, outdated, or uncertain."
+        if incorrect_count > 0:
+            return "Mixed", "#D97706", "Risk-weighted check shows some details are contradicted by official sources."
+        return "Mixed", "#D97706", "Risk-weighted check shows some details are outdated or uncertain."
+
+    # score < 40
+    if incorrect_count > 0 and outdated_count > 0:
+        return "Stale / Incorrect", "#DC2626", "Contains claims contradicted by official sources and outdated facts."
+    if incorrect_count > 0:
+        return "Incorrect", "#DC2626", "Contradicted by official sources or factually never true."
+    return "Stale", "#EA580C", "Key high-impact facts are outdated compared to today's sources."
 
 
 def _sanitize_error_snippet(raw_text: str, max_len: int = 160) -> str:
@@ -2036,7 +2053,7 @@ def _build_compact_model_row_html(
 
     label_text = "Model:" if len(unique_models) <= 1 else "Models:"
     if unique_models:
-        model_chips = "".join(
+        model_chips = " ".join(
             f'<span class="sad-model-tag">{escape_html(m)}</span>'
             for m in unique_models
         )
@@ -2046,9 +2063,11 @@ def _build_compact_model_row_html(
     fallback_chip = ""
     if unique_routes:
         fb_text = unique_routes[0]
+        fb_text = fb_text.replace("-->", " → ").replace("->", " → ")
+        fb_text = " ".join(fb_text.split())
         if len(unique_routes) > 1:
             fb_text = f"{fb_text} (+{len(unique_routes) - 1} more)"
-        fallback_chip = f'<span class="sad-fallback-pill">Fallback used: {escape_html(fb_text)}</span>'
+        fallback_chip = f'<span class="sad-fallback-pill"><span class="sad-fallback-arrow">↳</span> Fallback: {escape_html(fb_text)}</span>'
 
     return (
         '<div class="sad-model-row">'
@@ -2080,6 +2099,8 @@ def build_overall_verdict_sentence(results: list[dict]) -> str:
 
     if parts:
         joined = " and ".join(parts) if len(parts) <= 2 else f"{parts[0]}, {parts[1]}, and {parts[2]}"
+        if incorrect > 0 and outdated == 0 and partially_correct == 0:
+            return f"{joined} found — contradicted by official sources."
         return f"{joined} found."
     if fresh == len(results):
         return f"All {len(results)} claims verified fresh against live sources."
@@ -2097,9 +2118,10 @@ def render_score_ring_html(
     models_used: list[str],
     fallback_routes: list[str] | None = None,
     verdict_sentence: str | None = None,
+    results: list[dict] | None = None,
 ) -> str:
     """Build the pure HTML/CSS circular score ring, verdict sentence, and compact model/fallback row."""
-    tier_label, ring_color, tier_desc = get_overall_tier(overall_score)
+    tier_label, ring_color, tier_desc = get_overall_tier(overall_score, results=results)
     if overall_score is None:
         ring_fill = 0
         ring_num_text = "N/A"
@@ -2840,6 +2862,7 @@ def render_audit_results(
             models_used,
             fallback_routes=fallback_routes,
             verdict_sentence=verdict_sentence,
+            results=results,
         ),
         unsafe_allow_html=True,
     )
@@ -3710,9 +3733,10 @@ st.markdown(
 # 2. "Ask & Audit" (ask question via Bifrost -> show answer -> auto-audit + highlight)
 # 3. "Audit a URL" (Tavily Extract article -> first 8 claims -> annotated view + report)
 # 4. "Benchmark" (20 labelled claims evaluation, cached in benchmark/results.json)
+# 5. "Agent Lab" (Benchmarking AI research agents, Problem Statement 02)
 # ---------------------------------------------------------------------------
-tab_pasted, tab_ask, tab_url, tab_benchmark = st.tabs(
-    ["Audit pasted answer", "Ask & Audit", "Audit a URL", "Benchmark"]
+tab_pasted, tab_ask, tab_url, tab_benchmark, tab_lab = st.tabs(
+    ["Audit pasted answer", "Ask & Audit", "Audit a URL", "Benchmark", "Agent Lab"]
 )
 
 route_target = "Bifrost" if use_bifrost_mode else "Gemini"
@@ -4955,6 +4979,12 @@ with tab_benchmark:
                         "Reference Note": st.column_config.TextColumn("Reference Note", width="large"),
                     },
                 )
+
+# ---------------------------------------------------------------------------
+# Tab 5: Agent Lab (Benchmarking Research Agents, Problem Statement 02)
+# ---------------------------------------------------------------------------
+with tab_lab:
+    render_agent_lab_tab()
 
 # ---------------------------------------------------------------------------
 # Footer
