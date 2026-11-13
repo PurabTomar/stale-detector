@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .streamlit/secrets.toml
 __pycache__/
 *.pyc
@@ -6,6 +8,5 @@ __pycache__/
 venv/
 .agents/
 .tavily_cache.db*
-.env.*
-!.env.example
 .tavily_cache.db
+*.db
