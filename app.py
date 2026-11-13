@@ -2034,6 +2034,61 @@ def render_sidebar_credits(placeholder, credits_used: float) -> None:
     )
 
 
+def render_architecture_telemetry_expander(use_bifrost: bool) -> None:
+    """Render the dual-technology integration showcase for Hackathon Problem Statement 06 & 02."""
+    with st.expander("🛠️ System Architecture: Meaningful Bifrost + Tavily Integration (PS06 + PS02)", expanded=False, icon=":material/hub:"):
+        c1, c2 = st.columns(2, gap="medium")
+        with c1:
+            st.markdown(
+                """
+                <div style="background: var(--bg-card, #FFFFFF); border: 1px solid var(--border-main, #E5E7EF); border-radius: 12px; padding: 18px; height: 100%;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                        <span style="font-size: 1.5rem;">🌐</span>
+                        <h4 style="margin: 0; color: var(--text-main, #0F172A);">Tavily Real-Time Web Intelligence</h4>
+                    </div>
+                    <ul style="font-size: 0.88rem; color: var(--text-muted, #64748B); line-height: 1.6; padding-left: 20px; margin: 0;">
+                        <li><strong>Live Search API:</strong> Targeted search queries formulated dynamically for each extracted factual claim.</li>
+                        <li><strong>Credibility Categorization:</strong> Classifies sources into <code>Primary/Docs</code>, <code>News</code>, <code>Blog</code>, or <code>Forum</code> to weight evidence reliability.</li>
+                        <li><strong>Tavily Extract API:</strong> Full-page content extraction for arbitrary article URLs in the "Audit a URL" tab.</li>
+                        <li><strong>Freshness Timelines:</strong> Extracts published and modified dates to compute exact "stale since" durations.</li>
+                        <li><strong>Smart SQLite Cache:</strong> 6-hour TTL disk cache avoids redundant upstream queries, saving API credits.</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with c2:
+            st.markdown(
+                """
+                <div style="background: var(--bg-card, #FFFFFF); border: 1px solid var(--border-main, #E5E7EF); border-radius: 12px; padding: 18px; height: 100%;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                        <span style="font-size: 1.5rem;">⚡</span>
+                        <h4 style="margin: 0; color: var(--text-main, #0F172A);">Bifrost by Maxim AI LLM Gateway</h4>
+                    </div>
+                    <ul style="font-size: 0.88rem; color: var(--text-muted, #64748B); line-height: 1.6; padding-left: 20px; margin: 0;">
+                        <li><strong>Universal Gateway Routing:</strong> Routes claims across Gemini 2.5 Flash, Flash-Lite, and Pro with unified API abstraction.</li>
+                        <li><strong>Circuit-Breaker Failover:</strong> Instant automatic failover on 429 rate limits or 503 provider outages to backup models without user error.</li>
+                        <li><strong>Dual-Judge Consensus:</strong> Orchestrates multi-model parallel verification comparing independent judges to prevent bias.</li>
+                        <li><strong>Distributed Tracing:</strong> Attaches <code>x-bifrost-run-id</code> to track end-to-end latency, tokens, and step execution.</li>
+                        <li><strong>Chaos Resilience Testing:</strong> Powers Agent Lab failure testing by simulating primary model outages and verifying failover behavior.</li>
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style="background: var(--bg-secondary, #F1F5F9); border: 1px solid var(--border-main, #E5E7EF); border-radius: 10px; padding: 12px 18px; font-size: 0.85rem; color: var(--text-main, #0F172A); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                <div><strong>Architecture Pipeline:</strong> 1. Extract Claims (Bifrost) &rarr; 2. Live Web Verification (Tavily) &rarr; 3. Dual-Judge Evaluation (Bifrost) &rarr; 4. Risk-Weighted Scoring &rarr; 5. Agent Lab Benchmarking</div>
+                <div style="color: var(--text-muted, #64748B);">PS06 (Fact Verification) + PS02 (Agent Benchmarking)</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
 def _build_compact_model_row_html(
     models_used: list[str],
     fallback_routes: list[str] | None = None,
@@ -3726,6 +3781,8 @@ st.markdown(
     '</div>',
     unsafe_allow_html=True,
 )
+
+render_architecture_telemetry_expander(use_bifrost_mode)
 
 # ---------------------------------------------------------------------------
 # Four-tab main workspace:

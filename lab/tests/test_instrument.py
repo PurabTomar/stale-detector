@@ -122,6 +122,37 @@ class TestInstrument(unittest.TestCase):
         self.assertTrue(step.cache_hit)
         self.assertIn("iPhone 16 price", step.input_summary)
 
+    @patch("verifier.search_tavily_for_claim")
+    def test_chaos_tool_failure_scenario(self, mock_search):
+        ctx = RunContext(run_id="run-chaos-tool", agent_name="tav_agent", scenario="tool_failure")
+        client = InstrumentedTavilyClient(ctx)
+
+        # First call fails via chaos injection without hitting upstream
+        res1 = client.search_claim(query="API key limits")
+        self.assertIn("error", res1)
+        self.assertEqual(len(ctx.steps), 1)
+        self.assertIn("503", ctx.steps[0].error or "")
+
+        # Second call succeeds
+        mock_search.return_value = {"results": [{"url": "https://example.com"}], "cache_hit": False}
+        res2 = client.search_claim(query="API key limits retry")
+        self.assertEqual(len(res2["results"]), 1)
+        self.assertEqual(len(ctx.steps), 2)
+
+    @patch("verifier.search_tavily_for_claim")
+    def test_chaos_misleading_context_scenario(self, mock_search):
+        mock_search.return_value = {
+            "results": [{"title": "Official Doc", "url": "https://gov.in/pm", "source_type": "Primary"}],
+            "cache_hit": False,
+        }
+        ctx = RunContext(run_id="run-chaos-misleading", agent_name="tav_agent", scenario="misleading_context")
+        client = InstrumentedTavilyClient(ctx)
+
+        res = client.search_claim(query="Prime Minister of India")
+        # Injects distractor source prepended to the real source
+        self.assertGreater(len(res["results"]), 1)
+        self.assertIn("unverified-blog-rumors", res["results"][0]["url"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -114,6 +114,11 @@ class InstrumentedLLMClient:
         if self.ctx and self.ctx.run_id and llm.is_use_bifrost():
             os.environ["BIFROST_RUN_ID"] = self.ctx.run_id
 
+        # Chaos scenario: model_failure (tests gateway failover and agent resilience)
+        is_model_failure = bool(self.ctx and self.ctx.scenario == "model_failure")
+        if is_model_failure:
+            llm.set_simulate_outage(True)
+
         try:
             content, meta = llm.call_llm_with_meta(
                 system_prompt=system_prompt,
@@ -126,6 +131,9 @@ class InstrumentedLLMClient:
             error_msg = str(exc)
             raise
         finally:
+            if is_model_failure:
+                llm.set_simulate_outage(False)
+
             if old_env_run_id is not None:
                 os.environ["BIFROST_RUN_ID"] = old_env_run_id
             elif "BIFROST_RUN_ID" in os.environ:
@@ -209,6 +217,30 @@ class InstrumentedTavilyClient:
         max_results: int = 5,
         claim: str = "",
     ) -> dict[str, Any]:
+        # Chaos injection: tool_failure on initial tool call
+        is_tool_failure = bool(self.ctx and self.ctx.scenario == "tool_failure")
+        tool_calls_count = sum(1 for s in (self.ctx.steps if self.ctx else []) if s.kind == "tool")
+        if is_tool_failure and tool_calls_count == 0:
+            error_msg = "Tavily API 503: Upstream search cluster unavailable (simulated tool failure)"
+            res = {"results": [], "cache_hit": False, "error": error_msg}
+            if self.ctx is not None:
+                step = StepRecord(
+                    idx=0,
+                    ts=time.time(),
+                    kind="tool",
+                    name="tavily_search",
+                    input_summary=redact_secrets(f"query='{query}', cat='{category}'"),
+                    output_summary="Tool failure injected: 503 Service Unavailable",
+                    model=None,
+                    tokens_in=0,
+                    tokens_out=0,
+                    latency_ms=20.0,
+                    cache_hit=False,
+                    error=error_msg,
+                )
+                self.ctx.add_step(step)
+            return res
+
         t0 = time.perf_counter()
         error_msg = None
         res: dict[str, Any] = {}
@@ -223,6 +255,17 @@ class InstrumentedTavilyClient:
                 use_cache=use_cache,
                 claim=claim,
             )
+            # Chaos injection: misleading_context (inject distractor rumor blog)
+            is_misleading = bool(self.ctx and self.ctx.scenario == "misleading_context")
+            if is_misleading and isinstance(res, dict) and res.get("results"):
+                distractor = {
+                    "url": "https://unverified-blog-rumors.xyz/leak",
+                    "title": f"Unverified Rumor: Update regarding {query}",
+                    "content": f"[UNCONFIRMED SPECULATION] Anonymous social media sources claim that {query} was abruptly altered or reversed without public documentation.",
+                    "source_type": "Blog",
+                    "published_date": "2026-11-01",
+                }
+                res["results"] = [distractor] + list(res.get("results") or [])
         except Exception as exc:
             error_msg = str(exc)
             res = {"results": [], "cache_hit": False, "error": error_msg}
@@ -261,6 +304,29 @@ class InstrumentedTavilyClient:
         max_results: int = 5,
         category: str = "other",
     ) -> list[dict[str, Any]]:
+        # Chaos injection: tool_failure on initial tool call
+        is_tool_failure = bool(self.ctx and self.ctx.scenario == "tool_failure")
+        tool_calls_count = sum(1 for s in (self.ctx.steps if self.ctx else []) if s.kind == "tool")
+        if is_tool_failure and tool_calls_count == 0:
+            error_msg = "Tavily API 503: Upstream search cluster unavailable (simulated tool failure)"
+            if self.ctx is not None:
+                step = StepRecord(
+                    idx=0,
+                    ts=time.time(),
+                    kind="tool",
+                    name="tavily_search",
+                    input_summary=redact_secrets(f"query='{query}'"),
+                    output_summary="Tool failure injected: 503 Service Unavailable",
+                    model=None,
+                    tokens_in=0,
+                    tokens_out=0,
+                    latency_ms=20.0,
+                    cache_hit=False,
+                    error=error_msg,
+                )
+                self.ctx.add_step(step)
+            return []
+
         t0 = time.perf_counter()
         error_msg = None
         results: list[dict[str, Any]] = []
@@ -273,6 +339,17 @@ class InstrumentedTavilyClient:
                 category=category,
                 use_cache=use_cache,
             )
+            # Chaos injection: misleading_context (inject distractor rumor blog)
+            is_misleading = bool(self.ctx and self.ctx.scenario == "misleading_context")
+            if is_misleading and isinstance(results, list) and results:
+                distractor = {
+                    "url": "https://unverified-blog-rumors.xyz/leak",
+                    "title": f"Unverified Rumor: Update regarding {query}",
+                    "content": f"[UNCONFIRMED SPECULATION] Anonymous social media sources claim that {query} was abruptly altered or reversed without public documentation.",
+                    "source_type": "Blog",
+                    "published_date": "2026-11-01",
+                }
+                results = [distractor] + list(results)
         except Exception as exc:
             error_msg = str(exc)
             raise

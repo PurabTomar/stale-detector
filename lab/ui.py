@@ -82,13 +82,21 @@ def get_last_run_timestamp(runs: list[dict[str, Any]]) -> str:
         return str(last_ts_str)[:19]
 
 
-def build_leaderboard_df(runs: list[dict[str, Any]]) -> pd.DataFrame:
+def build_leaderboard_df(
+    runs: list[dict[str, Any]],
+    scenario: str | None = None,
+) -> pd.DataFrame:
     """
     Compute leaderboard metrics per agent:
     Accuracy (%), Mean Steps, Mean Tool Calls, Mean Tokens, Mean Latency (s),
     Failure Rate (%), and Runs (n).
+    Optionally filters by benchmark scenario (clean, model_failure, tool_failure, etc.).
     """
-    if not runs:
+    filtered_runs = runs
+    if scenario and scenario.lower() not in {"all", "all scenarios"}:
+        filtered_runs = [r for r in runs if str(r.get("scenario") or "clean").lower() == scenario.lower()]
+
+    if not filtered_runs:
         return pd.DataFrame(
             columns=[
                 "Agent",
@@ -104,7 +112,7 @@ def build_leaderboard_df(runs: list[dict[str, Any]]) -> pd.DataFrame:
         )
 
     agent_groups = defaultdict(list)
-    for r in runs:
+    for r in filtered_runs:
         agent_name = str(r.get("agent") or "unknown")
         agent_groups[agent_name].append(r)
 
@@ -143,6 +151,76 @@ def build_leaderboard_df(runs: list[dict[str, Any]]) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     if not df.empty:
         df = df.sort_values(by=["Accuracy (%)", "Mean Latency (s)"], ascending=[False, True]).reset_index(drop=True)
+    return df
+
+
+def build_resilience_matrix_df(runs: list[dict[str, Any]]) -> pd.DataFrame:
+    """
+    Compute failure resilience metrics per agent across scenarios (PS02 requirement):
+    Clean baseline, model_failure, tool_failure, misleading_context.
+    """
+    if not runs:
+        return pd.DataFrame(
+            columns=[
+                "Agent",
+                "Clean Baseline (%)",
+                "Model Outage Survival (%)",
+                "Tool Failure Survival (%)",
+                "Misleading Context Survival (%)",
+                "Chaos Resilience (%)",
+                "Grade",
+            ]
+        )
+
+    agent_groups = defaultdict(list)
+    for r in runs:
+        agent = str(r.get("agent") or "unknown")
+        agent_groups[agent].append(r)
+
+    rows = []
+    for agent, a_runs in agent_groups.items():
+        clean_runs = [r for r in a_runs if str(r.get("scenario") or "clean") == "clean"]
+        model_runs = [r for r in a_runs if str(r.get("scenario")) == "model_failure"]
+        tool_runs = [r for r in a_runs if str(r.get("scenario")) == "tool_failure"]
+        misleading_runs = [r for r in a_runs if str(r.get("scenario")) == "misleading_context"]
+
+        clean_acc = (sum(1 for r in clean_runs if r.get("success")) / len(clean_runs) * 100.0) if clean_runs else None
+        model_acc = (sum(1 for r in model_runs if r.get("success")) / len(model_runs) * 100.0) if model_runs else None
+        tool_acc = (sum(1 for r in tool_runs if r.get("success")) / len(tool_runs) * 100.0) if tool_runs else None
+        misleading_acc = (sum(1 for r in misleading_runs if r.get("success")) / len(misleading_runs) * 100.0) if misleading_runs else None
+
+        chaos_accs = [acc for acc in [model_acc, tool_acc, misleading_acc] if acc is not None]
+        if chaos_accs:
+            resilience_score = round(sum(chaos_accs) / len(chaos_accs), 1)
+        elif clean_acc is not None:
+            resilience_score = round(clean_acc, 1)
+        else:
+            resilience_score = 0.0
+
+        if resilience_score >= 80.0:
+            badge = "🛡️ High Resilience"
+        elif resilience_score >= 60.0:
+            badge = "⚖️ Moderate Resilience"
+        elif resilience_score >= 40.0:
+            badge = "⚠️ Tool/Gateway Sensitive"
+        else:
+            badge = "❌ Fragile"
+
+        rows.append(
+            {
+                "Agent": agent,
+                "Clean Baseline (%)": f"{clean_acc:.1f}%" if clean_acc is not None else "N/A",
+                "Model Outage Survival (%)": f"{model_acc:.1f}%" if model_acc is not None else "Pending test",
+                "Tool Failure Survival (%)": f"{tool_acc:.1f}%" if tool_acc is not None else "Pending test",
+                "Misleading Context Survival (%)": f"{misleading_acc:.1f}%" if misleading_acc is not None else "Pending test",
+                "Chaos Resilience (%)": resilience_score,
+                "Grade": badge,
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values(by=["Chaos Resilience (%)"], ascending=False).reset_index(drop=True)
     return df
 
 
@@ -246,7 +324,7 @@ def _render_scatter_charts(df: pd.DataFrame) -> None:
                 )
             )
             chart1 = (points1 + labels1).properties(height=280)
-            st.altair_chart(chart1, use_container_width=True)
+            st.altair_chart(chart1, width="stretch")
         except Exception:
             st.scatter_chart(df, x="Mean Tokens", y="Accuracy (%)", color="Agent")
 
@@ -275,7 +353,7 @@ def _render_scatter_charts(df: pd.DataFrame) -> None:
                 )
             )
             chart2 = (points2 + labels2).properties(height=280)
-            st.altair_chart(chart2, use_container_width=True)
+            st.altair_chart(chart2, width="stretch")
         except Exception:
             st.scatter_chart(df, x="Mean Latency (s)", y="Accuracy (%)", color="Agent")
 
@@ -674,6 +752,212 @@ print(json.dumps(output))
         st.code("python -m lab.run --agents my_agent --repeats 3 --concurrency 2 --cache-tavily --yes", language="bash")
 
 
+def _render_resilience_section(runs: list[dict[str, Any]]) -> None:
+    """Render Failure Testing & Chaos Resilience Matrix (Problem Statement 02)."""
+    with st.expander("⚡ Failure Resilience & Chaos Analysis (PS02 Mandatory Requirement)", expanded=True):
+        st.markdown(
+            "Problem Statement 02 requires evaluating agents under controlled failures (unavailable models, broken tools, misleading instructions). "
+            "This resilience matrix reveals which architectures survive real production incidents vs. which ones fail catastrophically."
+        )
+
+        res_df = build_resilience_matrix_df(runs)
+        if not res_df.empty:
+            st.dataframe(
+                res_df,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Agent": st.column_config.TextColumn("Agent Architecture", width="medium"),
+                    "Clean Baseline (%)": st.column_config.TextColumn("Clean Baseline"),
+                    "Model Outage Survival (%)": st.column_config.TextColumn("Model Outage (Bifrost Fallback)"),
+                    "Tool Failure Survival (%)": st.column_config.TextColumn("Tool Failure (Tavily 503)"),
+                    "Misleading Context Survival (%)": st.column_config.TextColumn("Misleading Rumors"),
+                    "Chaos Resilience (%)": st.column_config.ProgressColumn(
+                        "Chaos Resilience",
+                        format="%.1f%%",
+                        min_value=0.0,
+                        max_value=100.0,
+                    ),
+                    "Grade": st.column_config.TextColumn("Resilience Grade"),
+                },
+            )
+
+        col_a, col_b, col_c = st.columns(3, gap="small")
+        with col_a:
+            st.markdown(
+                """
+                <div style="background: var(--bg-card, #FFFFFF); border: 1px solid var(--border-main, #E5E7EF); border-radius: 10px; padding: 14px;">
+                    <div style="font-weight: 700; color: #16A34A; margin-bottom: 4px;">1. Model Outage Test</div>
+                    <div style="font-size: 0.85rem; color: var(--text-muted, #64748B);">Simulates primary LLM failure. Tests if the agent leverages <strong>Bifrost automatic failover</strong> to backup models without crashing.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with col_b:
+            st.markdown(
+                """
+                <div style="background: var(--bg-card, #FFFFFF); border: 1px solid var(--border-main, #E5E7EF); border-radius: 10px; padding: 14px;">
+                    <div style="font-weight: 700; color: #EA580C; margin-bottom: 4px;">2. Tool Degradation Test</div>
+                    <div style="font-size: 0.85rem; color: var(--text-muted, #64748B);">Simulates 503 search cluster unavailability. Tests if the agent retries, uses alternative tools, or reports uncertainty safely.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with col_c:
+            st.markdown(
+                """
+                <div style="background: var(--bg-card, #FFFFFF); border: 1px solid var(--border-main, #E5E7EF); border-radius: 10px; padding: 14px;">
+                    <div style="font-weight: 700; color: #5B5BF0; margin-bottom: 4px;">3. Misleading Rumor Test</div>
+                    <div style="font-size: 0.85rem; color: var(--text-muted, #64748B);">Injects conflicting unverified blog rumors into search results. Tests if the agent prioritizes authoritative primary sources.</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def _render_interactive_sandbox(tasks_meta: dict[str, dict[str, Any]]) -> None:
+    """Allow judges and developers to test any research agent interactively under normal or chaos scenarios."""
+    with st.expander("🔬 Interactive Agent Sandbox (Live Single-Run Tester)", expanded=False):
+        st.markdown(
+            "Test any agent live against ground-truth research tasks under normal or chaos conditions. "
+            "Inspect real-time tool calls, token usage, latency, and Bifrost gateway failovers."
+        )
+
+        agent_options = ["detector_pipeline", "react_loop", "single_search", "llm_only"]
+        col_ag, col_task, col_scen = st.columns([1.2, 2.2, 1.4], gap="small")
+        with col_ag:
+            agent_choice = st.selectbox(
+                "Agent architecture",
+                options=agent_options,
+                index=0,
+                key="sb_agent",
+            )
+            if isinstance(agent_choice, int):
+                agent_choice = agent_options[agent_choice] if 0 <= agent_choice < len(agent_options) else "detector_pipeline"
+        with col_task:
+            task_ids = sorted(tasks_meta.keys()) if tasks_meta else ["task_python_version"]
+            task_choice = st.selectbox(
+                "Evaluation task",
+                options=task_ids,
+                format_func=lambda tid: f"{tid}: {tasks_meta.get(tid, {}).get('input_text', tid)[:60]}...",
+                key="sb_task",
+            )
+            if isinstance(task_choice, int):
+                task_choice = task_ids[task_choice] if 0 <= task_choice < len(task_ids) else "task_python_version"
+        with col_scen:
+            scen_options = [
+                "clean (Normal Baseline)",
+                "model_failure (Bifrost Gateway Outage)",
+                "tool_failure (Tavily Cluster 503)",
+                "misleading_context (Rumor Distractor)",
+            ]
+            scen_choice = st.selectbox(
+                "Chaos scenario",
+                options=scen_options,
+                index=0,
+                key="sb_scen",
+            )
+            if isinstance(scen_choice, int):
+                clean_scen = scen_options[scen_choice].split(" ")[0].strip() if 0 <= scen_choice < len(scen_options) else "clean"
+            else:
+                clean_scen = str(scen_choice).split(" ")[0].strip()
+
+        sel_task_data = tasks_meta.get(str(task_choice), {}) if isinstance(tasks_meta, dict) else {}
+
+        if st.button("🧪 Execute Live Run", type="primary", key="sb_run_btn"):
+            with st.spinner(f"Executing '{agent_choice}' under scenario '{clean_scen}'..."):
+                try:
+                    import uuid
+                    from lab.agents import get_agent
+                    from lab.schema import RunContext, Task
+                    from lab.scoring import compute_run_totals, evaluate_success
+
+                    task_obj = (
+                        Task.from_dict(sel_task_data)
+                        if sel_task_data
+                        else Task(
+                            id=task_choice,
+                            category="other",
+                            input_text="Sample input",
+                            expected_status="fresh",
+                        )
+                    )
+                    run_id = f"sandbox-{agent_choice}-{task_choice}-{uuid.uuid4().hex[:4]}"
+                    ctx = RunContext(
+                        run_id=run_id,
+                        agent_name=agent_choice,
+                        scenario=clean_scen,
+                        bypass_cache=False,
+                    )
+                    adapter = get_agent(agent_choice)
+                    result, steps = adapter.run(task_obj, ctx)
+                    success = evaluate_success(task_obj, result)
+                    totals = compute_run_totals(steps)
+
+                    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+                    r1, r2, r3, r4 = st.columns(4, gap="small")
+                    with r1:
+                        badge_text = "✅ PASSED" if success else "❌ FAILED"
+                        b_color = "#16A34A" if success else "#DC2626"
+                        st.markdown(
+                            f"<div style='font-size: 1.3rem; font-weight: 800; color: {b_color}; padding-top: 8px;'>{badge_text}</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with r2:
+                        st.metric("Verdict", result.verdict.upper())
+                    with r3:
+                        st.metric("Latency", f"{totals.get('total_latency_ms', 0)/1000.0:.2f}s")
+                    with r4:
+                        st.metric("Total Tokens", f"{totals.get('total_tokens', 0):,}")
+
+                    st.markdown(f"**Agent Answer / Findings:** {result.answer or result.current_value or 'No detailed answer provided.'}")
+                    if result.error:
+                        st.error(f"Error captured during execution: {result.error}")
+
+                    st.markdown(f"**Execution Trace ({len(steps)} steps recorded):**")
+                    step_icons = {
+                        "llm": "🤖",
+                        "tool": "🔍",
+                        "decision": "⚖️",
+                        "fallback": "⚠️",
+                        "error": "❌",
+                    }
+                    for s in steps:
+                        s_idx = s.idx
+                        s_kind = str(s.kind or "step").lower()
+                        s_icon = step_icons.get(s_kind, "⚡")
+                        s_name = s.name or s_kind
+                        s_model = s.model or "N/A"
+                        s_lat = s.latency_ms
+                        s_tin = s.tokens_in
+                        s_tout = s.tokens_out
+                        s_err = s.error
+                        s_cache = "Hit" if s.cache_hit else "Miss"
+
+                        with st.expander(
+                            f"Step {s_idx}: {s_icon} [{s_kind.upper()}] {s_name} — {s_lat:.1f}ms ({s_model})",
+                            expanded=(bool(s_err) or s_idx == 1),
+                        ):
+                            mc = st.columns(4)
+                            mc[0].metric("Model", s_model)
+                            mc[1].metric("Latency", f"{s_lat:.1f} ms")
+                            mc[2].metric("Tokens", f"{s_tin + s_tout:,}")
+                            mc[3].metric("Tavily Cache", s_cache)
+                            if s_kind == "fallback":
+                                st.warning("⚠️ Gateway fallback event: Primary model was unavailable; secondary fallback model answered.", icon=":material/warning:")
+                            if s_err:
+                                st.error(f"❌ Step Error: {html.escape(str(s_err))}", icon=":material/error:")
+                            if s.input_summary:
+                                st.caption("**Input Summary:**")
+                                st.code(s.input_summary, language="text")
+                            if s.output_summary:
+                                st.caption("**Output Summary:**")
+                                st.code(s.output_summary, language="text")
+
+                except Exception as exc:
+                    st.error(f"Sandbox execution error: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Main Tab Renderer Entrypoint
 # ---------------------------------------------------------------------------
@@ -744,6 +1028,8 @@ def render_agent_lab_tab(
     # 3. KPI Header Grid
     unique_agents = sorted(set(r.get("agent") for r in runs if r.get("agent")))
     unique_tasks = sorted(set(r.get("task_id") for r in runs if r.get("task_id")))
+    chaos_runs_count = sum(1 for r in runs if str(r.get("scenario") or "clean") != "clean")
+    scenario_status_text = f"{chaos_runs_count} chaos runs" if chaos_runs_count > 0 else "Clean baseline (chaos: available)"
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4, gap="small")
     with kpi1:
@@ -753,16 +1039,28 @@ def render_agent_lab_tab(
     with kpi3:
         _render_kpi_card("Total Executed Runs", f"{len(runs):,}", "Recorded in runs.jsonl")
     with kpi4:
-        _render_kpi_card("Last Benchmark", last_run_date, "Clean scenario (chaos: not run yet)")
+        _render_kpi_card("Last Benchmark", last_run_date, scenario_status_text)
 
     st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
 
-    # 4. Leaderboard Table
-    df = build_leaderboard_df(runs)
+    # 4. Leaderboard Table with Scenario Filter
+    scenarios_found = sorted(set(str(r.get("scenario") or "clean") for r in runs if r.get("scenario")))
+    scenario_options = ["All Scenarios"] + (scenarios_found if scenarios_found else ["clean"])
 
-    lead_head_col, download_col = st.columns([3, 1], vertical_alignment="bottom")
+    lead_head_col, scen_col, download_col = st.columns([2.5, 1.4, 1.1], vertical_alignment="bottom")
     with lead_head_col:
         st.subheader("🏆 Agent Leaderboard", divider="gray")
+    with scen_col:
+        sel_scenario = st.selectbox(
+            "Scenario Filter",
+            options=scenario_options,
+            index=0,
+            key="lab_scen_filter",
+            help="Filter leaderboard by test scenario (Baseline Clean vs Failure Chaos).",
+        )
+        if isinstance(sel_scenario, int):
+            sel_scenario = scenario_options[sel_scenario] if 0 <= sel_scenario < len(scenario_options) else "All Scenarios"
+    df = build_leaderboard_df(runs, scenario=sel_scenario)
     with download_col:
         csv_data = df.to_csv(index=False).encode("utf-8")
         st.download_button(
@@ -797,6 +1095,16 @@ def render_agent_lab_tab(
 
     # 5. Scatter Charts
     _render_scatter_charts(df)
+
+    st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+
+    # 5b. Failure Resilience & Chaos Analysis Section (PS02 Mandatory Requirement)
+    _render_resilience_section(runs)
+
+    st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+
+    # 5c. Interactive Agent Sandbox
+    _render_interactive_sandbox(tasks_meta)
 
     st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
 
