@@ -24,13 +24,14 @@ import llm
 class TestBenchmarkDataset(unittest.TestCase):
     """Validate structure and balance of benchmark/dataset.json."""
 
-    def test_dataset_has_24_valid_labelled_claims(self):
+    def test_dataset_has_30_valid_labelled_claims(self):
         entries = benchmark.load_dataset()
-        self.assertEqual(len(entries), 24)
+        self.assertEqual(len(entries), 30)
 
         status_counts = Counter(e["expected_status"] for e in entries)
-        self.assertEqual(status_counts["outdated"], 11)
-        self.assertEqual(status_counts["fresh"], 11)
+        self.assertEqual(status_counts["outdated"], 13)
+        self.assertEqual(status_counts["fresh"], 12)
+        self.assertEqual(status_counts["incorrect"], 3)
         self.assertEqual(status_counts["uncertain"], 1)
         self.assertEqual(status_counts["unverifiable"], 1)
 
@@ -42,12 +43,21 @@ class TestBenchmarkDataset(unittest.TestCase):
             any("iPhone 18 Pro is available" in e["claim"] for e in entries),
             "Dataset should include the 'iPhone 18 Pro is available' regression claim.",
         )
+        self.assertTrue(
+            any("Rahul Gandhi" in e["claim"] for e in entries),
+            "Dataset should include the 'Rahul Gandhi' incorrect PM regression claim.",
+        )
+
+        human_check_entries = [e for e in entries if e.get("needs_human_check")]
+        self.assertEqual(len(human_check_entries), 6)
 
         for idx, entry in enumerate(entries, start=1):
             self.assertEqual(entry["index"], idx)
             self.assertTrue(entry["claim"])
             self.assertTrue(entry["note"])
-            self.assertIn(entry["expected_status"], {"fresh", "outdated", "uncertain", "unverifiable"})
+            self.assertIn(entry["expected_status"], benchmark.EXPECTED_BENCHMARK_STATUSES)
+
+    test_dataset_has_24_valid_labelled_claims = test_dataset_has_30_valid_labelled_claims
 
     def test_load_dataset_validation_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -204,6 +214,13 @@ class TestBenchmarkMetricsAndCache(unittest.TestCase):
         self.assertEqual(cm["matrix"]["fresh"], {"outdated": 1, "fresh": 1, "other": 0})
         self.assertEqual(m["by_category"]["price"]["correct"], 1)
         self.assertEqual(m["by_category"]["price"]["total"], 2)
+        self.assertIn("by_status", m)
+        self.assertEqual(m["by_status"]["outdated"]["total"], 4)
+        self.assertEqual(m["by_status"]["outdated"]["correct"], 2)
+        self.assertAlmostEqual(m["by_status"]["outdated"]["accuracy"], 0.5)
+        self.assertEqual(m["by_status"]["fresh"]["total"], 2)
+        self.assertEqual(m["by_status"]["fresh"]["correct"], 1)
+        self.assertAlmostEqual(m["by_status"]["fresh"]["accuracy"], 0.5)
 
     def test_cache_load_save_round_trip_and_invalid_json(self):
         with tempfile.TemporaryDirectory() as tmp:

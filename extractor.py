@@ -34,8 +34,10 @@ VALID_CATEGORIES = (
 EXTRACTION_SYSTEM_PROMPT = """You are a careful fact-checking assistant.
 Your job is to inspect an LLM-generated answer or article and extract specific,
 independently verifiable factual claims that could become outdated over time
-(for example: prices, product or API/software versions, laws or regulations,
-company info like CEO/funding/acquisitions, and statistics).
+OR claims about CURRENT FACTS that can simply be wrong (for example: who holds an
+office such as Prime Minister, President, CEO, Cabinet Minister; capital cities;
+records; "latest" statements; product or API/software versions; prices; laws or
+regulations; company info; and statistics), even if they are not strictly time-sensitive.
 
 Skip conversational filler, greetings, disclaimers, purely subjective opinions,
 vague recommendations without concrete facts, and duplicate paraphrases of a
@@ -44,11 +46,11 @@ not invent details absent from the input text.
 
 Return ONLY a valid JSON array (no markdown explanation, no extra text).
 Each element in the JSON array must be an object with these exact keys:
-- "claim": Keep the claim wording as close as possible to the user's exact
-  wording (copy the exact "span" whenever it already stands on its own; only
+- "claim": Keep the claim text EXACTLY as in the input text so the annotation
+  span matches (copy the exact "span" whenever it already stands on its own; only
   replace an ambiguous pronoun like "it" or "their" with the named entity so
-  the claim makes sense alone). NEVER rewrite or paraphrase a specific product,
-  version, price, or entity claim into a vaguer statement.
+  the claim makes sense alone). NEVER rewrite, sanitize, or paraphrase a specific
+  fact, office holder, product, version, price, or entity claim into a vaguer statement.
 - "span": The exact verbatim substring copied character-for-character from the input
   text that states this claim (preserve exact casing, numbers, punctuation, version
   dots, and currency symbols so it can be located with a string match).
@@ -56,7 +58,8 @@ Each element in the JSON array must be an object with these exact keys:
   Product-name, hardware/software model, release, and availability claims (such as
   "iPhone 18 Pro is available", "Python 3.15", or "GPT-5") MUST use "version"
   (or "price" if stating a price, or "company" if about leadership/ownership/corporate
-  lineup) — NEVER label named product claims as "other".
+  lineup) — NEVER label named product claims as "other". Office holder or company leadership
+  claims should use "company" or "other".
 - "search_query": A concise, targeted web search query to check the current truth of this claim.
 
 If the text contains no time-sensitive or verifiable factual claims, return [].
@@ -135,7 +138,8 @@ _KNOWN_COMPANY_TERMS = (
 )
 
 _CORPORATE_ACTION_RE = re.compile(
-    r"\b(?:ceo|chief\s+executive|cfo|cto|coo|chairman|president|founder|co-founder|"
+    r"\b(?:ceo|chief\s+executive|cfo|cto|coo|chairman|president|prime\s+minister|minister|"
+    r"chancellor|governor|mayor|founder|co-founder|"
     r"acquired|acquisition|merged|merger|subsidiary|headquarter(?:ed|s)?|ipo|valuation|"
     r"board\s+of\s+directors|stepped\s+down|appointed)\b",
     re.IGNORECASE,

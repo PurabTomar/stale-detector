@@ -49,7 +49,14 @@ README_PATH = ROOT_DIR / "README.md"
 BENCHMARK_README_START = "<!-- BENCHMARK_RESULTS_START -->"
 BENCHMARK_README_END = "<!-- BENCHMARK_RESULTS_END -->"
 
-EXPECTED_BENCHMARK_STATUSES = {"fresh", "outdated", "uncertain", "unverifiable"}
+EXPECTED_BENCHMARK_STATUSES = {
+    "fresh",
+    "outdated",
+    "incorrect",
+    "partially_correct",
+    "uncertain",
+    "unverifiable",
+}
 
 
 def load_dataset(dataset_path: str | Path | None = None) -> list[dict]:
@@ -57,7 +64,7 @@ def load_dataset(dataset_path: str | Path | None = None) -> list[dict]:
     Load and validate labelled claims from `benchmark/dataset.json`.
 
     Each entry requires: `claim`, `category`, `expected_status`
-    ('fresh', 'outdated', 'uncertain', or 'unverifiable'), and `note`.
+    ('fresh', 'outdated', 'incorrect', 'partially_correct', 'uncertain', or 'unverifiable'), and `note`.
     """
     path = Path(dataset_path) if dataset_path is not None else DATASET_PATH
     if not path.exists():
@@ -83,19 +90,20 @@ def load_dataset(dataset_path: str | Path | None = None) -> list[dict]:
         if expected not in EXPECTED_BENCHMARK_STATUSES:
             raise ValueError(
                 f"Benchmark dataset entry #{idx} has invalid expected_status={expected!r}; "
-                "must be 'fresh', 'outdated', 'uncertain', or 'unverifiable'."
+                f"must be one of {sorted(EXPECTED_BENCHMARK_STATUSES)}."
             )
 
         note = str(item.get("note", "")).strip()
-        cleaned.append(
-            {
-                "index": idx,
-                "claim": claim_text,
-                "category": category,
-                "expected_status": expected,
-                "note": note,
-            }
-        )
+        cleaned_entry = {
+            "index": idx,
+            "claim": claim_text,
+            "category": category,
+            "expected_status": expected,
+            "note": note,
+        }
+        if "needs_human_check" in item:
+            cleaned_entry["needs_human_check"] = bool(item.get("needs_human_check"))
+        cleaned.append(cleaned_entry)
 
     return cleaned
 
@@ -292,6 +300,28 @@ def compute_benchmark_metrics(
         cat_total = cat_stats["total"]
         cat_stats["accuracy"] = round(cat_stats["correct"] / cat_total, 4) if cat_total else 0.0
 
+    by_status: dict[str, dict] = {}
+    for row in rows:
+        exp_st = str(row.get("expected_status", "")).strip().lower()
+        pred_st = str(row.get("predicted_status", "")).strip().lower()
+        if not exp_st:
+            continue
+        status_bucket = by_status.setdefault(
+            exp_st,
+            {
+                "total": 0,
+                "correct": 0,
+                "accuracy": 0.0,
+            },
+        )
+        status_bucket["total"] += 1
+        if exp_st == pred_st:
+            status_bucket["correct"] += 1
+
+    for status_stats in by_status.values():
+        st_total = status_stats["total"]
+        status_stats["accuracy"] = round(status_stats["correct"] / st_total, 4) if st_total else 0.0
+
     accuracy = round(correct / total, 4)
     precision_stale = round(tp / (tp + fp), 4) if (tp + fp) > 0 else 0.0
     recall_stale = round(tp / (tp + fn), 4) if (tp + fn) > 0 else 0.0
@@ -330,6 +360,7 @@ def compute_benchmark_metrics(
             "matrix": matrix,
         },
         "by_category": by_category,
+        "by_status": by_status,
     }
 
 
@@ -508,6 +539,7 @@ def _evaluate_single_benchmark_item(
             "total_tokens": t_tok,
             "tavily_credits_used": credits_used,
             "error": verify_res.get("error"),
+            "needs_human_check": bool(entry.get("needs_human_check", False)),
         }
     finally:
         if should_close:
@@ -665,12 +697,39 @@ def format_results_markdown(payload: dict) -> str:
             f"| {cm_mat.get('fresh', {}).get('fresh', cm.get('tn', 0))} "
             f"| {cm_mat.get('fresh', {}).get('other', 0)} |"
         ),
+    ]
+
+    by_status = metrics.get("by_status") or {}
+    if by_status:
+        lines.extend([
+            "",
+            "### Accuracy by Status",
+            "",
+            "| Status | Total | Correct | Accuracy |",
+            "| :--- | :---: | :---: | :---: |",
+        ])
+        ordered_statuses = ("fresh", "outdated", "incorrect", "partially_correct", "uncertain", "unverifiable")
+        for st_name in ordered_statuses:
+            if st_name in by_status:
+                s_info = by_status[st_name]
+                s_tot = s_info.get("total", 0)
+                s_cor = s_info.get("correct", 0)
+                s_acc = f"{float(s_info.get('accuracy', 0.0)) * 100:.1f}%"
+                lines.append(f"| **`{st_name}`** | {s_tot} | {s_cor} | {s_acc} |")
+        for st_name, s_info in sorted(by_status.items()):
+            if st_name not in ordered_statuses:
+                s_tot = s_info.get("total", 0)
+                s_cor = s_info.get("correct", 0)
+                s_acc = f"{float(s_info.get('accuracy', 0.0)) * 100:.1f}%"
+                lines.append(f"| **`{st_name}`** | {s_tot} | {s_cor} | {s_acc} |")
+
+    lines.extend([
         "",
         f"### Per-Claim Results ({total_cnt} Claims)",
         "",
         "| # | Mark | Category | Claim | Expected | Predicted | Score | Latency | Tokens | Credits |",
         "| :---: | :---: | :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |",
-    ]
+    ])
 
     for row in rows:
         idx = row.get("index", "")

@@ -159,13 +159,22 @@ def _same_model_name(model_a: str | None, model_b: str | None) -> bool:
 # Load environment variables from .env if present.
 load_dotenv()
 
-VALID_STATUSES = ("fresh", "outdated", "uncertain", "unverifiable")
+VALID_STATUSES = (
+    "fresh",
+    "outdated",
+    "incorrect",
+    "partially_correct",
+    "uncertain",
+    "unverifiable",
+)
 
 # Enforced score bands per status (evidence strength never pushes a score outside its status band).
 STATUS_SCORE_BANDS = {
     "fresh": (75, 100),
+    "partially_correct": (45, 74),
     "uncertain": (40, 74),
-    "outdated": (0, 39),
+    "outdated": (10, 39),
+    "incorrect": (0, 15),
 }
 
 # Weights for the 0-100 evidence-strength breakdown (sum = 1.0).
@@ -450,10 +459,22 @@ CRITICAL EVIDENCE-ONLY RULES:
 - If the provided snippets do NOT clearly confirm or contradict the claim, set
   "evidence_stance" to "no_evidence" and "status" to "unverifiable". Never guess
   or fall back on memory.
-- "outdated" is allowed ONLY when at least one relevant provided source explicitly
-  contradicts or supersedes the claim, supported by a verbatim "supporting_quote".
-- NEVER invent dates: "effective_date" and "stale_since" MUST come directly from
-  a provided source snippet or source Published date; otherwise set them to null.
+- NEVER invent dates: "effective_date", "change_date", and "stale_since" MUST come directly from
+  a provided source snippet or source Published date; otherwise set them to null. Never guess a date.
+- OUTDATED vs INCORRECT vs PARTIALLY CORRECT RULES:
+  * "was_ever_true": must be "yes", "no", or "unknown".
+    - "yes": The claim WAS historically true at some point in the past, and later changed.
+    - "no": The claim was NEVER true at any point in history, or is a pure factual error directly contradicted by authoritative sources.
+    - "unknown": Historical status cannot be determined from the evidence.
+  * If "was_ever_true" is "no", the status MUST be "incorrect", NEVER "outdated".
+  * "change_date" can ONLY be provided if "was_ever_true" is "yes" and explicitly stated in sources. If "was_ever_true" is "no" or no date is stated, "change_date" MUST be null.
+  * "outdated": the claim WAS true at some point and changed (needs a change date from a source; if no date is found, keep outdated but hide "stale since").
+  * "incorrect": the claim was never true or is directly contradicted by authoritative sources.
+  * "partially_correct": some part is true and some part is wrong or incomplete.
+- POLITICAL AND SENSITIVE CLAIMS:
+  * Judge political, governmental, and sensitive claims ONLY against official primary sources (government sites, official party or company pages) and reputable news outlets.
+  * NEVER inject opinions, subjective views, or ungrounded commentary.
+  * If credible sources conflict, disagree, or provide competing accounts, set status="uncertain", conflicting_sources=true, and explain the conflict.
 
 Return ONLY a valid JSON object (no markdown fences or extra commentary) with
 these exact keys:
@@ -464,16 +485,23 @@ these exact keys:
 - "supporting_quote": Exact verbatim quote (maximum 25 words) copied directly from
   one of the provided snippets or extracted source text that justifies "evidence_stance"
   (or null if "no_evidence").
-- "status": Must be one of "fresh", "outdated", "uncertain", or "unverifiable".
+- "was_ever_true": "yes", "no", or "unknown".
+- "change_date": Date/month when the fact changed (e.g. "2026-09-18" or "September 2026"), provided ONLY if was_ever_true is "yes" and explicitly found in the sources. NEVER guess a date; set to null if not stated in sources or if was_ever_true is not "yes".
+- "status": Must be one of "fresh", "outdated", "incorrect", "partially_correct", "uncertain", or "unverifiable".
   * If "evidence_stance" is "no_evidence", "status" MUST be "unverifiable".
+  * If "was_ever_true" is "no", "status" MUST be "incorrect" (never "outdated").
   * "fresh": Provided evidence clearly confirms the claim is accurate today.
-  * "outdated": Provided evidence clearly contradicts the claim (with a verbatim supporting_quote).
+  * "outdated": Provided evidence shows the claim was true in the past and changed.
+  * "incorrect": The claim was never true or is directly contradicted by authoritative sources.
+  * "partially_correct": Some part is true and some part is wrong or incomplete.
   * "uncertain": Credible provided sources conflict/disagree, or evidence is partial/ambiguous.
   * "unverifiable": No credible or relevant evidence in the provided snippets confirms or refutes the claim.
 - "score": An integer matching the status band, or null for "unverifiable":
   * 75 to 100 for "fresh"
+  * 45 to 74 for "partially_correct"
   * 40 to 74 for "uncertain"
-  * 0 to 39 for "outdated"
+  * 10 to 39 for "outdated"
+  * 0 to 15 for "incorrect"
   * null for "unverifiable"
 - "agreeing_sources": An integer count (0 to N) of how many independent provided
   domains support the same current fact stated in "current_info".
@@ -483,28 +511,31 @@ these exact keys:
 - "current_info": A concise statement grounded strictly in the provided search results
   (or state clearly that sources disagree / no reliable evidence was found).
 - "current_value": Short, exact current value/figure/name/rate from the snippets (string, or null if unknown/unverifiable).
+- "correction": Short, exact factual correction for incorrect, outdated, or partially correct claims (or null if fresh/unverifiable).
 - "effective_date": When the current fact took effect, copied ONLY if stated in a provided
   snippet or Published date (e.g., "2026-09-18" or "September 2026", or null if not stated in sources).
 - "change_summary": Brief delta grounded in snippets describing what changed vs. the claim (or null if fresh/unverifiable).
 - "stale_since": Earliest date/month found in a provided snippet or Published date when the claim
-  stopped being accurate (or null if fresh or not stated in any source).
+  stopped being accurate (only if was_ever_true is "yes"; null if fresh, incorrect, or not stated in any source).
 - "reason": A brief 1-2 sentence explanation comparing the claim strictly to the provided snippets.
 """
 
 REWRITE_SYSTEM_PROMPT = """You are a precise editor tasked with updating an AI-generated answer to reflect verified, current facts.
 
-Your job is to rewrite the ORIGINAL ANSWER so that every outdated claim is replaced with the verified current information supplied in the FINDINGS section below.
+Your job is to rewrite the ORIGINAL ANSWER so that every outdated or incorrect claim is replaced with the verified current information supplied in the FINDINGS section below.
 
 STRICT RULES:
 1. Output ONLY the rewritten answer — no preamble, no "Here is the updated answer:", no metadata, no commentary.
 2. Preserve the COMPLETE original answer structure, tone, and all "fresh" claims word-for-word.
-3. For each claim marked "outdated": replace ONLY the specific outdated fact with the verified "current_info" / "current_value" / "effective_date". Rewrite the full containing sentence naturally so it reads grammatically — do NOT splice fragments mid-sentence.
-4. For claims marked "uncertain": add a concise verification qualifier (e.g., "— unconfirmed; live sources disagree" or "pending verification") without inventing new figures or names.
-5. For claims marked "unverifiable": NEVER invent replacement facts, numbers, dates, or names — keep the statement intact or briefly note that it could not be verified.
-6. Do NOT merge unrelated sentences into one, do NOT drop intact context, and do NOT duplicate noun phrases.
-7. Never start the output with "Here", "Sure", "Certainly", "Updated", or any acknowledgement phrase, and do NOT wrap prose in JSON or markdown fences.
-8. Preserve paragraph breaks, line breaks, and bullet points from the original answer.
-9. Every sentence in the final output must be grammatical, complete, and faithful to verified evidence.
+3. For each claim marked "outdated": replace ONLY the specific outdated fact with the verified "current_info" / "current_value" / "effective_date" (claim is updated). Rewrite the full containing sentence naturally so it reads grammatically — do NOT splice fragments mid-sentence.
+4. For each claim marked "incorrect": replace the false fact with the verified "current_info" / "current_value" / "correction" (claim is corrected). Rewrite the full containing sentence naturally.
+5. For claims marked "partially_correct": adjust the inaccurate or incomplete portion to align with "current_info" while retaining the accurate part.
+6. For claims marked "uncertain": add a concise verification qualifier (e.g., "— unconfirmed; live sources disagree" or "pending verification") without inventing new figures or names.
+7. For claims marked "unverifiable": NEVER invent replacement facts, numbers, dates, or names — keep the statement intact or briefly note that it could not be verified.
+8. Do NOT merge unrelated sentences into one, do NOT drop intact context, and do NOT duplicate noun phrases.
+9. Never start the output with "Here", "Sure", "Certainly", "Updated", or any acknowledgement phrase, and do NOT wrap prose in JSON or markdown fences.
+10. Preserve paragraph breaks, line breaks, and bullet points from the original answer.
+11. Every sentence in the final output must be grammatical, complete, and faithful to verified evidence.
 """
 
 
@@ -2091,6 +2122,29 @@ def _normalize_judgement(parsed: object) -> dict:
     raw_status = str(parsed.get("status", "uncertain")).strip().lower()
     status = raw_status if raw_status in VALID_STATUSES else "uncertain"
 
+    raw_was_ever_true = str(parsed.get("was_ever_true") or "").strip().lower()
+    if raw_was_ever_true in {"yes", "no", "unknown"}:
+        was_ever_true = raw_was_ever_true
+    elif raw_was_ever_true in {"true", "y"}:
+        was_ever_true = "yes"
+    elif raw_was_ever_true in {"false", "n", "never"}:
+        was_ever_true = "no"
+    else:
+        was_ever_true = "unknown"
+
+    change_date = _normalize_optional_text(parsed.get("change_date"))
+    if was_ever_true != "yes":
+        change_date = None
+
+    correction = _normalize_optional_text(parsed.get("correction"))
+
+    # Requirement 2: If was_ever_true is "no", the status MUST be incorrect, not outdated.
+    if was_ever_true == "no" and status == "outdated":
+        status = "incorrect"
+    elif status == "incorrect":
+        was_ever_true = "no"
+        change_date = None
+
     supporting_quote = _truncate_quote_words(parsed.get("supporting_quote"), max_words=MAX_SNIPPET_WORDS)
 
     # Requirement 2: If evidence_stance is no_evidence, status MUST be "unverifiable".
@@ -2105,12 +2159,18 @@ def _normalize_judgement(parsed: object) -> dict:
     if status == "unverifiable":
         score: int | None = None
     else:
-        default_scores = {"fresh": 90, "uncertain": 55, "outdated": 15}
-        raw_score = parsed.get("score", default_scores[status])
+        default_scores = {
+            "fresh": 90,
+            "partially_correct": 60,
+            "uncertain": 55,
+            "outdated": 20,
+            "incorrect": 5,
+        }
+        raw_score = parsed.get("score", default_scores.get(status, 55))
         try:
             score = int(round(float(raw_score)))
         except (TypeError, ValueError):
-            score = default_scores[status]
+            score = default_scores.get(status, 55)
         band_min, band_max = STATUS_SCORE_BANDS[status]
         score = max(band_min, min(band_max, max(0, min(100, score))))
 
@@ -2146,10 +2206,17 @@ def _normalize_judgement(parsed: object) -> dict:
 
     if status == "fresh":
         stale_since = None
+        change_date = None
         if change_summary and change_summary.lower() in {"no change", "no changes", "none", "unchanged"}:
             change_summary = None
-    elif status == "unverifiable":
+    elif status in {"unverifiable", "incorrect"}:
         stale_since = None
+        change_date = None
+    elif status == "outdated":
+        if change_date and not stale_since:
+            stale_since = change_date
+        elif stale_since and not change_date:
+            change_date = stale_since
 
     reason = str(parsed.get("reason", "")).strip()
     if not reason:
@@ -2160,6 +2227,9 @@ def _normalize_judgement(parsed: object) -> dict:
         "score": score,
         "evidence_stance": evidence_stance,
         "supporting_quote": supporting_quote,
+        "was_ever_true": was_ever_true,
+        "change_date": change_date,
+        "correction": correction,
         "agreeing_sources": agreeing_sources,
         "conflicting_sources": conflicting_sources,
         "current_info": current_info,
@@ -3254,8 +3324,14 @@ def compute_freshness_score(
         status_band = "N/A"
         llm_detail = "Insufficient or missing live evidence (unverifiable)"
     else:
-        default_scores = {"fresh": 90, "uncertain": 55, "outdated": 15}
-        raw_llm = default_scores[effective_status] if llm_score is None else int(round(float(llm_score)))
+        default_scores = {
+            "fresh": 90,
+            "partially_correct": 60,
+            "uncertain": 55,
+            "outdated": 20,
+            "incorrect": 5,
+        }
+        raw_llm = default_scores.get(effective_status, 55) if llm_score is None else int(round(float(llm_score)))
         clamped_llm = max(0, min(100, raw_llm))
 
         weighted_llm = round(clamped_llm * SCORE_WEIGHTS["llm_verdict"], 1)
@@ -3271,9 +3347,15 @@ def compute_freshness_score(
         status_band = f"{band_min}-{band_max}"
 
         if effective_status == "outdated":
-            # Outdated claims must remain within 0-39 regardless of how strong source metrics are.
+            # Outdated claims must remain within 10-39 regardless of how strong source metrics are.
             llm_in_band = max(band_min, min(band_max, clamped_llm))
-            evidence_gap_component = ((100 - evidence_strength) / 100.0) * band_max
+            evidence_gap_component = ((100 - evidence_strength) / 100.0) * (band_max - band_min) + band_min
+            final_score = round(llm_in_band * 0.75 + evidence_gap_component * 0.25)
+            final_score = max(band_min, min(band_max, final_score))
+        elif effective_status == "incorrect":
+            # Incorrect claims must remain within 0-15.
+            llm_in_band = max(band_min, min(band_max, clamped_llm))
+            evidence_gap_component = ((100 - evidence_strength) / 100.0) * (band_max - band_min) + band_min
             final_score = round(llm_in_band * 0.75 + evidence_gap_component * 0.25)
             final_score = max(band_min, min(band_max, final_score))
         else:
@@ -3302,7 +3384,7 @@ def compute_freshness_score(
     if (
         enforce_low_confidence_score_cap
         and confidence == "low"
-        and effective_status != "unverifiable"
+        and effective_status not in {"unverifiable", "incorrect", "outdated"}
         and final_score is not None
         and (final_score < 40 or final_score > 74)
     ):
@@ -3352,6 +3434,21 @@ def compute_freshness_score(
             f"Sources disagree ({agreement_summary}); "
             f"evidence strength {evidence_strength}/100 (recency {recency_score}/100, authority {authority_score}/100)."
             f"{low_conf_note}"
+        )
+    elif effective_status == "incorrect":
+        why_this_score = (
+            f"Score {final_score}/100 ({effective_status} band {status_band}): "
+            f"Claim was never true or is contradicted by authoritative sources — LLM judged '{effective_status}' ({clamped_llm}/100), and "
+            f"{reported_agreeing}/{reported_total} independent source(s) "
+            f"(evidence strength {evidence_strength}/100, recency {recency_score}/100, authority {authority_score}/100) "
+            f"confirm the claim is incorrect.{low_conf_note}"
+        )
+    elif effective_status == "partially_correct":
+        why_this_score = (
+            f"Score {final_score}/100 ({effective_status} band {status_band}): "
+            f"Claim is partially accurate — LLM judged '{effective_status}' ({clamped_llm}/100), "
+            f"{agreement_summary}, "
+            f"evidence strength {evidence_strength}/100 (recency {recency_score}/100, authority {authority_score}/100).{low_conf_note}"
         )
     elif effective_status == "outdated":
         why_this_score = (
@@ -3600,6 +3697,9 @@ def verify_claim(
             "current_value": None,
             "effective_date": None,
             "change_summary": None,
+            "was_ever_true": "unknown",
+            "change_date": None,
+            "correction": None,
             "stale_since": None,
             "stale_for_months": None,
             "stale_duration_label": None,
@@ -3671,6 +3771,9 @@ def verify_claim(
             "current_value": None,
             "effective_date": None,
             "change_summary": None,
+            "was_ever_true": "unknown",
+            "change_date": None,
+            "correction": None,
             "stale_since": None,
             "stale_for_months": None,
             "stale_duration_label": None,
@@ -3764,6 +3867,9 @@ def verify_claim(
             "current_value": None,
             "effective_date": None,
             "change_summary": None,
+            "was_ever_true": "unknown",
+            "change_date": None,
+            "correction": None,
             "stale_since": None,
             "stale_for_months": None,
             "stale_duration_label": None,
@@ -4035,9 +4141,16 @@ def verify_claim(
             merged_conflicting = bool(
                 j1_judgement["conflicting_sources"] or j2_judgement["conflicting_sources"]
             )
-            default_band_scores = {"fresh": 90, "uncertain": 55, "outdated": 15, "unverifiable": 50}
-            sc1 = j1_judgement["score"] if j1_judgement["score"] is not None else default_band_scores[s1]
-            sc2 = j2_judgement["score"] if j2_judgement["score"] is not None else default_band_scores[s2]
+            default_band_scores = {
+                "fresh": 90,
+                "partially_correct": 60,
+                "uncertain": 55,
+                "outdated": 20,
+                "incorrect": 5,
+                "unverifiable": 50,
+            }
+            sc1 = j1_judgement["score"] if j1_judgement["score"] is not None else default_band_scores.get(s1, 55)
+            sc2 = j2_judgement["score"] if j2_judgement["score"] is not None else default_band_scores.get(s2, 55)
 
             q1 = j1_judgement.get("supporting_quote")
             q2 = j2_judgement.get("supporting_quote")
@@ -4055,6 +4168,9 @@ def verify_claim(
                 model_disagreement = False
                 model_agreement_summary = "2/2 models agree"
                 merged_score = None if s1 == "unverifiable" else round((sc1 + sc2) / 2)
+                if s1 in STATUS_SCORE_BANDS and merged_score is not None:
+                    b_min, b_max = STATUS_SCORE_BANDS[s1]
+                    merged_score = max(b_min, min(b_max, merged_score))
                 merged_reason = j1_judgement["reason"]
                 if (
                     j2_judgement["reason"]
@@ -4071,6 +4187,9 @@ def verify_claim(
                     "score": merged_score,
                     "evidence_stance": merged_stance,
                     "supporting_quote": merged_quote,
+                    "was_ever_true": j1_judgement.get("was_ever_true") or j2_judgement.get("was_ever_true"),
+                    "change_date": j1_judgement.get("change_date") or j2_judgement.get("change_date"),
+                    "correction": j1_judgement.get("correction") or j2_judgement.get("correction"),
                     "agreeing_sources": merged_agreeing,
                     "conflicting_sources": merged_conflicting,
                     "current_info": j1_judgement["current_info"] or j2_judgement["current_info"],
@@ -4079,6 +4198,35 @@ def verify_claim(
                     "change_summary": j1_judgement["change_summary"] or j2_judgement["change_summary"],
                     "stale_since": j1_judgement["stale_since"] or j2_judgement["stale_since"],
                     "reason": merged_reason,
+                }
+            elif {s1, s2} == {"outdated", "incorrect"}:
+                # Dual-judge rule: keep the more severe status ("incorrect")
+                model_disagreement = True
+                model_agreement_summary = "Models disagree (resolved to incorrect)"
+                merged_score = max(0, min(15, round((sc1 + sc2) / 2)))
+                inc_j = j1_judgement if s1 == "incorrect" else j2_judgement
+                inc_lbl = j1_label if s1 == "incorrect" else j2_label
+                other_j = j2_judgement if s1 == "incorrect" else j1_judgement
+                other_lbl = j2_label if s1 == "incorrect" else j1_label
+                judgement = {
+                    "status": "incorrect",
+                    "score": merged_score,
+                    "evidence_stance": inc_j.get("evidence_stance") or other_j.get("evidence_stance"),
+                    "supporting_quote": merged_quote,
+                    "was_ever_true": "no",
+                    "change_date": None,
+                    "correction": inc_j.get("correction") or other_j.get("correction"),
+                    "agreeing_sources": merged_agreeing,
+                    "conflicting_sources": merged_conflicting,
+                    "current_info": inc_j.get("current_info") or other_j.get("current_info"),
+                    "current_value": inc_j.get("current_value") or other_j.get("current_value"),
+                    "effective_date": None,
+                    "change_summary": inc_j.get("change_summary") or other_j.get("change_summary"),
+                    "stale_since": None,
+                    "reason": (
+                        f"Models disagree ({inc_lbl} judged 'incorrect', {other_lbl} judged 'outdated'). "
+                        f"Resolved to more severe status 'incorrect'. {inc_j['reason']}"
+                    ),
                 }
             else:
                 model_disagreement = True
@@ -4089,6 +4237,9 @@ def verify_claim(
                     "score": merged_score,
                     "evidence_stance": j1_judgement.get("evidence_stance") or j2_judgement.get("evidence_stance"),
                     "supporting_quote": merged_quote,
+                    "was_ever_true": "unknown",
+                    "change_date": None,
+                    "correction": j1_judgement.get("correction") or j2_judgement.get("correction"),
                     "agreeing_sources": merged_agreeing,
                     "conflicting_sources": merged_conflicting,
                     "current_info": (
@@ -4140,6 +4291,9 @@ def verify_claim(
                 "score": clamped_partial,
                 "evidence_stance": ok_j.get("evidence_stance"),
                 "supporting_quote": ok_j.get("supporting_quote"),
+                "was_ever_true": ok_j.get("was_ever_true", "unknown"),
+                "change_date": None,
+                "correction": ok_j.get("correction"),
                 "agreeing_sources": ok_j["agreeing_sources"],
                 "conflicting_sources": True,
                 "current_info": f"Marked Uncertain because {fail_label} failed while {ok_label} judged '{ok_j['status']}'. {ok_j['current_info']}",
@@ -4198,25 +4352,42 @@ def verify_claim(
     effective_conflict_note = scoring["conflict_note"]
 
     if model_disagreement:
-        effective_status = "uncertain"
-        effective_confidence = "low"
-        if effective_score is None or effective_score < 40 or effective_score > 74:
-            effective_score = max(40, min(74, int(effective_score) if effective_score is not None else 55))
-            scoring["score_breakdown"]["final_score"] = effective_score
-        if len(judge_verdicts) == 2:
-            v1, v2 = judge_verdicts[0], judge_verdicts[1]
-            effective_why = (
-                f"Models disagree ({v1['model']}: '{v1['status']}' vs {v2['model']}: '{v2['status']}'); "
-                f"marked 'uncertain' (40-74, low confidence). {effective_why}"
-            )
+        if judgement.get("status") == "incorrect":
+            effective_status = "incorrect"
+            effective_confidence = "high" if scoring["confidence"] == "high" else "medium"
+            if effective_score is None or effective_score < 0 or effective_score > 15:
+                effective_score = max(0, min(15, int(effective_score) if effective_score is not None else 5))
+                scoring["score_breakdown"]["final_score"] = effective_score
+            if len(judge_verdicts) == 2:
+                v1, v2 = judge_verdicts[0], judge_verdicts[1]
+                effective_why = (
+                    f"Models disagreed ({v1['model']}: '{v1['status']}' vs {v2['model']}: '{v2['status']}'); "
+                    f"resolved to more severe status 'incorrect' (0-15 band). {effective_why}"
+                )
+        else:
+            effective_status = "uncertain"
+            effective_confidence = "low"
+            if effective_score is None or effective_score < 40 or effective_score > 74:
+                effective_score = max(40, min(74, int(effective_score) if effective_score is not None else 55))
+                scoring["score_breakdown"]["final_score"] = effective_score
+            if len(judge_verdicts) == 2:
+                v1, v2 = judge_verdicts[0], judge_verdicts[1]
+                effective_why = (
+                    f"Models disagree ({v1['model']}: '{v1['status']}' vs {v2['model']}: '{v2['status']}'); "
+                    f"marked 'uncertain' (40-74, low confidence). {effective_why}"
+                )
     elif dual_judge and model_agreement_summary == "2/2 models agree":
         effective_why = f"2/2 models agree ({' vs '.join(judge_models)}). {effective_why}"
 
-    # Final Requirement 3 invariant: low confidence can never produce < 40 or > 74 unless unverifiable.
+    # Final Requirement 3 invariant: status score bands are strictly enforced.
     if effective_status == "unverifiable":
         effective_score = None
         scoring["score_breakdown"]["final_score"] = None
-    elif effective_confidence == "low" and (effective_score is None or effective_score < 40 or effective_score > 74):
+    elif (
+        effective_status not in {"incorrect", "outdated"}
+        and effective_confidence == "low"
+        and (effective_score is None or effective_score < 40 or effective_score > 74)
+    ):
         effective_score = max(40, min(74, int(effective_score) if effective_score is not None else 55))
         scoring["score_breakdown"]["final_score"] = effective_score
 
@@ -4254,6 +4425,9 @@ def verify_claim(
         "risk_level": risk_level,
         "evidence_stance": judgement.get("evidence_stance"),
         "supporting_quote": judgement.get("supporting_quote"),
+        "was_ever_true": judgement.get("was_ever_true", "unknown"),
+        "change_date": judgement.get("change_date"),
+        "correction": judgement.get("correction"),
         "current_info": judgement["current_info"],
         "current_value": judgement["current_value"],
         "effective_date": judgement["effective_date"],
@@ -4504,11 +4678,13 @@ def generate_corrected_answer(
         extras = []
         if item.get("current_value"):
             extras.append(f"Current Value: {item['current_value']}")
+        if item.get("correction"):
+            extras.append(f"Correction: {item['correction']}")
         if item.get("effective_date"):
             extras.append(f"Effective Date: {item['effective_date']}")
         if item.get("change_summary"):
             extras.append(f"Change Summary: {item['change_summary']}")
-        if item.get("stale_since"):
+        if item.get("status") == "outdated" and item.get("stale_since"):
             dur = f" ({item['stale_duration_label']})" if item.get("stale_duration_label") else ""
             extras.append(f"Stale Since: {item['stale_since']}{dur}")
         if item.get("conflict_note"):

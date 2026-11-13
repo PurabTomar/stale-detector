@@ -6,6 +6,7 @@ Run with:
 """
 
 from datetime import date
+import json
 import os
 import tempfile
 import unittest
@@ -420,7 +421,7 @@ class TestExplainableScoring(unittest.TestCase):
         self.assertLessEqual(uncertain_high_ev["score"], 74)
         self.assertGreaterEqual(uncertain_high_ev["score_breakdown"]["evidence_strength"], 90)
 
-        # Outdated stays strictly in 0-39 even with 100% recency/agreement/authority.
+        # Outdated stays strictly in 10-39 even with 100% recency/agreement/authority.
         outdated_high_ev = verifier.compute_freshness_score(
             status="outdated",
             llm_score=15,
@@ -429,9 +430,9 @@ class TestExplainableScoring(unittest.TestCase):
             llm_agreeing_count=3,
             today=today,
         )
-        self.assertGreaterEqual(outdated_high_ev["score"], 0)
+        self.assertGreaterEqual(outdated_high_ev["score"], 10)
         self.assertLessEqual(outdated_high_ev["score"], 39)
-        self.assertEqual(outdated_high_ev["score_breakdown"]["status_band"], "0-39")
+        self.assertEqual(outdated_high_ev["score_breakdown"]["status_band"], "10-39")
 
         # Unverifiable returns score=None and status_band='N/A'.
         unverif = verifier.compute_freshness_score(
@@ -2409,6 +2410,274 @@ class TestCorrectnessAndRelevanceGate(unittest.TestCase):
             removed = verifier.clear_tavily_cache(cache_path=db_path)
             self.assertEqual(removed, 1)
             self.assertIsNone(verifier._cache_get(k_curr, cache_path=db_path))
+
+
+class TestVerdictModelAndSixStatuses(unittest.TestCase):
+    """Unit tests for the 6-status verdict model, score bands, was_ever_true rules, and date grounding."""
+
+    def test_incorrect_vs_outdated_was_ever_true_normalization(self):
+        """When was_ever_true is 'no', status must be forced to 'incorrect', not 'outdated'."""
+        # LLM erroneously says 'outdated' on a claim that was never true
+        raw_never_true = {
+            "status": "outdated",
+            "was_ever_true": "no",
+            "score": 30,
+            "current_value": "Narendra Modi",
+            "correction": "Narendra Modi is the Prime Minister of India; Rahul Gandhi has never held this post.",
+            "reason": "Rahul Gandhi was never PM.",
+        }
+        normalized = verifier._normalize_judgement(raw_never_true)
+        self.assertEqual(normalized["status"], "incorrect")
+        self.assertEqual(normalized["was_ever_true"], "no")
+        self.assertLessEqual(normalized["score"], 15)
+        self.assertIsNone(normalized.get("change_date"))
+        self.assertIsNone(normalized.get("stale_since"))
+
+        # When was_ever_true is 'yes', 'outdated' is preserved
+        raw_was_true = {
+            "status": "outdated",
+            "was_ever_true": "yes",
+            "change_date": "2023-04-11",
+            "score": 25,
+            "current_value": "X Corp.",
+            "correction": "Twitter, Inc. was merged into X Corp.",
+            "reason": "Twitter renamed and merged in 2023.",
+        }
+        normalized_true = verifier._normalize_judgement(raw_was_true)
+        self.assertEqual(normalized_true["status"], "outdated")
+        self.assertEqual(normalized_true["was_ever_true"], "yes")
+        self.assertEqual(normalized_true["change_date"], "2023-04-11")
+
+    def test_mocked_verify_claim_incorrect_claim(self):
+        """Full verify_claim flow with mocked Tavily and LLM for never-true claim."""
+        mock_tavily = MagicMock()
+        mock_tavily.search.return_value = {
+            "results": [
+                {
+                    "title": "Prime Minister of India - Official Portal",
+                    "url": "https://pmindia.gov.in/en/",
+                    "content": "Narendra Modi assumed office as the Prime Minister of India on 26 May 2014.",
+                    "score": 0.98,
+                }
+            ]
+        }
+
+        mock_llm_resp = json.dumps({
+            "status": "incorrect",
+            "was_ever_true": "no",
+            "change_date": None,
+            "current_value": "Narendra Modi",
+            "correction": "Narendra Modi is the Prime Minister of India; Rahul Gandhi has never held the office of Prime Minister.",
+            "reason": "Authoritative government records confirm Narendra Modi is the Prime Minister. Rahul Gandhi has never served as Prime Minister.",
+            "score": 5,
+            "confidence": "high",
+        })
+
+        claim_input = {
+            "claim": "The Prime Minister of India is Rahul Gandhi.",
+            "category": "company",
+        }
+
+        with patch("verifier.call_llm", return_value=(mock_llm_resp, "gemini-2.5-flash")):
+            res = verifier.verify_claim(
+                claim_input,
+                tavily_client=mock_tavily,
+                use_cache=False,
+            )
+
+        self.assertEqual(res["status"], "incorrect")
+        self.assertEqual(res["was_ever_true"], "no")
+        self.assertIsNone(res["change_date"])
+        self.assertIsNone(res["stale_since"])
+        self.assertIsNotNone(res["score"])
+        self.assertGreaterEqual(res["score"], 0)
+        self.assertLessEqual(res["score"], 15)
+        self.assertIn("Narendra Modi", res["correction"])
+
+    def test_mocked_verify_claim_partially_correct_clamping(self):
+        """Partially correct claims clamp within the 45-74 score band."""
+        mock_tavily = MagicMock()
+        mock_tavily.search.return_value = {
+            "results": [
+                {
+                    "title": "GST Council Official",
+                    "url": "https://gstcouncil.gov.in",
+                    "content": "GST slabs include 5%, 12%, 18%, 28%, but threshold rules vary by state.",
+                    "score": 0.95,
+                }
+            ]
+        }
+
+        # LLM suggests score 85, which must be clamped into 45-74 for partially_correct
+        mock_llm_resp = json.dumps({
+            "status": "partially_correct",
+            "was_ever_true": "unknown",
+            "change_date": None,
+            "current_value": "Partially accurate GST details",
+            "correction": "The 4 tax slabs are accurate, but threshold requirements differ between goods and services.",
+            "reason": "Slabs are correct, but threshold rules are partially inaccurate.",
+            "score": 85,
+            "confidence": "medium",
+        })
+
+        claim_input = {
+            "claim": "Under GST, rates are 5%, 12%, 18%, 28% and threshold is always 20 lakh.",
+            "category": "regulation",
+        }
+
+        with patch("verifier.call_llm", return_value=(mock_llm_resp, "gemini-2.5-flash")):
+            res = verifier.verify_claim(
+                claim_input,
+                tavily_client=mock_tavily,
+                use_cache=False,
+            )
+
+        self.assertEqual(res["status"], "partially_correct")
+        self.assertGreaterEqual(res["score"], 45)
+        self.assertLessEqual(res["score"], 74)
+        self.assertEqual(res["score_breakdown"]["status_band"], "45-74")
+
+    def test_all_six_score_bands_enforced(self):
+        """All 6 status bands are rigorously enforced by compute_freshness_score."""
+        today = date(2026, 11, 13)
+        dummy_sources = [{"url": "https://example.com/official", "score": 0.9}]
+
+        # 1. Fresh: 75-100
+        sc_fresh = verifier.compute_freshness_score("fresh", 50, "Verified current info", dummy_sources, today=today)
+        self.assertGreaterEqual(sc_fresh["score"], 75)
+        self.assertLessEqual(sc_fresh["score"], 100)
+        self.assertEqual(sc_fresh["score_breakdown"]["status_band"], "75-100")
+
+        # 2. Partially correct: 45-74
+        sc_part = verifier.compute_freshness_score("partially_correct", 95, "Partially correct info", dummy_sources, today=today)
+        self.assertGreaterEqual(sc_part["score"], 45)
+        self.assertLessEqual(sc_part["score"], 74)
+        self.assertEqual(sc_part["score_breakdown"]["status_band"], "45-74")
+
+        # 3. Uncertain: 40-74
+        sc_unc = verifier.compute_freshness_score("uncertain", 10, "Uncertain info", dummy_sources, today=today)
+        self.assertGreaterEqual(sc_unc["score"], 40)
+        self.assertLessEqual(sc_unc["score"], 74)
+        self.assertEqual(sc_unc["score_breakdown"]["status_band"], "40-74")
+
+        # 4. Outdated: 10-39
+        sc_out = verifier.compute_freshness_score("outdated", 90, "Outdated info", dummy_sources, today=today)
+        self.assertGreaterEqual(sc_out["score"], 10)
+        self.assertLessEqual(sc_out["score"], 39)
+        self.assertEqual(sc_out["score_breakdown"]["status_band"], "10-39")
+
+        # 5. Incorrect: 0-15
+        sc_inc = verifier.compute_freshness_score("incorrect", 50, "Incorrect info", dummy_sources, today=today)
+        self.assertGreaterEqual(sc_inc["score"], 0)
+        self.assertLessEqual(sc_inc["score"], 15)
+        self.assertEqual(sc_inc["score_breakdown"]["status_band"], "0-15")
+
+        # 6. Unverifiable: N/A (None)
+        sc_unv = verifier.compute_freshness_score("unverifiable", 80, "No evidence", [], today=today)
+        self.assertIsNone(sc_unv["score"])
+        self.assertEqual(sc_unv["score_breakdown"]["status_band"], "N/A")
+
+    def test_never_guess_a_date_rule(self):
+        """Rule: Never guess a date. If was_ever_true is no, change_date and stale_since must be None.
+        If was_ever_true is yes but no date found, keep outdated but set stale_since to None."""
+        # Case A: was_ever_true is 'no', LLM hallucinated a date string
+        judgement_hallucinated_date = {
+            "status": "incorrect",
+            "was_ever_true": "no",
+            "change_date": "2024-01-01",
+            "stale_since": "2024-01-01",
+            "reason": "Never true.",
+        }
+        norm_a = verifier._normalize_judgement(judgement_hallucinated_date)
+        self.assertIsNone(norm_a["change_date"], "change_date must be None when was_ever_true is 'no'")
+        self.assertIsNone(norm_a["stale_since"], "stale_since must be None when was_ever_true is 'no'")
+
+        # Case B: was_ever_true is 'yes', but no date found in sources
+        judgement_no_date = {
+            "status": "outdated",
+            "was_ever_true": "yes",
+            "change_date": None,
+            "stale_since": None,
+            "reason": "MacBook Air memory was increased to 16 GB, date unknown.",
+        }
+        norm_b = verifier._normalize_judgement(judgement_no_date)
+        self.assertEqual(norm_b["status"], "outdated")
+        self.assertEqual(norm_b["was_ever_true"], "yes")
+        self.assertIsNone(norm_b["change_date"])
+        self.assertIsNone(norm_b["stale_since"])
+
+    def test_dual_judge_outdated_plus_incorrect_resolves_to_incorrect(self):
+        """In dual-judge mode, if one judge says outdated and the other says incorrect,
+        keep the more severe status (incorrect) with score clamped to 0-15."""
+        mock_tavily = MagicMock()
+        mock_tavily.search.return_value = {
+            "results": [
+                {
+                    "title": "PM India",
+                    "url": "https://pmindia.gov.in",
+                    "content": "Official portal of PM Narendra Modi.",
+                    "score": 0.95,
+                }
+            ],
+            "usage": {"credits": 1},
+        }
+
+        # Judge 1 says outdated, Judge 2 says incorrect
+        pass_count = [0]
+        def fake_two_judges(system_prompt, user_prompt, temperature=0.1, task=None, model_override=None, simulate_outage=None):
+            pass_count[0] += 1
+            m_name = model_override or "primary-judge"
+            if pass_count[0] == 1:
+                return (
+                    json.dumps({
+                        "status": "outdated",
+                        "score": 30,
+                        "current_value": "Narendra Modi",
+                        "reason": "Was changed recently.",
+                        "was_ever_true": "yes",
+                    }),
+                    m_name,
+                )
+            else:
+                return (
+                    json.dumps({
+                        "status": "incorrect",
+                        "score": 5,
+                        "current_value": "Narendra Modi",
+                        "correction": "Narendra Modi is the PM; Rahul Gandhi was never PM.",
+                        "reason": "Never historically true.",
+                        "was_ever_true": "no",
+                    }),
+                    m_name,
+                )
+
+        claim_item = {
+            "claim": "The Prime Minister of India is Rahul Gandhi.",
+            "category": "company",
+            "search_query": "Prime Minister of India",
+        }
+
+        with patch.dict(
+            os.environ,
+            {
+                "LLM_MODEL_JUDGE": "judge-1",
+                "LLM_MODEL_FALLBACKS": "judge-2",
+            },
+            clear=False,
+        ):
+            with patch("verifier.call_llm", side_effect=fake_two_judges):
+                res = verifier.verify_claim(
+                    claim_item,
+                    tavily_client=mock_tavily,
+                    use_cache=False,
+                    dual_judge=True,
+                )
+
+        self.assertEqual(res["status"], "incorrect")
+        self.assertGreaterEqual(res["score"], 0)
+        self.assertLessEqual(res["score"], 15)
+        self.assertTrue(res["model_disagreement"])
+        self.assertIn("resolved to incorrect", res["model_agreement_summary"].lower())
 
 
 if __name__ == "__main__":

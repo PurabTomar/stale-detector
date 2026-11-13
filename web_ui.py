@@ -538,15 +538,25 @@ def get_web_ui_html() -> str:
       background: rgba(34, 197, 94, 0.14);
       border: 1px solid rgba(34, 197, 94, 0.35);
     }}
-    .pill-uncertain {{
+    .pill-outdated {{
+      color: #F97316;
+      background: rgba(249, 115, 22, 0.14);
+      border: 1px solid rgba(249, 115, 22, 0.35);
+    }}
+    .pill-incorrect {{
+      color: #EF4444;
+      background: rgba(239, 68, 68, 0.14);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+    }}
+    .pill-partially-correct {{
       color: #F59E0B;
       background: rgba(245, 158, 11, 0.14);
       border: 1px solid rgba(245, 158, 11, 0.35);
     }}
-    .pill-outdated {{
-      color: #EF4444;
-      background: rgba(239, 68, 68, 0.14);
-      border: 1px solid rgba(239, 68, 68, 0.35);
+    .pill-uncertain {{
+      color: #EAB308;
+      background: rgba(234, 179, 8, 0.14);
+      border: 1px solid rgba(234, 179, 8, 0.35);
     }}
     .pill-unverifiable {{
       color: #94A3B8;
@@ -850,6 +860,9 @@ def get_web_ui_html() -> str:
         risk_level: r.risk_level || "critical",
         current_info: r.current_info || "",
         current_value: r.current_value || null,
+        correction: r.correction || null,
+        was_ever_true: r.was_ever_true || null,
+        change_date: r.change_date || null,
         effective_date: r.effective_date || null,
         change_summary: r.change_summary || null,
         stale_since: r.stale_since || null,
@@ -861,10 +874,12 @@ def get_web_ui_html() -> str:
 
       let totalScore = 0;
       let scoredCount = 0;
-      let fresh = 0, outdated = 0, uncertain = 0, unverifiable = 0;
+      let fresh = 0, outdated = 0, incorrect = 0, partially_correct = 0, uncertain = 0, unverifiable = 0;
       claims.forEach(c => {{
         if (c.status === "fresh") fresh++;
         else if (c.status === "outdated") outdated++;
+        else if (c.status === "incorrect") incorrect++;
+        else if (c.status === "partially_correct") partially_correct++;
         else if (c.status === "uncertain") uncertain++;
         else if (c.status === "unverifiable") unverifiable++;
 
@@ -888,6 +903,8 @@ def get_web_ui_html() -> str:
           claims_checked: claims.length,
           fresh: fresh,
           outdated: outdated,
+          incorrect: incorrect,
+          partially_correct: partially_correct,
           uncertain: uncertain,
           unverifiable: unverifiable,
           tavily_credits_used: 0.0,
@@ -927,6 +944,19 @@ def get_web_ui_html() -> str:
       const maxOffset = 339.29;
       const offset = score !== null ? maxOffset - (maxOffset * score / 100) : maxOffset;
 
+      let verdictParts = [];
+      if (summary.incorrect > 0) verdictParts.push(`${{summary.incorrect}} incorrect claim${{summary.incorrect === 1 ? '' : 's'}}`);
+      if (summary.outdated > 0) verdictParts.push(`${{summary.outdated}} outdated claim${{summary.outdated === 1 ? '' : 's'}}`);
+      if (summary.partially_correct > 0) verdictParts.push(`${{summary.partially_correct}} partially correct claim${{summary.partially_correct === 1 ? '' : 's'}}`);
+      let verdictSentence = "";
+      if (verdictParts.length > 0) {{
+        verdictSentence = verdictParts.join(" and ") + " found.";
+      }} else if ((summary.fresh || 0) === (summary.claims_checked || 0) && (summary.claims_checked || 0) > 0) {{
+        verdictSentence = `All ${{summary.claims_checked}} claims verified fresh against live sources.`;
+      }} else {{
+        verdictSentence = `Audited ${{summary.claims_checked || 0}} claim${{summary.claims_checked === 1 ? '' : 's'}} with verified live sources.`;
+      }}
+
       let html = `
         <div class="sad-score-card">
           <div class="sad-ring-wrap">
@@ -942,12 +972,14 @@ def get_web_ui_html() -> str:
           </div>
           <div class="sad-score-meta">
             <h2 class="sad-score-title">Freshness Audit Report</h2>
-            <p style="color: var(--text-muted); font-size: 0.9rem;">
-              Audited <strong>${{summary.claims_checked || 0}}</strong> claim${{summary.claims_checked === 1 ? '' : 's'}} with verified live sources.
+            <p style="color: var(--text-main); font-weight: 600; font-size: 0.95rem; margin-bottom: 0.4rem;">
+              ${{verdictSentence}}
             </p>
             <div class="sad-score-stats">
               <span class="stat-badge"><span class="pill pill-fresh" style="padding: 0 0.35rem;">Fresh</span> ${{summary.fresh || 0}}</span>
               <span class="stat-badge"><span class="pill pill-outdated" style="padding: 0 0.35rem;">Outdated</span> ${{summary.outdated || 0}}</span>
+              <span class="stat-badge"><span class="pill pill-incorrect" style="padding: 0 0.35rem;">Incorrect</span> ${{summary.incorrect || 0}}</span>
+              <span class="stat-badge"><span class="pill pill-partially-correct" style="padding: 0 0.35rem;">Partially</span> ${{summary.partially_correct || 0}}</span>
               <span class="stat-badge"><span class="pill pill-uncertain" style="padding: 0 0.35rem;">Uncertain</span> ${{summary.uncertain || 0}}</span>
               <span class="stat-badge"><span class="pill pill-unverifiable" style="padding: 0 0.35rem;">Unverifiable</span> ${{summary.unverifiable || 0}}</span>
             </div>
@@ -963,7 +995,7 @@ def get_web_ui_html() -> str:
         `;
       }} else {{
         claims.forEach((c, idx) => {{
-          const statusClass = c.status === "fresh" ? "pill-fresh" : (c.status === "outdated" ? "pill-outdated" : (c.status === "uncertain" ? "pill-uncertain" : "pill-unverifiable"));
+          const statusClass = c.status === "fresh" ? "pill-fresh" : (c.status === "outdated" ? "pill-outdated" : (c.status === "incorrect" ? "pill-incorrect" : (c.status === "partially_correct" ? "pill-partially-correct" : (c.status === "uncertain" ? "pill-uncertain" : "pill-unverifiable"))));
           const riskClass = c.risk_level === "critical" ? "risk-critical" : (c.risk_level === "moderate" ? "risk-moderate" : "risk-low");
           const scoreLabel = typeof c.score === "number" ? c.score + "/100" : "Unverified";
 
@@ -977,6 +1009,24 @@ def get_web_ui_html() -> str:
             `).join("");
           }} else {{
             sourcesHtml = `<span style="font-size: 0.76rem; color: var(--text-muted);">No external URLs cited</span>`;
+          }}
+
+          let actualMetaHtml = "";
+          if (c.status === "incorrect") {{
+            const corrVal = c.correction || c.current_value || c.current_info || "Contradicted by authoritative sources";
+            let topSrcHtml = "";
+            if (c.sources && c.sources.length > 0 && c.sources[0].url) {{
+              const topSrcTitle = c.sources[0].title || c.sources[0].url;
+              topSrcHtml = ` (<a href="${{c.sources[0].url}}" target="_blank" rel="noopener" style="color: #EF4444; text-decoration: underline;">${{escapeHtml(topSrcTitle)}}</a>)`;
+            }}
+            actualMetaHtml = `<div style="margin-top: 0.35rem; font-size: 0.8rem; font-weight: 700; color: #EF4444;">Never true / contradicted by: <span style="font-weight: 500; color: var(--text-main);">${{escapeHtml(corrVal)}}</span>${{topSrcHtml}}</div>`;
+          }} else {{
+            if (c.current_value) {{
+              actualMetaHtml += `<div style="margin-top: 0.35rem; font-size: 0.78rem; font-weight: 600; color: var(--accent);">Current Value: ${{escapeHtml(c.current_value)}}</div>`;
+            }}
+            if (c.status === "outdated" && c.stale_duration_label) {{
+              actualMetaHtml += `<div style="font-size: 0.74rem; color: var(--text-muted);">${{escapeHtml(c.stale_duration_label)}}</div>`;
+            }}
           }}
 
           html += `
@@ -1001,8 +1051,7 @@ def get_web_ui_html() -> str:
                   <div class="sad-compare-label">Actually (Today)</div>
                   <div class="sad-compare-body">
                     ${{escapeHtml(c.current_info || 'No conflicting updates found.')}}
-                    ${{c.current_value ? `<div style="margin-top: 0.35rem; font-size: 0.78rem; font-weight: 600; color: var(--accent);">Current Value: ${{escapeHtml(c.current_value)}}</div>` : ''}}
-                    ${{c.stale_duration_label ? `<div style="font-size: 0.74rem; color: var(--text-muted);">${{escapeHtml(c.stale_duration_label)}}</div>` : ''}}
+                    ${{actualMetaHtml}}
                   </div>
                 </div>
               </div>

@@ -21,14 +21,14 @@ Users rarely know *which* sentence in a polished AI response is still accurate a
 ## Features
 
 - **Four Interactive Workspaces in [`app.py`](app.py)**:
-  - **Audit pasted answer**: Paste any AI response (or click one of 4 sidebar sample prompts) to inspect inline claim highlights, hover corrected values, click-to-card scroll anchors, score ring, KPI cards, and per-claim breakdowns.
-  - **Ask & Audit**: Type a question, fetch a live answer through Bifrost (or Direct Gemini), view it immediately, and watch the detector auto-audit and underline outdated (`red`), fresh (`green`), uncertain (`yellow`), and unverifiable (`grey`) spans in place.
+  - **Audit pasted answer**: Paste any AI response (or click one of 5 sidebar sample prompts) to inspect inline claim highlights, hover corrected values, click-to-card scroll anchors, score ring, KPI cards, and per-claim breakdowns.
+  - **Ask & Audit**: Type a question, fetch a live answer through Bifrost (or Direct Gemini), view it immediately, and watch the detector auto-audit and underline fresh (`green`), outdated (`orange`), incorrect (`red`), partially correct (`amber`), uncertain (`yellow`), and unverifiable (`grey`) spans in place.
   - **Audit a URL**: Paste any article or blog URL, pull clean text with **Tavily Extract**, and verify the first **8** time-sensitive claims concurrently.
-  - **Benchmark**: Evaluates `benchmark/dataset.json` (24 labelled claims) for accuracy, stale precision/recall/F1, confusion matrix, category breakdown, latency, tokens, and Tavily credits—loading cached `benchmark/results.json` instantaneously when present.
+  - **Benchmark**: Evaluates `benchmark/dataset.json` (30 labelled claims) for accuracy, accuracy by status, stale precision/recall/F1, confusion matrix, category breakdown, latency, tokens, and Tavily credits—loading cached `benchmark/results.json` instantaneously when present.
 - **Offline Demo Mode**: A one-click **Demo mode** toggle in the sidebar replays pre-verified audits, annotated highlights, side-by-side diffs, and rewrites across all tabs from `demo_cache.json` (`0` live API calls, `0` Tavily credits), plus one-click recovery buttons if an API key is missing or an upstream endpoint is unreachable.
-- **Explainable Status-Banded Scoring (`0–100` / `N/A`)**: Enforces clear status bands (**Fresh** `75–100`, **Uncertain** `40–74`, **Outdated** `0–39`, **Unverifiable** `N/A`), risk-weighted overall scoring (regulation & price weighted higher than version), and calibrated **High / Medium / Low** confidence.
-- **Primary-Source Evidence Layer**: Prioritizes official domains (`apple.com`, `openai.com`, `python.org`, `gstcouncil.gov.in`, `rbi.org.in`, etc.), labels source chips (**Primary**, **News**, **Blog**, **Forum**), keeps <=25-word evidence snippets, flags source conflicts, and estimates **Stale since** (`stale for ~X months`).
-- **Side-by-Side Word Diff & Report Exports**: Always displays a word-level red/green comparison alongside *"What changed & why"* cards, plain-text copy, and **Download report (Markdown)** / **Download JSON** exports.
+- **Explainable Six-Status Banded Scoring (`0–100` / `N/A`)**: Enforces clear status bands (**Fresh** `75–100`, **Partially correct** `45–74`, **Uncertain** `40–74`, **Outdated** `10–39`, **Incorrect** `0–15`, **Unverifiable** `N/A`), risk-weighted overall scoring (regulation & price weighted higher than version), and calibrated **High / Medium / Low** confidence.
+- **Primary-Source Evidence Layer**: Prioritizes official domains (`apple.com`, `openai.com`, `python.org`, `gstcouncil.gov.in`, `rbi.org.in`, etc.), labels source chips (**Primary**, **News**, **Blog**, **Forum**), keeps <=25-word evidence snippets, flags source conflicts, shows **Never true / contradicted by:** for incorrect claims, and estimates **Stale since** (`stale for ~X months`) exclusively for outdated claims.
+- **Side-by-Side Word Diff & Report Exports**: Always displays a word-level red/green comparison alongside *"What changed & why"* cards (saying "corrected" for incorrect claims and "updated" for outdated ones), plain-text copy, and **Download report (Markdown)** / **Download JSON** exports.
 - **Parallel Execution, Caching & Friendly Errors**: Runs 3 concurrent verification workers with a live `st.progress` bar, loading skeletons, a thread-safe 6-hour SQLite Tavily cache, and user-friendly error messages with zero raw stack traces.
 - **Programmatic FastAPI Service ([`api.py`](api.py))**: Exposes `POST /verify` and `GET /health` so external AI agents and backends can audit answers over HTTP.
 
@@ -112,13 +112,20 @@ flowchart TD
 2. **Source Type Labels, Dates & <=25-Word Evidence Snippets**: Every source chip is tagged **Primary**, **News**, **Blog**, or **Forum** alongside its `published_date` and a concise snippet inside each claim's **Evidence snippets** expander.
 3. **Single-URL & Full-Article `tavily.extract()`**: Inside claim verification, selects the highest-authority/primary URL to extract exact figures, effective dates, and thresholds. In **Audit a URL**, extracts clean text from any pasted webpage (6-hour cached, 12,000-character cap) and audits the first **8** claims.
 4. **Parallel Verification & Thread-Safe 6h Cache**: Verifies claims concurrently using `ThreadPoolExecutor(max_workers=3)` with a live `st.progress` bar, mutex-guarded 6-hour SQLite cache (`.tavily_cache.db`), and exact session credit accounting (`Tavily credits used this session`). Cache entries can be cleared from the sidebar **Clear cache** button.
-5. **Agreement Tracking, Conflict Detection & Stale-Since Estimation**: Computes `"N of M independent sources agree"`, marks conflicting sources explicitly as **Uncertain** (*Sources disagree*), and estimates **Stale since** (`stale for ~X months`) only when grounded in dated source snippets or `published_date` metadata.
-6. **Status-Banded Explainable Scoring**:
-   - **Fresh**: `75–100`
-   - **Uncertain**: `40–74`
-   - **Outdated**: `0–39`
-   - **Unverifiable**: `N/A`
+5. **Agreement Tracking, Conflict Detection & Stale-Since Grounding**: Computes `"N of M independent sources agree"`, marks conflicting sources explicitly as **Uncertain** (*Sources disagree*), and estimates **Stale since** (`stale for ~X months`) exclusively for outdated claims when grounded in dated source snippets or `published_date` metadata.
+6. **Six-Status Banded Scoring Model**:
+   - **Fresh**: `75–100` — Claim is accurate and verified current against live sources.
+   - **Partially correct**: `45–74` — Some part of the claim is true and some part is wrong, incomplete, or qualified.
+   - **Uncertain**: `40–74` — Sources conflict, evidence is mixed, or models disagree.
+   - **Outdated**: `10–39` — Claim **WAS** historically true at some point and has changed. Grounded `change_date` displays "Stale since" (hidden if no date found).
+   - **Incorrect**: `0–15` — Claim was **never** true or is directly contradicted by authoritative sources. Displays "Never true / contradicted by:" with the correct current value and top source.
+   - **Unverifiable**: `N/A` — Insufficient reliable web sources found.
    - Combines **50%** LLM Verdict, **20%** Source Recency, **20%** Source Agreement, and **10%** Source Authority into an explainable `score_breakdown`, clamped cleanly inside the claim's status band.
+7. **Verdict Rules & Grounded Evidence**:
+   - **`was_ever_true` enforcement**: The judge model must supply `was_ever_true` (`yes` / `no` / `unknown`), `change_date`, `current_value`, and `correction`. If `was_ever_true` is `"no"`, status **must** be `incorrect`, never `outdated`.
+   - **Never guess a date**: Change dates and `stale_since` are strictly grounded in dated sources. Never-true claims never show a stale date.
+   - **Dual-judge severity resolution**: In dual-judge mode, if one judge says `outdated` and the other says `incorrect`, the system keeps the more severe status (`incorrect`, score `0–15`).
+   - **Political & sensitive claims**: Judged strictly against primary/official sources (government portals, official party/company pages) and reputable news; never personal opinion. Conflicting sources yield `uncertain`.
 
 ---
 
@@ -271,7 +278,7 @@ Optional CLI flags: `--no-cache` (bypass 6h Tavily SQLite cache), `--dual-judge`
 
 ## Benchmark Results
 
-[`benchmark/dataset.json`](benchmark/dataset.json) contains **20 balanced, labelled factual claims** (**10 `outdated`**, **10 `fresh`**) across five categories (**4 claims per category**: `price`, `version`, `regulation`, `company`, and `statistic`). Running `python benchmark.py --update-readme` caches results to `benchmark/results.json` for instant loads in the **Benchmark** tab and updates the section below automatically:
+[`benchmark/dataset.json`](benchmark/dataset.json) contains **30 balanced, labelled factual claims** across categories and status bands (**13 `outdated`**, **12 `fresh`**, **3 `incorrect`**, **1 `uncertain`**, **1 `unverifiable`**). Running `python benchmark.py --update-readme` caches results to `benchmark/results.json` for instant loads in the **Benchmark** tab and updates the section below automatically:
 
 <!-- BENCHMARK_RESULTS_START -->
 > **Status:** Pending live benchmark run (`benchmark/results.json` has not been generated yet because no active Bifrost gateway on `localhost:8080` or `GEMINI_API_KEY` was available in this offline setup). Start Bifrost on port 8080 (or set `USE_BIFROST=false` + `GEMINI_API_KEY`) with `TAVILY_API_KEY` and run `python benchmark.py --update-readme` (or click **Re-run benchmark** in the **Benchmark** tab) to populate live metrics below automatically.
@@ -320,9 +327,9 @@ Optional CLI flags: `--no-cache` (bypass 6h Tavily SQLite cache), `--dual-judge`
 
 Add captures from your session under `docs/screenshots/` to populate these placeholders:
 
-1. **Audit Pasted Answer Workspace & Annotated Highlights** — Circular freshness ring, 5 KPI cards, green/red/yellow/grey inline highlights with hover tooltips, click-to-card anchors, and offline **Demo mode** toggle.
+1. **Audit Pasted Answer Workspace & Annotated Highlights** — Circular freshness ring, 6 status metric cards, green/orange/red/amber/yellow/grey inline highlights with hover tooltips, click-to-card anchors, and offline **Demo mode** toggle.
    > *Screenshot placeholder:* save to `docs/screenshots/audit-pasted-answer.png` → `![Audit Pasted Answer](docs/screenshots/audit-pasted-answer.png)`
-2. **Ask & Audit with Live Claim Underlines** — Live LLM answer retrieved via Bifrost/Gemini underlined in red/green/yellow/grey alongside verified claim cards.
+2. **Ask & Audit with Live Claim Underlines** — Live LLM answer retrieved via Bifrost/Gemini underlined in green/orange/red/amber/yellow/grey alongside verified claim cards.
    > *Screenshot placeholder:* save to `docs/screenshots/ask-and-audit-highlights.png` → `![Ask and Audit Inline Highlights](docs/screenshots/ask-and-audit-highlights.png)`
 3. **Audit a URL Workspace** — Clean article extracted via `tavily.extract()`, first-8-claims parallel progress bar, annotated article view, and source bar.
    > *Screenshot placeholder:* save to `docs/screenshots/audit-a-url.png` → `![Audit a URL](docs/screenshots/audit-a-url.png)`

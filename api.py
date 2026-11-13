@@ -98,6 +98,9 @@ class VerifiedClaim(BaseModel):
     risk_level: str
     current_info: str
     current_value: str | None = None
+    was_ever_true: str | None = None
+    change_date: str | None = None
+    correction: str | None = None
     effective_date: str | None = None
     change_summary: str | None = None
     stale_since: str | None = None
@@ -136,8 +139,10 @@ class VerifySummary(BaseModel):
     overall_tier: str
     claims_checked: int
     fresh: int
-    uncertain: int
     outdated: int
+    incorrect: int = 0
+    partially_correct: int = 0
+    uncertain: int
     unverifiable: int = 0
     tavily_credits_used: float
 

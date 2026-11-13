@@ -142,5 +142,47 @@
     "category": "version",
     "expected_status": "outdated",
     "note": "Outdated: Apple increased base MacBook Air unified memory to 16 GB; regression case verifying stale_since and effective_date remain omitted unless grounded in a dated source."
+  },
+  {
+    "claim": "The Prime Minister of India is Rahul Gandhi.",
+    "category": "company",
+    "expected_status": "incorrect",
+    "note": "Incorrect: Narendra Modi is the Prime Minister of India; Rahul Gandhi has never held the office of Prime Minister.",
+    "needs_human_check": true
+  },
+  {
+    "claim": "The capital city of Australia is Sydney.",
+    "category": "other",
+    "expected_status": "incorrect",
+    "note": "Incorrect: Canberra is the federal capital of Australia; Sydney has never been the national capital.",
+    "needs_human_check": true
+  },
+  {
+    "claim": "Sundar Pichai is the Chief Executive Officer of Apple Inc.",
+    "category": "company",
+    "expected_status": "incorrect",
+    "note": "Incorrect: Tim Cook is the CEO of Apple Inc.; Sundar Pichai has never led Apple.",
+    "needs_human_check": true
+  },
+  {
+    "claim": "The standard VAT rate in the United Kingdom is 17.5%.",
+    "category": "regulation",
+    "expected_status": "outdated",
+    "note": "Outdated: The standard UK VAT rate was 17.5% until January 4, 2011, when it was increased to 20%.",
+    "needs_human_check": true
+  },
+  {
+    "claim": "Twitter's legal corporate entity is Twitter, Inc.",
+    "category": "company",
+    "expected_status": "outdated",
+    "note": "Outdated: Twitter, Inc. was merged into X Corp. in April 2023 and no longer exists under that corporate name.",
+    "needs_human_check": true
+  },
+  {
+    "claim": "Narendra Modi is the Prime Minister of India as of 2026.",
+    "category": "company",
+    "expected_status": "fresh",
+    "note": "Fresh: Narendra Modi has served as the Prime Minister of India since May 2014 and continues in office.",
+    "needs_human_check": true
   }
 ]

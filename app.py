@@ -150,6 +150,15 @@ DEMO_EXAMPLES = [
             "$86 billion in early 2024."
         ),
     },
+    {
+        "label": "World leadership & geography",
+        "icon": ":material/public:",
+        "text": (
+            "The Prime Minister of India is Rahul Gandhi, while the capital "
+            "of Australia is Sydney. Meanwhile, the standard VAT rate in the "
+            "United Kingdom remains 17.5%."
+        ),
+    },
 ]
 
 # Status styling tokens used for badges, score bars, and ring colors.
@@ -160,17 +169,29 @@ STATUS_META = {
         "color": "#22C55E",
         "badge_color": "green",
     },
-    "uncertain": {
-        "label": "Uncertain",
-        "pill_class": "pill-uncertain",
-        "color": "#F59E0B",
-        "badge_color": "yellow",
-    },
     "outdated": {
         "label": "Outdated",
         "pill_class": "pill-outdated",
+        "color": "#F97316",
+        "badge_color": "orange",
+    },
+    "incorrect": {
+        "label": "Incorrect",
+        "pill_class": "pill-incorrect",
         "color": "#EF4444",
         "badge_color": "red",
+    },
+    "partially_correct": {
+        "label": "Partially correct",
+        "pill_class": "pill-partially-correct",
+        "color": "#F59E0B",
+        "badge_color": "amber",
+    },
+    "uncertain": {
+        "label": "Uncertain",
+        "pill_class": "pill-uncertain",
+        "color": "#EAB308",
+        "badge_color": "yellow",
     },
     "unverifiable": {
         "label": "Unverifiable",
@@ -411,15 +432,25 @@ html {
     background: rgba(34, 197, 94, 0.14);
     border: 1px solid rgba(34, 197, 94, 0.35);
 }
-.pill-uncertain {
+.pill-outdated {
+    color: #FB923C;
+    background: rgba(249, 115, 22, 0.14);
+    border: 1px solid rgba(249, 115, 22, 0.35);
+}
+.pill-incorrect {
+    color: #F87171;
+    background: rgba(239, 68, 68, 0.14);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.pill-partially-correct {
     color: #FBBF24;
     background: rgba(245, 158, 11, 0.14);
     border: 1px solid rgba(245, 158, 11, 0.35);
 }
-.pill-outdated {
-    color: #F87171;
-    background: rgba(239, 68, 68, 0.14);
-    border: 1px solid rgba(239, 68, 68, 0.35);
+.pill-uncertain {
+    color: #FDE047;
+    background: rgba(234, 179, 8, 0.14);
+    border: 1px solid rgba(234, 179, 8, 0.35);
 }
 .pill-unverifiable {
     color: #CBD5E1;
@@ -1161,9 +1192,9 @@ a.sad-hl-link[data-tooltip]:hover::after {
     overflow-wrap: anywhere;
     pointer-events: none;
 }
-.sad-hl-outdated,
-a.sad-hl-link.sad-hl-outdated,
-a.sad-hl-link.sad-hl-outdated:visited {
+.sad-hl-incorrect,
+a.sad-hl-link.sad-hl-incorrect,
+a.sad-hl-link.sad-hl-incorrect:visited {
     background: rgba(239, 68, 68, 0.17);
     text-decoration: underline;
     text-decoration-color: #EF4444;
@@ -1172,6 +1203,30 @@ a.sad-hl-link.sad-hl-outdated:visited {
     border-radius: 4px;
     padding: 0.05rem 0.24rem;
     color: #FECACA !important;
+}
+.sad-hl-outdated,
+a.sad-hl-link.sad-hl-outdated,
+a.sad-hl-link.sad-hl-outdated:visited {
+    background: rgba(249, 115, 22, 0.17);
+    text-decoration: underline;
+    text-decoration-color: #F97316;
+    text-decoration-thickness: 2.5px;
+    text-underline-offset: 4px;
+    border-radius: 4px;
+    padding: 0.05rem 0.24rem;
+    color: #FED7AA !important;
+}
+.sad-hl-partially-correct,
+a.sad-hl-link.sad-hl-partially-correct,
+a.sad-hl-link.sad-hl-partially-correct:visited {
+    background: rgba(245, 158, 11, 0.17);
+    text-decoration: underline;
+    text-decoration-color: #F59E0B;
+    text-decoration-thickness: 2.5px;
+    text-underline-offset: 4px;
+    border-radius: 4px;
+    padding: 0.05rem 0.24rem;
+    color: #FEF08A !important;
 }
 .sad-hl-fresh,
 a.sad-hl-link.sad-hl-fresh,
@@ -1305,15 +1360,26 @@ a.sad-hl-link.sad-hl-unverifiable:visited {
     gap: 0.5rem;
     margin-bottom: 0.6rem;
 }
-.sad-change-pill-replaced {
+.sad-change-pill-corrected {
     color: #F87171;
     background: rgba(239, 68, 68, 0.14);
     border: 1px solid rgba(239, 68, 68, 0.35);
 }
-.sad-change-pill-qualified {
+.sad-change-pill-replaced,
+.sad-change-pill-updated {
+    color: #FB923C;
+    background: rgba(249, 115, 22, 0.14);
+    border: 1px solid rgba(249, 115, 22, 0.35);
+}
+.sad-change-pill-refined {
     color: #FBBF24;
     background: rgba(245, 158, 11, 0.14);
     border: 1px solid rgba(245, 158, 11, 0.35);
+}
+.sad-change-pill-qualified {
+    color: #FDE047;
+    background: rgba(234, 179, 8, 0.14);
+    border: 1px solid rgba(234, 179, 8, 0.35);
 }
 .sad-change-pill-unverifiable {
     color: #CBD5E1;
@@ -1859,15 +1925,25 @@ section[data-testid="stSidebar"] [data-testid="stHeadingWithActionElements"] h3 
     background: rgba(34, 197, 94, 0.12) !important;
     border: 1px solid rgba(34, 197, 94, 0.35) !important;
 }
-.pill-uncertain {
+.pill-outdated {
+    color: #C2410C !important;
+    background: rgba(249, 115, 22, 0.12) !important;
+    border: 1px solid rgba(249, 115, 22, 0.35) !important;
+}
+.pill-incorrect {
+    color: #B91C1C !important;
+    background: rgba(239, 68, 68, 0.12) !important;
+    border: 1px solid rgba(239, 68, 68, 0.35) !important;
+}
+.pill-partially-correct {
     color: #B45309 !important;
     background: rgba(245, 158, 11, 0.12) !important;
     border: 1px solid rgba(245, 158, 11, 0.35) !important;
 }
-.pill-outdated {
-    color: #B91C1C !important;
-    background: rgba(239, 68, 68, 0.12) !important;
-    border: 1px solid rgba(239, 68, 68, 0.35) !important;
+.pill-uncertain {
+    color: #854D0E !important;
+    background: rgba(234, 179, 8, 0.12) !important;
+    border: 1px solid rgba(234, 179, 8, 0.35) !important;
 }
 .pill-unverifiable {
     color: #475569 !important;
@@ -2085,12 +2161,26 @@ section[data-testid="stSidebar"] [data-testid="stHeadingWithActionElements"] h3 
 }
 
 /* Inline highlights in light mode */
-.sad-hl-outdated,
-a.sad-hl-link.sad-hl-outdated,
-a.sad-hl-link.sad-hl-outdated:visited {
+.sad-hl-incorrect,
+a.sad-hl-link.sad-hl-incorrect,
+a.sad-hl-link.sad-hl-incorrect:visited {
     background: rgba(239, 68, 68, 0.15) !important;
     color: #991B1B !important;
     text-decoration-color: #EF4444 !important;
+}
+.sad-hl-outdated,
+a.sad-hl-link.sad-hl-outdated,
+a.sad-hl-link.sad-hl-outdated:visited {
+    background: rgba(249, 115, 22, 0.15) !important;
+    color: #9A3412 !important;
+    text-decoration-color: #F97316 !important;
+}
+.sad-hl-partially-correct,
+a.sad-hl-link.sad-hl-partially-correct,
+a.sad-hl-link.sad-hl-partially-correct:visited {
+    background: rgba(245, 158, 11, 0.15) !important;
+    color: #92400E !important;
+    text-decoration-color: #F59E0B !important;
 }
 .sad-hl-fresh,
 a.sad-hl-link.sad-hl-fresh,
@@ -2102,9 +2192,9 @@ a.sad-hl-link.sad-hl-fresh:visited {
 .sad-hl-uncertain,
 a.sad-hl-link.sad-hl-uncertain,
 a.sad-hl-link.sad-hl-uncertain:visited {
-    background: rgba(245, 158, 11, 0.18) !important;
-    color: #92400E !important;
-    text-decoration-color: #F59E0B !important;
+    background: rgba(234, 179, 8, 0.18) !important;
+    color: #713F12 !important;
+    text-decoration-color: #EAB308 !important;
 }
 .sad-hl-unverifiable,
 a.sad-hl-link.sad-hl-unverifiable,
@@ -3273,10 +3363,17 @@ def match_claims_to_answer_spans(answer_text: str, verification_results: list[di
     Match verified claim results to non-overlapping character spans in `answer_text`.
     When a compound sentence matches a wider span while another claim cleanly matches
     one sub-clause, tighten the compound match to its remaining sub-clause. Otherwise,
-    when two spans genuinely overlap, outdated claims take precedence.
+    when two spans genuinely overlap, incorrect and outdated claims take precedence.
     """
     raw_matches: list[dict] = []
-    status_priority = {"outdated": 0, "fresh": 1, "uncertain": 2, "unverifiable": 3}
+    status_priority = {
+        "incorrect": 0,
+        "outdated": 1,
+        "partially_correct": 2,
+        "uncertain": 3,
+        "fresh": 4,
+        "unverifiable": 5,
+    }
     all_candidate_spans = _candidate_answer_spans(answer_text)
     used_ranges: list[tuple[int, int]] = []
 
@@ -3326,6 +3423,8 @@ def match_claims_to_answer_spans(answer_text: str, verification_results: list[di
                 "status": status,
                 "score": safe_score,
                 "current_value": str(item.get("current_value") or "").strip() or None,
+                "correction": str(item.get("correction") or "").strip() or None,
+                "was_ever_true": str(item.get("was_ever_true") or "").strip() or None,
                 "current_info": str(item.get("current_info", "")).strip(),
                 "match_score": match_score,
                 "priority": status_priority[status],
@@ -3393,7 +3492,8 @@ def render_highlighted_answer_html(
 ) -> tuple[str, int]:
     """
     Render `answer_text` as safe HTML with inline highlights for verified claims
-    (green = fresh, red = outdated, yellow = uncertain, grey = unverifiable).
+    (green = fresh, orange = outdated, red = incorrect, amber = partially correct,
+    yellow = uncertain, grey = unverifiable).
     Hovering previews the corrected/verified value and clicking jumps to `#claim-{key_prefix}-{N}`.
     """
     if not answer_text:
@@ -3404,7 +3504,9 @@ def render_highlighted_answer_html(
         return escape_html(answer_text).replace("\n", "<br>"), 0
 
     cls_map = {
+        "incorrect": ("sad-hl-incorrect", "Incorrect"),
         "outdated": ("sad-hl-outdated", "Outdated"),
+        "partially_correct": ("sad-hl-partially-correct", "Partially correct"),
         "fresh": ("sad-hl-fresh", "Fresh"),
         "uncertain": ("sad-hl-uncertain", "Uncertain"),
         "unverifiable": ("sad-hl-unverifiable", "Unverifiable"),
@@ -3420,11 +3522,15 @@ def render_highlighted_answer_html(
         claim_num = int(span["claim_index"]) + 1
         target_id = f"claim-{key_prefix}-{claim_num}"
 
-        corr_val = str(span.get("current_value") or "").strip()
+        corr_val = str(span.get("correction") or span.get("current_value") or "").strip()
         corr_info = str(span.get("current_info") or "").strip()
         display_val = corr_val or corr_info
-        if span["status"] == "outdated":
-            tip_body = f"Corrected: {display_val}" if display_val else "Outdated fact"
+        if span["status"] == "incorrect":
+            tip_body = f"Never true / contradicted: {display_val}" if display_val else "Never historically true / contradicted"
+        elif span["status"] == "outdated":
+            tip_body = f"Updated: {display_val}" if display_val else "Outdated fact"
+        elif span["status"] == "partially_correct":
+            tip_body = f"Partially correct: {display_val}" if display_val else "Partially correct fact"
         elif span["status"] == "fresh":
             tip_body = f"Verified: {display_val}" if display_val else f"Verified fresh ({score_str})"
         elif span["status"] == "uncertain":
@@ -3457,7 +3563,8 @@ def render_annotated_answer_card(
 ) -> None:
     """
     Render original pasted text or extracted article with color-coded clickable highlights
-    (green = fresh, red = outdated, yellow = uncertain, grey = unverifiable).
+    (green = fresh, orange = outdated, red = incorrect, amber = partially correct,
+    yellow = uncertain, grey = unverifiable).
     """
     if not answer_text or not answer_text.strip():
         return
@@ -3471,7 +3578,9 @@ def render_annotated_answer_card(
         legend_html = (
             '<div class="sad-hl-legend">'
             '<span><span class="sad-hl-fresh">Green</span> = Fresh</span>'
-            '<span><span class="sad-hl-outdated">Red</span> = Outdated</span>'
+            '<span><span class="sad-hl-outdated">Orange</span> = Outdated</span>'
+            '<span><span class="sad-hl-incorrect">Red</span> = Incorrect</span>'
+            '<span><span class="sad-hl-partially-correct">Amber</span> = Partially correct</span>'
             '<span><span class="sad-hl-uncertain">Yellow</span> = Uncertain</span>'
             '<span><span class="sad-hl-unverifiable">Grey</span> = Unverifiable</span>'
             '</div>'
@@ -4016,12 +4125,46 @@ def _build_compact_model_row_html(
     )
 
 
+def build_overall_verdict_sentence(results: list[dict]) -> str:
+    """Build a natural-language summary sentence of verified claim findings (e.g. '1 incorrect claim found')."""
+    if not results:
+        return "No factual claims verified."
+    incorrect = sum(1 for r in results if r.get("status") == "incorrect")
+    outdated = sum(1 for r in results if r.get("status") == "outdated")
+    partially_correct = sum(1 for r in results if r.get("status") == "partially_correct")
+    fresh = sum(1 for r in results if r.get("status") == "fresh")
+    uncertain = sum(1 for r in results if r.get("status") == "uncertain")
+    unverifiable = sum(1 for r in results if r.get("status") == "unverifiable")
+
+    parts: list[str] = []
+    if incorrect:
+        parts.append(f"{incorrect} incorrect claim{'s' if incorrect != 1 else ''}")
+    if outdated:
+        parts.append(f"{outdated} outdated claim{'s' if outdated != 1 else ''}")
+    if partially_correct:
+        parts.append(f"{partially_correct} partially correct claim{'s' if partially_correct != 1 else ''}")
+
+    if parts:
+        joined = " and ".join(parts) if len(parts) <= 2 else f"{parts[0]}, {parts[1]}, and {parts[2]}"
+        return f"{joined} found."
+    if fresh == len(results):
+        return f"All {len(results)} claims verified fresh against live sources."
+    if fresh > 0 and (uncertain > 0 or unverifiable > 0):
+        return f"{fresh} fresh claim{'s' if fresh != 1 else ''} verified; {uncertain + unverifiable} need verification."
+    if uncertain > 0:
+        return f"{uncertain} uncertain claim{'s' if uncertain != 1 else ''} with conflicting or mixed evidence."
+    if unverifiable > 0:
+        return f"{unverifiable} unverifiable claim{'s' if unverifiable != 1 else ''} (insufficient sources)."
+    return "Verification complete."
+
+
 def render_score_ring_html(
     overall_score: int | None,
     models_used: list[str],
     fallback_routes: list[str] | None = None,
+    verdict_sentence: str | None = None,
 ) -> str:
-    """Build the pure HTML/CSS circular score ring and single compact model/fallback row."""
+    """Build the pure HTML/CSS circular score ring, verdict sentence, and compact model/fallback row."""
     tier_label, ring_color, tier_desc = get_overall_tier(overall_score)
     if overall_score is None:
         ring_fill = 0
@@ -4034,6 +4177,12 @@ def render_score_ring_html(
         ring_denom_text = "of 100"
 
     compact_row_html = _build_compact_model_row_html(models_used, fallback_routes=fallback_routes)
+    verdict_html = (
+        f'<div class="sad-verdict-sentence" style="font-weight: 600; font-size: 0.95rem; margin: 4px 0 8px; color: #F8FAFC;">'
+        f'{escape_html(verdict_sentence)}</div>'
+        if verdict_sentence
+        else ""
+    )
 
     return (
         f'<div class="sad-score-card">'
@@ -4045,6 +4194,7 @@ def render_score_ring_html(
         f'</div></div>'
         f'<div class="sad-score-meta">'
         f'<h3>Overall freshness: {tier_label}</h3>'
+        f'{verdict_html}'
         f'<p>{escape_html(tier_desc)}</p>'
         f'{compact_row_html}'
         f'</div></div>'
@@ -4121,26 +4271,46 @@ def render_claim_card(
     actual_html = escape_html(item.get("current_info", ""))
 
     actual_meta_rows: list[str] = []
-    if item.get("current_value"):
+    if status == "incorrect":
+        corr_val = item.get("correction") or item.get("current_value") or item.get("current_info") or "Contradicted by authoritative sources"
+        sources = item.get("sources") or []
+        top_src_str = ""
+        if sources and isinstance(sources, list) and isinstance(sources[0], dict):
+            src_url = sources[0].get("url") or ""
+            src_title = sources[0].get("title") or (extract_domain(src_url) if src_url else "")
+            if src_url:
+                top_src_str = f' (<a href="{html.escape(src_url, quote=True)}" target="_blank" rel="noopener noreferrer">{escape_html(src_title)}</a>)'
+            elif src_title:
+                top_src_str = f' ({escape_html(src_title)})'
         actual_meta_rows.append(
-            f'<div><span class="sad-actual-meta-label">Current value:</span> {escape_html(item["current_value"])}</div>'
+            f'<div><span class="sad-actual-meta-label" style="color: #EF4444; font-weight: 700;">Never true / contradicted by:</span> {escape_html(corr_val)}{top_src_str}</div>'
         )
-    if item.get("change_summary"):
-        actual_meta_rows.append(
-            f'<div><span class="sad-actual-meta-label">Change summary:</span> {escape_html(item["change_summary"])}</div>'
-        )
-    if item.get("effective_date"):
-        actual_meta_rows.append(
-            f'<div><span class="sad-actual-meta-label">Effective date:</span> {escape_html(item["effective_date"])}</div>'
-        )
-    stale_display = _format_stale_since_text(
-        item.get("stale_since"),
-        item.get("stale_duration_label"),
-    )
-    if stale_display:
-        actual_meta_rows.append(
-            f'<div><span class="sad-actual-meta-label">Stale since:</span> {escape_html(stale_display)}</div>'
-        )
+    else:
+        if item.get("current_value"):
+            actual_meta_rows.append(
+                f'<div><span class="sad-actual-meta-label">Current value:</span> {escape_html(item["current_value"])}</div>'
+            )
+        if item.get("correction") and not item.get("current_value"):
+            actual_meta_rows.append(
+                f'<div><span class="sad-actual-meta-label">Correction:</span> {escape_html(item["correction"])}</div>'
+            )
+        if item.get("change_summary"):
+            actual_meta_rows.append(
+                f'<div><span class="sad-actual-meta-label">Change summary:</span> {escape_html(item["change_summary"])}</div>'
+            )
+        if item.get("effective_date"):
+            actual_meta_rows.append(
+                f'<div><span class="sad-actual-meta-label">Effective date:</span> {escape_html(item["effective_date"])}</div>'
+            )
+        if status == "outdated":
+            stale_display = _format_stale_since_text(
+                item.get("stale_since") or item.get("change_date"),
+                item.get("stale_duration_label"),
+            )
+            if stale_display:
+                actual_meta_rows.append(
+                    f'<div><span class="sad-actual-meta-label">Stale since:</span> {escape_html(stale_display)}</div>'
+                )
     actual_meta_block = (
         '<div class="sad-actual-meta">' + "".join(actual_meta_rows) + "</div>"
         if actual_meta_rows
@@ -4698,11 +4868,15 @@ def render_audit_results(
         return
 
     overall_score = compute_risk_weighted_overall_score(results)
-    fresh_count = sum(1 for r in results if r["status"] == "fresh")
-    uncertain_count = sum(1 for r in results if r["status"] == "uncertain")
-    outdated_count = sum(1 for r in results if r["status"] == "outdated")
-    unverifiable_count = sum(1 for r in results if r["status"] == "unverifiable")
+    fresh_count = sum(1 for r in results if r.get("status") == "fresh")
+    outdated_count = sum(1 for r in results if r.get("status") == "outdated")
+    incorrect_count = sum(1 for r in results if r.get("status") == "incorrect")
+    partially_correct_count = sum(1 for r in results if r.get("status") == "partially_correct")
+    uncertain_count = sum(1 for r in results if r.get("status") == "uncertain")
+    unverifiable_count = sum(1 for r in results if r.get("status") == "unverifiable")
     error_count = sum(1 for r in results if r.get("error"))
+
+    verdict_sentence = build_overall_verdict_sentence(results)
 
     models_used: list[str] = []
     claim_models: list[str] = []
@@ -4727,15 +4901,21 @@ def render_audit_results(
                 fallback_routes.append(route)
 
     st.markdown(
-        render_score_ring_html(overall_score, models_used, fallback_routes=fallback_routes),
+        render_score_ring_html(
+            overall_score,
+            models_used,
+            fallback_routes=fallback_routes,
+            verdict_sentence=verdict_sentence,
+        ),
         unsafe_allow_html=True,
     )
 
-    with st.grid(5, min_column_width=95, gap="small"):
-        st.metric("Claims checked", len(results), border=True, height="stretch")
+    with st.grid(6, min_column_width=85, gap="small"):
         st.metric("Fresh", fresh_count, border=True, height="stretch")
-        st.metric("Uncertain", uncertain_count, border=True, height="stretch")
         st.metric("Outdated", outdated_count, border=True, height="stretch")
+        st.metric("Incorrect", incorrect_count, border=True, height="stretch")
+        st.metric("Partially correct", partially_correct_count, border=True, height="stretch")
+        st.metric("Uncertain", uncertain_count, border=True, height="stretch")
         st.metric("Unverifiable", unverifiable_count, border=True, height="stretch")
 
     if error_count > 0:
@@ -5004,7 +5184,9 @@ def render_corrected_and_export_section(
     changes = build_change_log(results)
     if changes:
         pill_cls_map = {
+            "incorrect": "sad-change-pill-corrected",
             "outdated": "sad-change-pill-replaced",
+            "partially_correct": "sad-change-pill-refined",
             "uncertain": "sad-change-pill-qualified",
             "unverifiable": "sad-change-pill-unverifiable",
         }
@@ -5014,26 +5196,46 @@ def render_corrected_and_export_section(
             ch_score_text = "N/A" if ch.get("score") is None else f"{ch['score']}/100"
 
             ch_meta_rows: list[str] = []
-            if ch.get("current_value"):
+            if ch.get("status") == "incorrect":
+                corr_val = ch.get("correction") or ch.get("current_value") or ch.get("current_info") or "Contradicted by sources"
+                ch_sources = ch.get("sources") or []
+                ch_top_src = ""
+                if ch_sources and isinstance(ch_sources, list) and isinstance(ch_sources[0], dict):
+                    src_u = ch_sources[0].get("url") or ""
+                    src_t = ch_sources[0].get("title") or (extract_domain(src_u) if src_u else "")
+                    if src_u:
+                        ch_top_src = f' (<a href="{html.escape(src_u, quote=True)}" target="_blank" rel="noopener noreferrer">{escape_html(src_t)}</a>)'
+                    elif src_t:
+                        ch_top_src = f' ({escape_html(src_t)})'
                 ch_meta_rows.append(
-                    f'<div><span class="sad-actual-meta-label">Current value:</span> {escape_html(ch["current_value"])}</div>'
+                    f'<div><span class="sad-actual-meta-label" style="color: #EF4444; font-weight: 700;">Never true / contradicted by:</span> {escape_html(corr_val)}{ch_top_src}</div>'
                 )
-            if ch.get("change_summary"):
-                ch_meta_rows.append(
-                    f'<div><span class="sad-actual-meta-label">Change summary:</span> {escape_html(ch["change_summary"])}</div>'
-                )
-            if ch.get("effective_date"):
-                ch_meta_rows.append(
-                    f'<div><span class="sad-actual-meta-label">Effective date:</span> {escape_html(ch["effective_date"])}</div>'
-                )
-            ch_stale_display = _format_stale_since_text(
-                ch.get("stale_since"),
-                ch.get("stale_duration_label"),
-            )
-            if ch_stale_display:
-                ch_meta_rows.append(
-                    f'<div><span class="sad-actual-meta-label">Stale since:</span> {escape_html(ch_stale_display)}</div>'
-                )
+            else:
+                if ch.get("current_value"):
+                    ch_meta_rows.append(
+                        f'<div><span class="sad-actual-meta-label">Current value:</span> {escape_html(ch["current_value"])}</div>'
+                    )
+                if ch.get("correction") and not ch.get("current_value"):
+                    ch_meta_rows.append(
+                        f'<div><span class="sad-actual-meta-label">Correction:</span> {escape_html(ch["correction"])}</div>'
+                    )
+                if ch.get("change_summary"):
+                    ch_meta_rows.append(
+                        f'<div><span class="sad-actual-meta-label">Change summary:</span> {escape_html(ch["change_summary"])}</div>'
+                    )
+                if ch.get("effective_date"):
+                    ch_meta_rows.append(
+                        f'<div><span class="sad-actual-meta-label">Effective date:</span> {escape_html(ch["effective_date"])}</div>'
+                    )
+                if ch.get("status") == "outdated":
+                    ch_stale_display = _format_stale_since_text(
+                        ch.get("stale_since") or ch.get("change_date"),
+                        ch.get("stale_duration_label"),
+                    )
+                    if ch_stale_display:
+                        ch_meta_rows.append(
+                            f'<div><span class="sad-actual-meta-label">Stale since:</span> {escape_html(ch_stale_display)}</div>'
+                        )
             ch_meta_html = (
                 '<div class="sad-actual-meta">' + "".join(ch_meta_rows) + "</div>"
                 if ch_meta_rows

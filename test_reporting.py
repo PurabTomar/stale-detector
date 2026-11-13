@@ -85,7 +85,7 @@ class TestReporting(unittest.TestCase):
         changes = reporting.build_change_log(results)
         # Fresh claim is excluded; outdated comes first, uncertain second.
         self.assertEqual(len(changes), 2)
-        self.assertEqual(changes[0]["action"], "Replaced")
+        self.assertIn(changes[0]["action"], {"Updated", "Replaced"})
         self.assertEqual(changes[0]["claim_index"], 3)
         self.assertEqual(len(changes[0]["sources"]), 2)  # duplicate URL deduplicated
         self.assertEqual(changes[1]["action"], "Qualified")
@@ -269,7 +269,8 @@ class TestReporting(unittest.TestCase):
 
         # Change log includes outdated AND unverifiable (marked Flagged (unverifiable)) with structured fields.
         changes = reporting.build_change_log(results)
-        self.assertEqual([c["action"] for c in changes], ["Replaced", "Flagged (unverifiable)"])
+        self.assertIn(changes[0]["action"], {"Updated", "Replaced"})
+        self.assertEqual(changes[1]["action"], "Flagged (unverifiable)")
         self.assertEqual(changes[0]["current_value"], "iOS 26")
         self.assertEqual(changes[0]["effective_date"], "2026-09-15")
         self.assertEqual(changes[0]["change_summary"], "iOS 18 and iOS 26 superseded iOS 17")

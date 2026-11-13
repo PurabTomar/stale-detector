@@ -184,9 +184,17 @@ def build_change_log(verification_results: list[dict] | None) -> list[dict]:
     including supporting sources from verified claims (outdated, uncertain, unverifiable).
     """
     changes: list[dict] = []
-    priority_order = {"outdated": 0, "uncertain": 1, "unverifiable": 2}
+    priority_order = {
+        "incorrect": 0,
+        "outdated": 1,
+        "partially_correct": 2,
+        "uncertain": 3,
+        "unverifiable": 4,
+    }
     action_labels = {
-        "outdated": "Replaced",
+        "incorrect": "Corrected",
+        "outdated": "Updated",
+        "partially_correct": "Refined",
         "uncertain": "Qualified",
         "unverifiable": "Flagged (unverifiable)",
     }
@@ -222,6 +230,9 @@ def build_change_log(verification_results: list[dict] | None) -> list[dict]:
                 "original_claim": str(item.get("claim", "")).strip(),
                 "updated_to": str(item.get("current_info", "")).strip(),
                 "current_value": item.get("current_value"),
+                "was_ever_true": item.get("was_ever_true"),
+                "change_date": item.get("change_date"),
+                "correction": item.get("correction"),
                 "effective_date": item.get("effective_date"),
                 "change_summary": item.get("change_summary"),
                 "stale_since": item.get("stale_since"),
@@ -264,7 +275,7 @@ def build_draft_corrected_answer(
     outdated_entries = [
         (idx, item)
         for idx, item in enumerate(results)
-        if isinstance(item, dict) and str(item.get("status", "")).lower() == "outdated"
+        if isinstance(item, dict) and str(item.get("status", "")).lower() in {"outdated", "incorrect", "partially_correct"}
     ]
     uncertain_entries = [
         (idx, item)
@@ -502,7 +513,7 @@ def build_draft_corrected_answer(
     replaced_spans: list[tuple[int, int]] = []
     for claim_idx, item in outdated_entries:
         replacement_text = _ensure_sentence(
-            item.get("current_info") or item.get("current_value") or ""
+            item.get("correction") or item.get("current_info") or item.get("current_value") or ""
         )
         if not replacement_text:
             continue
@@ -793,8 +804,10 @@ def build_report_payload(
         overall_tier = "No claims checked"
 
     fresh_count = sum(1 for r in results if r.get("status") == "fresh")
-    uncertain_count = sum(1 for r in results if r.get("status") == "uncertain")
     outdated_count = sum(1 for r in results if r.get("status") == "outdated")
+    incorrect_count = sum(1 for r in results if r.get("status") == "incorrect")
+    partially_correct_count = sum(1 for r in results if r.get("status") == "partially_correct")
+    uncertain_count = sum(1 for r in results if r.get("status") == "uncertain")
     unverifiable_count = sum(1 for r in results if r.get("status") == "unverifiable")
 
     if tavily_credits_used is None:
@@ -869,6 +882,9 @@ def build_report_payload(
                 "risk_level": str(item.get("risk_level", "moderate")),
                 "current_info": str(item.get("current_info", "")),
                 "current_value": item.get("current_value"),
+                "was_ever_true": item.get("was_ever_true"),
+                "change_date": item.get("change_date"),
+                "correction": item.get("correction"),
                 "effective_date": item.get("effective_date"),
                 "change_summary": item.get("change_summary"),
                 "stale_since": item.get("stale_since"),
@@ -937,8 +953,10 @@ def build_report_payload(
             "overall_tier": overall_tier,
             "claims_checked": len(results),
             "fresh": fresh_count,
-            "uncertain": uncertain_count,
             "outdated": outdated_count,
+            "incorrect": incorrect_count,
+            "partially_correct": partially_correct_count,
+            "uncertain": uncertain_count,
             "unverifiable": unverifiable_count,
             "tavily_credits_used": credits_total,
         },
@@ -977,8 +995,9 @@ def format_report_markdown(payload: dict) -> str:
         f"- **Mode:** {payload.get('mode', '')}",
         f"- **Overall freshness score:** {score_display}",
         f"- **Claims summary:** {summary.get('claims_checked', 0)} checked "
-        f"({summary.get('fresh', 0)} fresh, {summary.get('uncertain', 0)} uncertain, "
-        f"{summary.get('outdated', 0)} outdated, {summary.get('unverifiable', 0)} unverifiable)",
+        f"({summary.get('fresh', 0)} fresh, {summary.get('outdated', 0)} outdated, "
+        f"{summary.get('incorrect', 0)} incorrect, {summary.get('partially_correct', 0)} partially correct, "
+        f"{summary.get('uncertain', 0)} uncertain, {summary.get('unverifiable', 0)} unverifiable)",
         f"- **Models used:** {', '.join(models) if models else 'None'}",
         f"- **Fallback routes:** {', '.join(fallbacks) if fallbacks else 'None (primary only)'}",
         f"- **Tokens used:** {int(tokens.get('total_tokens', 0)):,} total "
@@ -1052,14 +1071,25 @@ def format_report_markdown(payload: dict) -> str:
                 lines.append(f"- **Change summary:** {ch['change_summary']}")
             if ch.get("effective_date"):
                 lines.append(f"- **Effective date:** {ch['effective_date']}")
-            if ch.get("stale_since") or ch.get("stale_duration_label"):
-                stale_raw = str(ch.get("stale_since") or "").strip()
-                dur_raw = str(ch.get("stale_duration_label") or "").strip()
-                if stale_raw and dur_raw and dur_raw.lower() not in stale_raw.lower():
-                    stale_display = f"{stale_raw} ({dur_raw})"
-                else:
-                    stale_display = stale_raw or dur_raw
-                lines.append(f"- **Stale since:** {stale_display}")
+            if ch.get("status") == "incorrect":
+                top_src_display = ""
+                ch_srcs = ch.get("sources") or []
+                if ch_srcs and isinstance(ch_srcs[0], dict):
+                    s0 = ch_srcs[0]
+                    s0_title = s0.get("title") or s0.get("url")
+                    s0_url = s0.get("url")
+                    top_src_display = f" ([{s0_title}]({s0_url}))" if s0_url else f" ({s0_title})"
+                corr_val = ch.get("current_value") or ch.get("correction") or ch.get("updated_to")
+                lines.append(f"- **Never true / contradicted by:** {corr_val}{top_src_display}")
+            elif ch.get("status") == "outdated":
+                if ch.get("stale_since") or ch.get("stale_duration_label"):
+                    stale_raw = str(ch.get("stale_since") or "").strip()
+                    dur_raw = str(ch.get("stale_duration_label") or "").strip()
+                    if stale_raw and dur_raw and dur_raw.lower() not in stale_raw.lower():
+                        stale_display = f"{stale_raw} ({dur_raw})"
+                    else:
+                        stale_display = stale_raw or dur_raw
+                    lines.append(f"- **Stale since:** {stale_display}")
             if ch.get("agreement_summary"):
                 conflict_txt = f" — {ch['conflict_note']}" if ch.get("conflict_note") else ""
                 lines.append(f"- **Source agreement:** {ch['agreement_summary']}{conflict_txt}")
@@ -1107,14 +1137,25 @@ def format_report_markdown(payload: dict) -> str:
                 lines.append(f"- **Change summary:** {c['change_summary']}")
             if c.get("effective_date"):
                 lines.append(f"- **Effective date:** {c['effective_date']}")
-            if c.get("stale_since") or c.get("stale_duration_label"):
-                stale_raw = str(c.get("stale_since") or "").strip()
-                dur_raw = str(c.get("stale_duration_label") or "").strip()
-                if stale_raw and dur_raw and dur_raw.lower() not in stale_raw.lower():
-                    stale_display = f"{stale_raw} ({dur_raw})"
-                else:
-                    stale_display = stale_raw or dur_raw
-                lines.append(f"- **Stale since:** {stale_display}")
+            if c.get("status") == "incorrect":
+                top_src_display = ""
+                c_srcs = c.get("sources") or []
+                if c_srcs and isinstance(c_srcs[0], dict):
+                    s0 = c_srcs[0]
+                    s0_title = s0.get("title") or s0.get("url")
+                    s0_url = s0.get("url")
+                    top_src_display = f" ([{s0_title}]({s0_url}))" if s0_url else f" ({s0_title})"
+                corr_val = c.get("current_value") or c.get("correction") or c.get("current_info")
+                lines.append(f"- **Never true / contradicted by:** {corr_val}{top_src_display}")
+            elif c.get("status") == "outdated":
+                if c.get("stale_since") or c.get("stale_duration_label"):
+                    stale_raw = str(c.get("stale_since") or "").strip()
+                    dur_raw = str(c.get("stale_duration_label") or "").strip()
+                    if stale_raw and dur_raw and dur_raw.lower() not in stale_raw.lower():
+                        stale_display = f"{stale_raw} ({dur_raw})"
+                    else:
+                        stale_display = stale_raw or dur_raw
+                    lines.append(f"- **Stale since:** {stale_display}")
             lines.append(f"- **Reason:** {c['reason']}")
             if c.get("why_this_score"):
                 lines.append(f"- **Why this score:** {c['why_this_score']}")
