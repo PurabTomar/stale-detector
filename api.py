@@ -254,26 +254,25 @@ def _first_clean_line(text: str) -> str:
 def root_info(request: Request) -> Any:
     """
     Root endpoint.
-    Serves the interactive single-page Web UI with animations and Light/Dark mode
-    when requested by a browser (Accept: text/html). Returns service JSON metadata
-    when requested by API clients (Accept: application/json) or when requested
-    without browser text/html.
+    Serves the interactive single-page Web UI by default.
+    Returns service JSON metadata when requested with Accept: application/json
+    (without text/html) or with ?format=json.
     """
     accept = request.headers.get("accept", "").lower()
     format_param = request.query_params.get("format", "").lower()
 
-    if "text/html" in accept and format_param != "json":
-        return HTMLResponse(content=get_web_ui_html())
+    if format_param == "json" or ("application/json" in accept and "text/html" not in accept):
+        return JSONResponse(
+            {
+                "service": "Stale-Answer Detector API",
+                "version": "1.0.0",
+                "docs_url": "/docs",
+                "health_url": "/health",
+                "verify_endpoint": "POST /verify",
+            }
+        )
 
-    return JSONResponse(
-        {
-            "service": "Stale-Answer Detector API",
-            "version": "1.0.0",
-            "docs_url": "/docs",
-            "health_url": "/health",
-            "verify_endpoint": "POST /verify",
-        }
-    )
+    return HTMLResponse(content=get_web_ui_html())
 
 
 @app.get("/api")
