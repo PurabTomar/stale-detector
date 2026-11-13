@@ -38,7 +38,13 @@ class TestBifrostLLMClient(unittest.TestCase):
     def test_config_validation_and_virtual_key_header(self):
         with patch.dict(
             os.environ,
-            {"LLM_API_KEY": "", "LLM_BASE_URL": "", "LLM_MODEL": "", "LLM_MODEL_FALLBACKS": ""},
+            {
+                "USE_BIFROST": "true",
+                "LLM_API_KEY": "",
+                "LLM_BASE_URL": "",
+                "LLM_MODEL": "",
+                "LLM_MODEL_FALLBACKS": "",
+            },
             clear=False,
         ):
             with patch("llm.load_dotenv"):

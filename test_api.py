@@ -9,13 +9,22 @@ import os
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+try:
+    from fastapi.testclient import TestClient
+    import api
 
-import api
+    HAS_FASTAPI = True
+except ImportError:
+    HAS_FASTAPI = False
+    TestClient = None  # type: ignore[assignment,misc]
+    api = None  # type: ignore[assignment]
 
 
+@unittest.skipIf(not HAS_FASTAPI, "FastAPI is not installed; skipping REST API tests")
 class TestVerifyAPI(unittest.TestCase):
     def setUp(self):
+        if not HAS_FASTAPI:
+            self.skipTest("FastAPI is not installed; skipping REST API tests")
         self.client = TestClient(api.app)
 
     def test_health_endpoint_bifrost_and_direct_gemini(self):
