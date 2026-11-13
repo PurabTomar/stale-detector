@@ -22,14 +22,31 @@ class StripPrefixMiddleware:
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") == "http":
-            path = scope.get("path", "")
-            for prefix in ("/api/index.py", "/api/index", "/api"):
-                if path == prefix:
-                    scope["path"] = "/"
-                    break
-                elif path.startswith(prefix + "/"):
-                    scope["path"] = path[len(prefix):]
-                    break
+            headers = dict(scope.get("headers", []))
+            # Vercel provides the client-requested URL path in x-matched-path
+            raw_matched = headers.get(b"x-matched-path")
+            if raw_matched:
+                matched_path = raw_matched.decode("utf-8", errors="ignore")
+                if "?" in matched_path:
+                    matched_path = matched_path.split("?", 1)[0]
+                # Strip function entrypoint prefix if present
+                for pfx in ("/api/index.py", "/api/index"):
+                    if matched_path == pfx:
+                        matched_path = "/"
+                        break
+                    elif matched_path.startswith(pfx + "/"):
+                        matched_path = matched_path[len(pfx):]
+                        break
+                scope["path"] = matched_path or "/"
+            else:
+                path = scope.get("path", "")
+                for prefix in ("/api/index.py", "/api/index", "/api"):
+                    if path == prefix:
+                        scope["path"] = "/"
+                        break
+                    elif path.startswith(prefix + "/"):
+                        scope["path"] = path[len(prefix):]
+                        break
         await self.app(scope, receive, send)
 
 
