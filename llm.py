@@ -156,15 +156,20 @@ def _get_config_value(name: str) -> str:
 
 def is_use_bifrost() -> bool:
     """
-    Return True when routing requests through Bifrost (`USE_BIFROST=true`, default).
+    Return True when routing requests through Bifrost (`USE_BIFROST=true`, default,
+    or when BIFROST_URL is set).
     Returns False when `USE_BIFROST` is explicitly disabled (`false`, `0`, `no`, `off`),
     switching to Google Gemini's OpenAI-compatible endpoint directly.
     """
     load_dotenv(override=False)
     raw = _get_config_value("USE_BIFROST").lower()
-    if not raw:
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes"}:
         return True
-    return raw not in {"0", "false", "no", "off"}
+    if _get_config_value("BIFROST_URL"):
+        return True
+    return True
 
 
 def _normalize_gemini_model(model: str) -> str:
@@ -210,7 +215,12 @@ def _resolve_task_models_from_env(
     `task` (`"extract"`, `"judge"`, or default) without requiring API key presence.
     """
     use_bifrost = is_use_bifrost()
-    raw_base_url = _get_config_value("LLM_BASE_URL")
+    raw_bifrost_url = _get_config_value("BIFROST_URL").strip()
+    if raw_bifrost_url:
+        clean_bf = raw_bifrost_url.rstrip("/")
+        raw_base_url = clean_bf if clean_bf.endswith("/v1") else f"{clean_bf}/v1"
+    else:
+        raw_base_url = _get_config_value("LLM_BASE_URL")
     raw_default = _get_config_value("LLM_MODEL")
     raw_extract = _get_config_value("LLM_MODEL_EXTRACT")
     raw_judge = _get_config_value("LLM_MODEL_JUDGE")
@@ -422,11 +432,16 @@ def get_llm_config(
         return api_key, base_url, model_chain
 
     api_key = _get_config_value("LLM_API_KEY")
+    virtual_key = _get_config_value("LLM_VIRTUAL_KEY") or _get_config_value("BIFROST_VIRTUAL_KEY")
+    bifrost_url = _get_config_value("BIFROST_URL")
     if not api_key:
-        raise ValueError(
-            "Missing LLM API key: LLM_API_KEY is not set. Add it to Streamlit Secrets or your .env file "
-            "(if your local Bifrost gateway does not require a key, set 'bifrost-local')."
-        )
+        if bifrost_url and virtual_key:
+            api_key = virtual_key
+        else:
+            raise ValueError(
+                "Missing LLM API key: LLM_API_KEY is not set. Add it to Streamlit Secrets or your .env file "
+                "(if your local Bifrost gateway does not require a key, set 'bifrost-local')."
+            )
 
     return api_key, base_url, model_chain
 
@@ -446,9 +461,20 @@ def get_llm_client(
         model_override=model_override,
     )
 
-    # Optional Bifrost virtual key; sent via x-bf-vk only when routing via Bifrost.
-    virtual_key = _get_config_value("LLM_VIRTUAL_KEY") if is_use_bifrost() else ""
-    default_headers = {"x-bf-vk": virtual_key} if virtual_key else None
+    # Optional Bifrost virtual key and run ID headers; sent only when routing via Bifrost.
+    virtual_key = (
+        _get_config_value("LLM_VIRTUAL_KEY") or _get_config_value("BIFROST_VIRTUAL_KEY")
+    ) if is_use_bifrost() else ""
+    if (not api_key or api_key == "bifrost-local") and virtual_key:
+        api_key = virtual_key
+
+    default_headers: dict[str, str] = {}
+    if is_use_bifrost() and virtual_key:
+        default_headers["x-bf-vk"] = virtual_key
+    bifrost_run_id = os.environ.get("BIFROST_RUN_ID") or _get_config_value("BIFROST_RUN_ID")
+    if is_use_bifrost() and bifrost_run_id:
+        default_headers["x-bf-run-id"] = str(bifrost_run_id).strip()
+    headers_arg = default_headers if default_headers else None
 
     timeout_seconds = DEFAULT_LLM_TIMEOUT_SECONDS
     raw_timeout = _get_config_value("LLM_TIMEOUT")
@@ -465,7 +491,7 @@ def get_llm_client(
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
-        default_headers=default_headers,
+        default_headers=headers_arg,
         timeout=timeout_seconds,
         max_retries=0,
     )
@@ -542,11 +568,15 @@ def is_bifrost_gateway(base_url: str | None, virtual_key: str | None = None) -> 
 
 def get_gateway_root_url(base_url: str | None = None) -> str:
     """
-    Derive the Bifrost gateway root URL (scheme + host[:port]) from LLM_BASE_URL,
+    Derive the Bifrost gateway root URL (scheme + host[:port]) from BIFROST_URL or LLM_BASE_URL,
     defaulting to http://localhost:8080 when unset or pointing at a direct cloud API.
     """
     load_dotenv(override=False)
-    raw = (base_url if base_url is not None else _get_config_value("LLM_BASE_URL")).strip()
+    raw = (
+        base_url
+        if base_url is not None
+        else (_get_config_value("BIFROST_URL") or _get_config_value("LLM_BASE_URL"))
+    ).strip()
     lower = raw.lower()
     if raw and "api.openai.com" not in lower and "generativelanguage.googleapis.com" not in lower:
         parsed = urlparse(raw)
@@ -585,8 +615,12 @@ def check_gateway_health(base_url: str | None = None, timeout: float = 0.8) -> d
 
     root_url = get_gateway_root_url(base_url)
     health_url = f"{root_url}/health"
+    headers = {"User-Agent": "StaleDetector/1.0"}
+    virtual_key = _get_config_value("LLM_VIRTUAL_KEY") or _get_config_value("BIFROST_VIRTUAL_KEY")
+    if virtual_key:
+        headers["x-bf-vk"] = virtual_key
     try:
-        resp = httpx.get(health_url, timeout=timeout)
+        resp = httpx.get(health_url, headers=headers, timeout=timeout)
         payload = {}
         try:
             data = resp.json()
@@ -827,6 +861,20 @@ def _extract_response_metadata(
         completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
         total_tokens = int(getattr(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens))
 
+    # Gateway specific token usage if reported separately in extra_fields or headers:
+    gw_tokens_raw = (
+        extra_fields.get("tokens")
+        or extra_fields.get("total_tokens")
+        or headers.get("x-bifrost-tokens")
+        or headers.get("x-bifrost-total-tokens")
+    )
+    gateway_tokens = None
+    if gw_tokens_raw is not None:
+        try:
+            gateway_tokens = int(gw_tokens_raw)
+        except (ValueError, TypeError):
+            pass
+
     # 2. Answering provider & model
     ef_provider = str(routing_info.get("provider") or extra_fields.get("provider") or "").strip()
     ef_model = str(routing_info.get("model") or "").strip()
@@ -904,6 +952,7 @@ def _extract_response_metadata(
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": total_tokens,
+        "gateway_tokens": gateway_tokens,
         "simulated_outage": simulated_outage,
         "routing_mode": routing_mode or ("bifrost" if is_use_bifrost() else "direct_gemini"),
         "timestamp": time.strftime("%H:%M:%S"),
@@ -932,7 +981,7 @@ def _invoke_chat_completion(
 
     # Use with_raw_response on real OpenAI clients to capture x-bifrost-* headers;
     # fall back to .create() so standard MagicMock clients in tests work cleanly.
-    if isinstance(client, OpenAI):
+    if isinstance(OpenAI, type) and isinstance(client, OpenAI):
         raw_resp = client.chat.completions.with_raw_response.create(**kwargs)
         parsed = raw_resp.parse()
         headers = dict(raw_resp.headers) if getattr(raw_resp, "headers", None) else {}
@@ -953,12 +1002,13 @@ def _extract_content(response: Any) -> str:
 
 
 def call_llm_with_meta(
-    system_prompt: str,
-    user_prompt: str,
+    system_prompt: str = "",
+    user_prompt: str = "",
     temperature: float = 0.1,
     simulate_outage: bool | None = None,
     task: str | None = None,
     model_override: str | None = None,
+    messages: list[dict] | None = None,
 ) -> tuple[str, dict]:
     """
     Send a chat completion request (via Bifrost native fallbacks or Direct Gemini
@@ -993,10 +1043,11 @@ def call_llm_with_meta(
 
     original_primary = model_chain[0]
     fallback_models = model_chain[1:]
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
+    if messages is None:
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
 
     use_bifrost_cfg = is_use_bifrost()
     outage = (
@@ -1117,6 +1168,58 @@ def call_llm_with_meta(
                     continue
                 break
 
+    # Step 3: Automatic fallback to Direct Gemini when Bifrost Gateway is unreachable
+    if (
+        last_error is not None
+        and use_bifrost_cfg
+        and (_is_gateway_unreachable(last_error) or _is_transport_unreachable(last_error))
+    ):
+        raw_llm_key = _get_config_value("LLM_API_KEY")
+        gemini_key = (
+            _get_config_value("GEMINI_API_KEY")
+            or (raw_llm_key if raw_llm_key and raw_llm_key.lower() != "bifrost-local" else "")
+        )
+        if gemini_key:
+            try:
+                direct_client = OpenAI(
+                    api_key=gemini_key,
+                    base_url=GEMINI_OPENAI_BASE_URL,
+                    timeout=DEFAULT_LLM_TIMEOUT_SECONDS,
+                    max_retries=1,
+                )
+                direct_model = _normalize_gemini_model(original_primary)
+                if not _is_gemini_model(direct_model):
+                    direct_model = DEFAULT_GEMINI_MODEL
+
+                resp, hdrs = _invoke_chat_completion(
+                    client=direct_client,
+                    model=direct_model,
+                    messages=messages,
+                    temperature=temperature,
+                    fallbacks=[],
+                    use_native_fallbacks=False,
+                )
+                content = _extract_content(resp)
+                elapsed_ms = (time.perf_counter() - t0) * 1000.0
+                meta = _extract_response_metadata(
+                    response=resp,
+                    raw_headers=hdrs,
+                    original_primary=original_primary,
+                    requested_model=direct_model,
+                    fallback_models=[],
+                    elapsed_ms=elapsed_ms,
+                    simulated_outage=False,
+                    forced_fallback_used=True,
+                    fallback_target=f"direct_gemini/{direct_model}",
+                    routing_mode="direct_gemini_fallback",
+                    task=task,
+                )
+                meta["gateway_unreachable_fallback"] = True
+                _record_gateway_metrics(meta)
+                return content, meta
+            except Exception:
+                pass
+
     endpoint_label = base_url or "https://api.openai.com/v1"
     friendly_error = format_llm_error(
         last_error or RuntimeError("Unknown LLM error"),
@@ -1125,6 +1228,10 @@ def call_llm_with_meta(
         primary_model=original_primary,
     )
     raise RuntimeError(friendly_error) from last_error
+
+
+# Alias for callers expecting OpenAI-style chat_completion
+chat_completion = call_llm_with_meta
 
 
 def call_llm(

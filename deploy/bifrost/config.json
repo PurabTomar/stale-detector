@@ -1,0 +1,72 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
+  "providers": {
+    "gemini": {
+      "keys": [
+        {
+          "name": "gemini-primary",
+          "value": "env.GEMINI_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ]
+    },
+    "openai": {
+      "keys": [
+        {
+          "name": "openai-primary",
+          "value": "env.OPENAI_API_KEY",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ]
+    }
+  },
+  "governance": {
+    "auth_config": {
+      "is_enabled": true,
+      "admin_username": "env.BIFROST_ADMIN_USERNAME",
+      "admin_password": "env.BIFROST_ADMIN_PASSWORD"
+    },
+    "rate_limits": [
+      {
+        "id": "rl-public-gateway",
+        "request_max_limit": 60,
+        "request_reset_duration": "1h",
+        "token_max_limit": 100000,
+        "token_reset_duration": "1h"
+      }
+    ],
+    "virtual_keys": [
+      {
+        "id": "vk-stale-detector",
+        "name": "stale-detector-key",
+        "value": "env.BIFROST_VIRTUAL_KEY",
+        "description": "Virtual key for Stale-Answer Detector public gateway",
+        "is_active": true,
+        "budgets": [
+          {
+            "max_limit": 5.0,
+            "reset_duration": "1M"
+          }
+        ],
+        "rate_limit_ids": [
+          "rl-public-gateway"
+        ],
+        "provider_configs": [
+          {
+            "provider": "gemini",
+            "allowed_models": ["*"],
+            "key_ids": ["*"]
+          },
+          {
+            "provider": "openai",
+            "allowed_models": ["*"],
+            "key_ids": ["*"]
+          }
+        ]
+      }
+    ]
+  }
+}

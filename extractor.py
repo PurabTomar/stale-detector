@@ -31,6 +31,17 @@ VALID_CATEGORIES = (
     "other",
 )
 
+# Volatility classes for Freshness Detection (PS06 Requirement 1).
+VALID_VOLATILITY_CLASSES = (
+    "price",
+    "api_version",
+    "regulation",
+    "leadership",
+    "company_announcement",
+    "statistic",
+    "stable_fact",
+)
+
 EXTRACTION_SYSTEM_PROMPT = """You are a careful fact-checking assistant.
 Your job is to inspect an LLM-generated answer or article and extract specific,
 independently verifiable factual claims that could become outdated over time
@@ -61,6 +72,12 @@ Each element in the JSON array must be an object with these exact keys:
   lineup) — NEVER label named product claims as "other". Office holder or company leadership
   claims should use "company" or "other".
 - "search_query": A concise, targeted web search query to check the current truth of this claim.
+- "time_sensitivity": Integer from 0 to 100 assessing how rapidly this fact changes over time
+  (e.g., prices 85-95, software/model versions 80-90, corporate/political leadership 75-85,
+  laws and regulations 70-80, statistics 60-75, historical or static physical/geographic facts 0-35).
+- "volatility_class": Must be one of: "price", "api_version", "regulation", "leadership",
+  "company_announcement", "statistic", "stable_fact".
+- "reason": A concise 1-sentence reason explaining why this fact is time-sensitive or stable.
 
 If the text contains no time-sensitive or verifiable factual claims, return [].
 """
@@ -197,6 +214,51 @@ def _infer_product_or_company_category(
     if has_company_term:
         return "company"
     return "other"
+
+
+def assess_claim_volatility(
+    claim_text: str,
+    category: str = "other",
+    span_text: str | None = None,
+) -> tuple[int, str, str]:
+    """
+    Deterministically assess time sensitivity (0-100), volatility class, and
+    explanation for a claim when not provided by the extraction LLM (PS06 Req 1).
+    """
+    clean_claim = str(claim_text or "").strip()
+    clean_cat = str(category or "other").strip().lower()
+    combined = f"{clean_claim} {span_text or ''}".lower()
+
+    # 1. Price volatility
+    if clean_cat == "price" or re.search(r"(\$|€|£|₹|\bcosts?\b|\bprices?\b|\bfee\b|\bstarts? at\b|\bper month\b|\bper year\b)", combined):
+        return 90, "price", "Product and API pricing, subscription tiers, and discounts change frequently."
+
+    # 2. Version / API release volatility
+    if clean_cat in ("version", "api_version") or any(term in combined for term in _PRODUCT_VERSION_TERMS) or bool(_RELEASE_CONTEXT_RE.search(combined)):
+        return 85, "api_version", "Software, frameworks, and model versions evolve with regular releases and deprecations."
+
+    # 3. Regulation / tax volatility
+    if clean_cat == "regulation" or re.search(r"\b(tax|vat|gst|law|act|regulation|mandate|compliance|slab|threshold)\b", combined):
+        return 75, "regulation", "Government regulations, compliance rules, and statutory tax slabs are updated periodically."
+
+    # 4. Leadership / executive volatility
+    if clean_cat in ("company", "leadership") or re.search(r"\b(ceo|cto|cfo|president|prime minister|minister|founder|chief executive|chairman)\b", combined):
+        return 80, "leadership", "Executive leadership, cabinet ministers, and heads of state change over electoral or corporate cycles."
+
+    # 5. Company announcements
+    if bool(_CORPORATE_ACTION_RE.search(combined)) or re.search(r"\b(acquired|merger|announced|launched|partnership|expansion)\b", combined):
+        return 70, "company_announcement", "Corporate announcements and corporate milestones are time-bounded events."
+
+    # 6. Statistics / metrics
+    if clean_cat == "statistic" or re.search(r"\b(percent|%|million|billion|market share|headcount|population|users)\b", combined):
+        return 65, "statistic", "Statistical metrics, market share, and quantitative benchmarks shift over time."
+
+    # 7. Stable facts (historical events with explicit past year, physical constants, basic geography)
+    if re.search(r"\b(in (?:19\d\d|20[01]\d)|world war|invented in|discovered in|founded in (?:18\d\d|19\d\d)|speed of light|highest mountain|capital city)\b", combined):
+        return 15, "stable_fact", "Established historical event, scientific constant, or static geographic fact with minimal expected temporal change."
+
+    # 8. Default fallback
+    return 30, "stable_fact", "General factual statement with low expected temporal volatility."
 
 
 def _extract_word_tokens_for_fidelity(text: str) -> set[str]:
@@ -425,13 +487,32 @@ def _normalize_claims(
 
         search_query = str(item.get("search_query", "")).strip() or claim_text
 
-        entry: dict[str, str] = {
+        entry: dict[str, Any] = {
             "claim": claim_text,
             "category": category,
             "search_query": search_query,
         }
         if matched_span:
             entry["span"] = matched_span
+
+        # Preserve and validate volatility/sensitivity if returned by LLM
+        if "time_sensitivity" in item or "volatility_class" in item or "reason" in item:
+            ts_raw = item.get("time_sensitivity")
+            try:
+                ts_val = int(ts_raw) if ts_raw is not None else None
+            except (ValueError, TypeError):
+                ts_val = None
+            vol_class = str(item.get("volatility_class") or "").strip().lower()
+            if vol_class not in VALID_VOLATILITY_CLASSES:
+                vol_class = None
+            reason_str = str(item.get("reason") or "").strip()
+
+            if ts_val is not None:
+                entry["time_sensitivity"] = max(0, min(100, ts_val))
+            if vol_class:
+                entry["volatility_class"] = vol_class
+            if reason_str:
+                entry["reason"] = reason_str
 
         cleaned_claims.append(entry)
 
@@ -536,4 +617,14 @@ def extract_claims(answer_text: str) -> tuple[list[dict[str, str]], str]:
 
     # Parse and validate the JSON list returned by the LLM.
     parsed = parse_json_response(raw_response)
-    return _normalize_claims(parsed, source_text=answer_text), model_used
+    claims = _normalize_claims(parsed, source_text=answer_text)
+    for c in claims:
+        calc_ts, calc_vol, calc_reason = assess_claim_volatility(
+            c["claim"],
+            c.get("category", "other"),
+            c.get("span"),
+        )
+        c.setdefault("time_sensitivity", calc_ts)
+        c.setdefault("volatility_class", calc_vol)
+        c.setdefault("reason", calc_reason)
+    return claims, model_used

@@ -912,6 +912,8 @@ def build_report_payload(
                 "extracted_url": item.get("extracted_url"),
                 "search_strategy": item.get("search_strategy"),
                 "cache_hit": bool(item.get("cache_hit", False)),
+                "source_origin": str(item.get("source_origin") or ("cached" if item.get("cache_hit") else "live")),
+                "saved_date": item.get("saved_date"),
                 "tavily_credits_used": round(float(item.get("tavily_credits_used") or 0.0), 2),
                 "model": item.get("model") or gw.get("model_used"),
                 "primary_model": item.get("primary_model") or gw.get("primary_model"),

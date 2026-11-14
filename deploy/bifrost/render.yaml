@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: bifrost-gateway
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: APP_PORT
+        value: "10000"
+      - key: PORT
+        value: "10000"
+      - key: APP_HOST
+        value: 0.0.0.0
+      - key: BIFROST_ADMIN_USERNAME
+        value: admin
+      - key: BIFROST_ADMIN_PASSWORD
+        sync: false
+      - key: BIFROST_ENCRYPTION_KEY
+        generateValue: true
+      - key: BIFROST_VIRTUAL_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

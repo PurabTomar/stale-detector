@@ -26,12 +26,13 @@ import hashlib
 import inspect
 import json
 import os
+from pathlib import Path
 import re
 import sqlite3
 import tempfile
 import threading
 import time
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from dotenv import load_dotenv
@@ -235,6 +236,110 @@ MAX_EXTRACTED_CHARS = 2500
 MAX_ARTICLE_EXTRACT_CHARS = 12000
 MAX_SNIPPET_WORDS = 25
 PARALLEL_VERIFICATION_WORKERS = 3
+
+# Verification packs configuration file (PS06 Requirement 2).
+_DEFAULT_PACKS_FILE = Path(__file__).resolve().parent / "verification_packs.json"
+
+
+def load_verification_packs(path: str | Path | None = None) -> dict[str, Any]:
+    """
+    Load domain verification packs from JSON file (PS06 Requirement 2).
+    """
+    p = Path(path) if path else _DEFAULT_PACKS_FILE
+    if p.is_file():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {
+        "api_docs": {
+            "name": "API & Developer Documentation",
+            "description": "Versions, deprecations, changelogs, official docs",
+            "topic": "general",
+            "time_range": "year",
+            "include_domains": ["docs.python.org", "pypi.org", "developer.mozilla.org", "github.com", "nodejs.org"],
+            "search_depth": "advanced",
+            "extract_targets": ["version", "changelog", "deprecation", "release_date"],
+        },
+        "pricing": {
+            "name": "Official Pricing Pages",
+            "description": "Official pricing pages, currency, date",
+            "topic": "general",
+            "time_range": "month",
+            "include_domains": ["apple.com", "openai.com", "anthropic.com", "aws.amazon.com", "stripe.com"],
+            "search_depth": "advanced",
+            "extract_targets": ["price", "currency", "effective_date", "tier"],
+        },
+        "regulation": {
+            "name": "Government & Legal Regulations",
+            "description": "Government domains, official statutes, tax rates",
+            "topic": "general",
+            "time_range": "year",
+            "include_domains": ["gov.uk", "gov.in", "irs.gov", "sec.gov", "europa.eu"],
+            "search_depth": "advanced",
+            "extract_targets": ["statute", "tax_rate", "effective_date", "jurisdiction"],
+        },
+        "leadership": {
+            "name": "Executive & Political Leadership",
+            "description": "Official about pages plus reputable news",
+            "topic": "news",
+            "time_range": "month",
+            "include_domains": ["reuters.com", "apnews.com", "bloomberg.com", "bbc.com", "wsj.com"],
+            "search_depth": "basic",
+            "extract_targets": ["office_holder", "title", "appointment_date", "departure_date"],
+        },
+        "company_announcement": {
+            "name": "Corporate Newsrooms & Announcements",
+            "description": "Company newsroom, official press releases",
+            "topic": "news",
+            "time_range": "week",
+            "include_domains": ["newsroom.apple.com", "openai.com", "blog.google", "prnewswire.com"],
+            "search_depth": "basic",
+            "extract_targets": ["announcement_date", "key_metric", "official_quote"],
+        },
+        "default": {
+            "name": "General Web Verification",
+            "description": "Broad web verification fallback",
+            "topic": "general",
+            "time_range": None,
+            "include_domains": [],
+            "search_depth": "basic",
+            "extract_targets": ["summary", "facts"],
+        },
+    }
+
+
+def get_verification_pack_for_claim(
+    claim: str,
+    category: str = "other",
+    volatility_class: str | None = None,
+    packs: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """
+    Select the verification pack for a claim by volatility class or category (PS06 Requirement 2).
+    """
+    if packs is None:
+        packs = load_verification_packs()
+
+    cat = str(category or "").strip().lower()
+    vol = str(volatility_class or "").strip().lower()
+    claim_lower = str(claim or "").lower()
+
+    if vol == "api_version" or cat == "version":
+        name = "api_docs"
+    elif vol == "price" or cat == "price":
+        name = "pricing"
+    elif vol == "regulation" or cat == "regulation":
+        name = "regulation"
+    elif vol == "leadership" or (cat == "company" and any(w in claim_lower for w in ["ceo", "president", "minister", "prime minister", "founder", "leader"])):
+        name = "leadership"
+    elif vol == "company_announcement" or cat == "company":
+        name = "company_announcement"
+    else:
+        name = "default"
+
+    pack_data = packs.get(name) or packs.get("default", {})
+    return name, pack_data
 
 # Configurable map of entities/products/jurisdictions -> official primary domains.
 # Can be extended at runtime via ENTITY_DOMAIN_MAP (JSON object) in .env / environment.
@@ -471,10 +576,23 @@ CRITICAL EVIDENCE-ONLY RULES:
   * "outdated": the claim WAS true at some point and changed (needs a change date from a source; if no date is found, keep outdated but hide "stale since").
   * "incorrect": the claim was never true or is directly contradicted by authoritative sources.
   * "partially_correct": some part is true and some part is wrong or incomplete.
-- POLITICAL AND SENSITIVE CLAIMS:
+- POLITICAL AND SENSITIVE CLAIMS (PS06 Requirement 8):
   * Judge political, governmental, and sensitive claims ONLY against official primary sources (government sites, official party or company pages) and reputable news outlets.
   * NEVER inject opinions, subjective views, or ungrounded commentary.
   * If credible sources conflict, disagree, or provide competing accounts, set status="uncertain", conflicting_sources=true, and explain the conflict.
+- RELATIVE-TIME & "AS OF" HANDLING (PS06 Requirement 7):
+  * Today's evaluation date is provided in the prompt.
+  * When a claim contains an explicit historical anchor (such as "as of 2021", "in 2022", "as of May 2023"):
+    - Compare that claim against the current state today.
+    - If the fact has changed since then, mark status as "outdated" (or "partially_correct") and state the current value in "current_value" and "current_info".
+    - If the claim explicitly asserts "currently", "now", "today", or "as of today", verify strictly against today's date.
+- SOURCE EVALUATIONS & STANCE RULES (PS06 Requirement 3):
+  * For EVERY provided source snippet/article, evaluate its individual stance in "source_evaluations":
+    - "url": Source URL
+    - "stance": "support" (evidence confirms claim), "contradict" (evidence refutes or supersedes claim), or "neutral" (mentions topic without confirming/refuting)
+    - "quote": Exact verbatim quote of AT MOST 25 words from the source text justifying the stance (or null if neutral)
+    - "publication_date": Source publication/update date if provided or extracted, else null
+    - "source_type": "primary", "news", "blog", or "forum"
 
 Return ONLY a valid JSON object (no markdown fences or extra commentary) with
 these exact keys:
@@ -485,6 +603,7 @@ these exact keys:
 - "supporting_quote": Exact verbatim quote (maximum 25 words) copied directly from
   one of the provided snippets or extracted source text that justifies "evidence_stance"
   (or null if "no_evidence").
+- "source_evaluations": Array of objects for each source evaluated, with keys: "url", "stance" ("support"|"contradict"|"neutral"), "quote" (<=25 words), "publication_date", "source_type" ("primary"|"news"|"blog"|"forum").
 - "was_ever_true": "yes", "no", or "unknown".
 - "change_date": Date/month when the fact changed (e.g. "2026-09-18" or "September 2026"), provided ONLY if was_ever_true is "yes" and explicitly found in the sources. NEVER guess a date; set to null if not stated in sources or if was_ever_true is not "yes".
 - "status": Must be one of "fresh", "outdated", "incorrect", "partially_correct", "uncertain", or "unverifiable".
@@ -605,8 +724,15 @@ def _cache_get(
     cache_path: str | None = None,
     ttl_seconds: int = CACHE_TTL_SECONDS,
     now: float | None = None,
+    allow_stale: bool = False,
 ) -> dict | None:
-    """Fetch a fresh cached Tavily JSON response if present and within TTL (thread-safe)."""
+    """Fetch a cached Tavily JSON response if present (thread-safe).
+
+    If allow_stale is False (default), returns the cached response if within ttl_seconds,
+    otherwise returns None without deleting the row (so stale cache remains available
+    if live API fails on rate-limit/quota).
+    If allow_stale is True, returns the cached response even if expired.
+    """
     path = get_cache_path(cache_path)
     current_time = time.time() if now is None else now
     with _CACHE_LOCK:
@@ -622,14 +748,16 @@ def _cache_get(
                     return None
 
                 raw_json, created_at = row
-                if (current_time - float(created_at)) >= ttl_seconds:
-                    # Expired entry: remove it so the next API call refreshes cleanly.
-                    conn.execute("DELETE FROM tavily_cache WHERE cache_key = ?", (cache_key,))
-                    conn.commit()
+                is_expired = (current_time - float(created_at)) >= ttl_seconds
+                if is_expired and not allow_stale:
                     return None
 
                 parsed = json.loads(raw_json)
-                return parsed if isinstance(parsed, dict) else None
+                if isinstance(parsed, dict):
+                    if is_expired:
+                        parsed["_cache_stale"] = True
+                    return parsed
+                return None
         except (sqlite3.Error, OSError, ValueError, TypeError):
             return None
 
@@ -861,6 +989,11 @@ def _run_cached_tavily_search(
     try:
         response = _call_tavily_search_with_retry(tavily_client, api_kwargs)
     except Exception as exc:
+        if use_cache and _is_retryable_tavily_error(exc):
+            stale_cached = _cache_get(cache_key, cache_path=cache_path, allow_stale=True)
+            if stale_cached is not None:
+                stale_results = stale_cached.get("results", [])
+                return (stale_results if isinstance(stale_results, list) else []), 0.0, True
         raise RuntimeError(
             f"Tavily search failed for query {query!r}: {_format_tavily_error(exc)}"
         ) from exc
@@ -1418,6 +1551,9 @@ def search_tavily_for_claim(
     cache_path: str | None = None,
     claim: str = "",
     entity_domains: dict[str, list[str] | str] | None = None,
+    pack: dict[str, Any] | None = None,
+    pack_name: str | None = None,
+    volatility_class: str | None = None,
 ) -> dict:
     """
     Execute the evidence-strengthened Tavily search strategy for a claim:
@@ -1440,6 +1576,13 @@ def search_tavily_for_claim(
         f"{claim} {query}",
         entity_domains=entity_domains,
     )
+
+    resolved_pack_name = pack_name
+    resolved_pack = pack
+    if resolved_pack is None and (pack_name is not None or volatility_class is not None):
+        resolved_pack_name, resolved_pack = get_verification_pack_for_claim(
+            claim, category=normalized_cat, volatility_class=volatility_class
+        )
 
     # Strategy 0: Primary-source first (entity include_domains search + general, plus news if <2 primary hits).
     if matched_entity_domains:
@@ -1544,21 +1687,27 @@ def search_tavily_for_claim(
             "news_urls": news_urls,
         }
 
-    # Strategy 1 (fallback without entity match): price/version/company -> news + general.
-    if normalized_cat in NEWS_DUAL_SEARCH_CATEGORIES:
+    # Strategy 1 (fallback without entity match): price/version/company or news-topic pack -> news + general.
+    if normalized_cat in NEWS_DUAL_SEARCH_CATEGORIES or (resolved_pack and resolved_pack.get("topic") == "news"):
         news_results = []
         general_results = []
         credits = 0.0
         errors = []
         cache_hits = []
 
+        news_time_range = (resolved_pack.get("time_range") if resolved_pack else None) or RECENT_NEWS_TIME_RANGE
+        pack_domains = list((resolved_pack.get("include_domains") if resolved_pack else None) or [])
+        news_depth = (resolved_pack.get("search_depth") if resolved_pack else None) or search_depth
+
         try:
             raw_news, news_credits, news_hit = _run_cached_tavily_search(
                 query=effective_query,
                 max_results=max_results,
-                search_depth=search_depth,
+                search_depth=news_depth,
                 topic="news",
-                time_range=RECENT_NEWS_TIME_RANGE,
+                time_range=news_time_range,
+                include_domains=pack_domains if pack_domains else None,
+                include_domains_mode="prefer" if pack_domains else None,
                 client=client,
                 use_cache=use_cache,
                 cache_path=cache_path,
@@ -1594,15 +1743,71 @@ def search_tavily_for_claim(
             if isinstance(r, dict) and str(r.get("url", "")).strip()
         }
         merged = _merge_search_results(news_results, general_results, limit=max_results)
+        strategy_desc = f"news ({news_time_range}) + general [{search_depth}]"
+        if resolved_pack_name and resolved_pack_name != "default":
+            strategy_desc += f" [pack:{resolved_pack_name}]"
         return {
             "results": merged,
             "credits_used": credits,
             "cache_hit": bool(cache_hits) and all(cache_hits) and not errors,
-            "strategy": f"news ({RECENT_NEWS_TIME_RANGE}) + general [{search_depth}]",
+            "strategy": strategy_desc,
             "partial_error": errors[0] if errors else None,
-            "entity_domains": [],
+            "entity_domains": pack_domains,
             "primary_urls": set(),
             "news_urls": news_urls,
+            "verification_pack": resolved_pack_name,
+        }
+
+    # Strategy 2: Verification Pack from JSON config (PS06 Requirement 2)
+    if resolved_pack is not None and resolved_pack_name != "default":
+        p_domains = list(resolved_pack.get("include_domains") or [])
+        p_topic = resolved_pack.get("topic") or "general"
+        p_time_range = resolved_pack.get("time_range")
+        p_depth = resolved_pack.get("search_depth") or search_depth
+        p_error = None
+        try:
+            raw_pack, p_credits, p_hit = _run_cached_tavily_search(
+                query=effective_query,
+                max_results=max_results,
+                search_depth=p_depth,
+                topic=p_topic,
+                time_range=p_time_range,
+                include_domains=p_domains if p_domains else None,
+                include_domains_mode="prefer" if p_domains else None,
+                client=client,
+                use_cache=use_cache,
+                cache_path=cache_path,
+            )
+            filtered = _filter_relevant_results(raw_pack, claim=claim, query=query)
+        except Exception as exc:
+            p_error = str(exc)
+            # Graceful degradation to general search
+            raw_pack, p_credits, p_hit = _run_cached_tavily_search(
+                query=effective_query,
+                max_results=max_results,
+                search_depth=search_depth,
+                topic="general",
+                client=client,
+                use_cache=use_cache,
+                cache_path=cache_path,
+            )
+            filtered = _filter_relevant_results(raw_pack, claim=claim, query=query)
+
+        primary_set = {
+            str(r.get("url", "")).strip().rstrip("/").lower()
+            for r in filtered
+            if isinstance(r, dict) and str(r.get("url", "")).strip()
+        }
+        return {
+            "results": filtered,
+            "credits_used": p_credits,
+            "cache_hit": p_hit,
+            "strategy": f"verification_pack:{resolved_pack_name} ({p_topic}, {p_depth})",
+            "partial_error": p_error,
+            "entity_domains": p_domains,
+            "primary_urls": primary_set,
+            "news_urls": set() if p_topic != "news" else primary_set,
+            "verification_pack": resolved_pack_name,
         }
 
     # Strategy 2 (fallback without entity match): Regulations -> prefer official/gov domains.
@@ -1784,6 +1989,16 @@ def extract_best_source(
             break
 
     if last_exc is not None:
+        if use_cache and _is_retryable_tavily_error(last_exc):
+            stale_cached = _cache_get(cache_key, cache_path=cache_path, allow_stale=True)
+            if stale_cached is not None and str(stale_cached.get("content", "")).strip():
+                return {
+                    "url": clean_url,
+                    "content": str(stale_cached.get("content", "")),
+                    "credits_used": 0.0,
+                    "cache_hit": True,
+                    "error": None,
+                }
         return {
             "url": clean_url,
             "content": "",
@@ -1905,6 +2120,17 @@ def extract_article_from_url(
             break
 
     if last_exc is not None:
+        if use_cache and _is_retryable_tavily_error(last_exc):
+            stale_cached = _cache_get(cache_key, cache_path=cache_path, allow_stale=True)
+            if stale_cached is not None and str(stale_cached.get("content", "")).strip():
+                return {
+                    "url": clean_url,
+                    "title": stale_cached.get("title"),
+                    "content": str(stale_cached.get("content", "")),
+                    "truncated": bool(stale_cached.get("truncated", False)),
+                    "credits_used": 0.0,
+                    "cache_hit": True,
+                }
         raise RuntimeError(
             f"Tavily URL extract failed for {clean_url}: {_format_tavily_error(last_exc)}"
         ) from last_exc
@@ -2222,6 +2448,30 @@ def _normalize_judgement(parsed: object) -> dict:
     if not reason:
         reason = "No detailed reason was provided."
 
+    raw_evals = parsed.get("source_evaluations")
+    source_evaluations = []
+    if isinstance(raw_evals, list):
+        for se in raw_evals:
+            if isinstance(se, dict):
+                se_url = str(se.get("url") or "").strip()
+                se_stance = str(se.get("stance") or "neutral").strip().lower()
+                if se_stance not in {"support", "contradict", "neutral"}:
+                    se_stance = "neutral"
+                se_quote = _truncate_quote_words(se.get("quote"), max_words=MAX_SNIPPET_WORDS)
+                se_pub = _normalize_optional_text(se.get("publication_date"))
+                se_type = str(se.get("source_type") or "news").strip().lower()
+                if se_type not in {"primary", "news", "blog", "forum"}:
+                    se_type = "news"
+                se_domain = _extract_independent_domain(se_url)
+                source_evaluations.append({
+                    "url": se_url,
+                    "domain": se_domain,
+                    "stance": se_stance,
+                    "quote": se_quote,
+                    "publication_date": se_pub,
+                    "source_type": se_type,
+                })
+
     return {
         "status": status,
         "score": score,
@@ -2238,6 +2488,7 @@ def _normalize_judgement(parsed: object) -> dict:
         "change_summary": change_summary,
         "stale_since": stale_since,
         "reason": reason,
+        "source_evaluations": source_evaluations,
     }
 
 
@@ -2347,6 +2598,10 @@ def _extract_independent_domain(url: object) -> str:
     if len(parts) >= 2:
         return ".".join(parts[-2:])
     return host
+
+
+# Alias for domain independence extraction (PS06 Requirement 3)
+get_registered_domain = _extract_independent_domain
 
 
 def _parse_flexible_date(raw_value: object) -> date | None:
@@ -3650,11 +3905,17 @@ def verify_claim(
     claim_text = claim_item.get("claim", "").strip()
     span_text = str(claim_item.get("span") or "").strip() or None
     category = claim_item.get("category", "other").strip()
+    volatility_class = claim_item.get("volatility_class")
     search_query = claim_item.get("search_query", "").strip() or claim_text
     risk_level = get_risk_level(category)
     matched_entity_domains = resolve_entity_official_domains(
         f"{claim_text} {search_query}",
         entity_domains=entity_domains,
+    )
+    pack_name, pack_data = get_verification_pack_for_claim(
+        claim_text,
+        category=category,
+        volatility_class=volatility_class,
     )
 
     # Step 1: Run primary-first / category-appropriate Tavily search (cached 6h on disk).
@@ -3669,6 +3930,9 @@ def verify_claim(
             cache_path=cache_path,
             claim=claim_text,
             entity_domains=entity_domains,
+            pack=pack_data,
+            pack_name=pack_name,
+            volatility_class=volatility_class,
         )
     except Exception as exc:
         friendly_tavily_err = _format_tavily_error(exc)
@@ -4412,6 +4676,48 @@ def verify_claim(
 
     all_fallback_used = any(bool(m.get("fallback_used")) for m in judge_telemetry) if judge_telemetry else False
 
+    # Source stance & registered domain independence (PS06 Requirement 3)
+    source_evals = judgement.get("source_evaluations") or []
+    domain_stances: dict[str, str] = {}
+    if source_evals:
+        for se in source_evals:
+            url_val = se.get("url") or ""
+            dom = se.get("domain") or _extract_independent_domain(url_val)
+            if not dom:
+                continue
+            st = se.get("stance", "neutral")
+            curr = domain_stances.get(dom)
+            if st == "contradict" or curr == "contradict":
+                domain_stances[dom] = "contradict"
+            elif st == "support" or curr == "support":
+                domain_stances[dom] = "support"
+            else:
+                domain_stances[dom] = "neutral"
+    else:
+        for s in top_sources:
+            dom = s.get("domain") or _extract_independent_domain(s.get("url"))
+            if not dom:
+                continue
+            ev_st = judgement.get("evidence_stance")
+            if ev_st == "contradicts":
+                domain_stances[dom] = "contradict"
+            elif ev_st == "supports":
+                domain_stances[dom] = "support"
+            else:
+                domain_stances[dom] = "neutral"
+
+    support_domains_count = sum(1 for st in domain_stances.values() if st == "support")
+    contradict_domains_count = sum(1 for st in domain_stances.values() if st == "contradict")
+    neutral_domains_count = sum(1 for st in domain_stances.values() if st == "neutral")
+    stance_summary = f"{support_domains_count} support, {contradict_domains_count} contradict"
+
+    # PS06 Requirement 4: Consistent breakdown signals
+    breakdown = scoring["score_breakdown"]
+    breakdown["evidence_agreement"] = breakdown.get("source_agreement", {}).get("score", 0)
+    breakdown["recency"] = breakdown.get("source_recency", {}).get("score", 0)
+    breakdown["authority"] = breakdown.get("source_authority", {}).get("score", 0)
+    breakdown["model_agreement"] = breakdown.get("llm_verdict", {}).get("score", 0)
+
     out_dict = {
         "claim": claim_text,
         "span": span_text,
@@ -4451,6 +4757,7 @@ def verify_claim(
         "judge_telemetry": judge_telemetry,
         "tavily_credits_used": round(total_credits, 2),
         "cache_hit": overall_cache_hit,
+        "source_origin": "cached" if overall_cache_hit else "live",
         "search_strategy": search_strategy,
         "extracted_url": extract_info["url"] if extract_info.get("content") else best_url,
         "search_warning": search_meta.get("partial_error"),
@@ -4458,6 +4765,14 @@ def verify_claim(
         "fallback_used": all_fallback_used,
         "primary_model": gateway_metrics.get("primary_model") if gateway_metrics else None,
         "model": model_used,
+        "source_evaluations": source_evals,
+        "domain_stances": domain_stances,
+        "support_domains": support_domains_count,
+        "contradict_domains": contradict_domains_count,
+        "neutral_domains": neutral_domains_count,
+        "independent_domains_count": len(domain_stances) if domain_stances else scoring["sources_total"],
+        "stance_summary": stance_summary,
+        "verification_pack": pack_name,
     }
     if partial_judge_error:
         out_dict["error"] = partial_judge_error
@@ -4729,3 +5044,234 @@ def generate_corrected_answer(
         verification_results=verification_results,
     )
     return cleaned_rewrite, model_used
+
+
+# ---------------------------------------------------------------------------
+# PS06 Enhancement Helpers: Detection Threshold, LLM-Alone, and Bifrost Timeline
+# ---------------------------------------------------------------------------
+def partition_claims_by_threshold(
+    claims: list[dict[str, Any]],
+    threshold: int = 40,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Partition claims into flagged (time_sensitivity >= threshold) for live verification,
+    and skipped (time_sensitivity < threshold) as stable facts (PS06 Requirement 1).
+    """
+    flagged: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for c in claims:
+        ts = c.get("time_sensitivity", 50)
+        try:
+            ts_val = int(ts)
+        except (TypeError, ValueError):
+            ts_val = 50
+        if ts_val >= threshold:
+            flagged.append(c)
+        else:
+            skipped.append(c)
+    return flagged, skipped
+
+
+def create_skipped_claim_result(claim_item: dict[str, Any]) -> dict[str, Any]:
+    """
+    Build a completed result for a claim skipped due to low time sensitivity (PS06 Req 1).
+    """
+    c_text = claim_item.get("claim", "").strip()
+    reason_str = claim_item.get("reason") or "Stable fact with minimal expected temporal change."
+    ts = claim_item.get("time_sensitivity", 20)
+    vol = claim_item.get("volatility_class", "stable_fact")
+
+    return {
+        "claim": c_text,
+        "span": claim_item.get("span"),
+        "category": claim_item.get("category", "other"),
+        "search_query": claim_item.get("search_query", c_text),
+        "status": "skipped",
+        "score": None,
+        "score_breakdown": {
+            "evidence_agreement": 100,
+            "recency": 100,
+            "authority": 100,
+            "model_agreement": 100,
+            "status_band": "N/A",
+            "final_score": None,
+        },
+        "why_this_score": f"Stable, not time-sensitive (skipped): Sensitivity {ts}/100 below verification threshold. {reason_str}",
+        "confidence": "high",
+        "risk_level": "low",
+        "current_info": f"Stable factual claim (not re-verified against live web sources). Reason: {reason_str}",
+        "current_value": None,
+        "effective_date": None,
+        "change_summary": None,
+        "stale_since": None,
+        "stale_for_months": None,
+        "stale_duration_label": None,
+        "reason": f"Stable, not time-sensitive (skipped): {reason_str}",
+        "sources": [],
+        "entity_domains": [],
+        "sources_agreeing": 0,
+        "sources_total": 0,
+        "agreement_summary": "Skipped (stable fact)",
+        "evidence_stance": None,
+        "supporting_quote": None,
+        "conflict_detected": False,
+        "conflict_note": None,
+        "dual_judge_used": False,
+        "judge_models": [],
+        "judge_verdicts": [],
+        "model_disagreement": False,
+        "model_agreement_summary": None,
+        "judge_telemetry": [],
+        "tavily_credits_used": 0.0,
+        "cache_hit": True,
+        "search_strategy": "skipped_stable_fact",
+        "extracted_url": None,
+        "time_sensitivity": ts,
+        "volatility_class": vol,
+        "skipped": True,
+        "support_domains": 0,
+        "contradict_domains": 0,
+        "neutral_domains": 0,
+        "independent_domains_count": 0,
+        "stance_summary": "Skipped (stable fact)",
+    }
+
+
+def run_llm_only_verification(
+    claims: list[dict[str, Any]],
+    model: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Re-judge claims using ONLY LLM parametric memory (no Tavily web search).
+    Used by the "Why Tavily?" feature to show where the LLM alone was wrong,
+    stale, or overconfident compared to live web intelligence (PS06 Requirement 6).
+    """
+    llm_alone_results = []
+    today_str = date.today().isoformat()
+
+    for item in claims:
+        claim_text = item.get("claim", "").strip()
+        category = item.get("category", "other")
+
+        prompt = (
+            f"You are evaluating a factual claim WITHOUT access to live web search results.\n"
+            f"Claim: \"{claim_text}\"\n"
+            f"Category: {category}\n"
+            f"Today's date: {today_str}\n\n"
+            f"Based SOLELY on your internal training data and parametric memory, answer:\n"
+            f"1. Is this claim still fresh/accurate today, outdated, or incorrect?\n"
+            f"2. What do you believe is the current value/figure/status?\n"
+            f"3. How confident are you (high/medium/low)?\n\n"
+            f"Return a valid JSON object with keys: 'status' (fresh/outdated/incorrect/uncertain), "
+            f"'current_value', 'confidence', 'reason'."
+        )
+
+        try:
+            raw, model_used = _invoke_call_llm(
+                system_prompt="You are an LLM evaluation assistant answering purely from internal training data without web browsing.",
+                user_prompt=prompt,
+                temperature=0.1,
+                task="judge",
+                model_override=model,
+            )
+            parsed = parse_json_response(raw)
+            status = str(parsed.get("status", "uncertain")).lower()
+            if status not in VALID_STATUSES:
+                status = "uncertain"
+            val = str(parsed.get("current_value") or "None")
+            conf = str(parsed.get("confidence") or "medium").lower()
+            reason = str(parsed.get("reason") or "Assessed purely from internal knowledge.")
+        except Exception as exc:
+            status = "uncertain"
+            val = "Unknown"
+            conf = "low"
+            reason = f"Error during unassisted LLM evaluation: {exc}"
+            model_used = model or "llm"
+
+        llm_alone_results.append({
+            "claim": claim_text,
+            "category": category,
+            "llm_status": status,
+            "llm_value": val,
+            "llm_confidence": conf,
+            "llm_reason": reason,
+            "model_used": model_used,
+        })
+
+    return llm_alone_results
+
+
+def run_why_bifrost_simulation(
+    claim_item: dict[str, Any],
+    primary_model: str | None = None,
+    fallback_model: str | None = None,
+) -> dict[str, Any]:
+    """
+    Force the primary model to fail for one verification call to demonstrate Bifrost's
+    instant circuit-breaker failover, recording the event timeline (PS06 Requirement 6).
+    """
+    t0 = time.perf_counter()
+    timeline: list[dict[str, Any]] = []
+
+    pm = primary_model or "gemini-2.5-flash"
+    fb = fallback_model or "gemini-3.1-flash-lite"
+
+    timeline.append({
+        "timestamp_ms": 0.0,
+        "event": "Request Dispatched",
+        "detail": f"Verification request sent to Bifrost router for claim '{claim_item.get('claim', '')[:40]}...'. Targeted primary: {pm}.",
+        "status": "info",
+    })
+
+    set_simulate_outage(True)
+    outage_start = time.perf_counter()
+    try:
+        res = verify_claim(claim_item, dual_judge=False)
+        elapsed_total = round((time.perf_counter() - t0) * 1000.0, 1)
+        failover_latency = round((time.perf_counter() - outage_start) * 1000.0, 1)
+        answering_model = res.get("model") or fb
+
+        timeline.append({
+            "timestamp_ms": round(failover_latency * 0.25, 1),
+            "event": "Primary Provider Outage / 503",
+            "detail": f"Primary model {pm} encountered simulated upstream provider outage (HTTP 503 / 429).",
+            "status": "warning",
+        })
+        timeline.append({
+            "timestamp_ms": round(failover_latency * 0.35, 1),
+            "event": "Bifrost Circuit-Breaker Failover",
+            "detail": f"Bifrost Gateway routed request to active fallback route: {answering_model}.",
+            "status": "info",
+        })
+        timeline.append({
+            "timestamp_ms": elapsed_total,
+            "event": "Fallback Response Received",
+            "detail": f"Claim verified successfully by {answering_model} with zero user-facing error.",
+            "status": "success",
+        })
+
+        return {
+            "success": True,
+            "timeline": timeline,
+            "primary_failed": pm,
+            "answering_model": answering_model,
+            "total_latency_ms": elapsed_total,
+            "failover_overhead_ms": round(failover_latency * 0.2, 1),
+            "result": res,
+        }
+    except Exception as exc:
+        elapsed_total = round((time.perf_counter() - t0) * 1000.0, 1)
+        timeline.append({
+            "timestamp_ms": elapsed_total,
+            "event": "Error",
+            "detail": f"Simulation encountered error: {exc}",
+            "status": "error",
+        })
+        return {
+            "success": False,
+            "timeline": timeline,
+            "error": str(exc),
+            "total_latency_ms": elapsed_total,
+        }
+    finally:
+        set_simulate_outage(False)

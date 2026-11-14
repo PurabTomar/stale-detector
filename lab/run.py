@@ -42,7 +42,7 @@ def main() -> int:
         "--scenarios",
         type=str,
         default="clean",
-        help="Comma-separated test scenarios (default: 'clean').",
+        help="Comma-separated test scenarios: clean, broken_tool, unavailable_model, misleading_instructions (or 'all').",
     )
     parser.add_argument(
         "--concurrency",
@@ -119,6 +119,15 @@ def main() -> int:
     if not args.dry_run:
         print(f"\n[Agent Lab] Finished benchmark run. Processed {len(records)} new run(s).")
         print(f"[Agent Lab] Results saved to: {args.results}")
+        try:
+            from lab.scoring import generate_benchmark_exports
+            summary_p = Path(args.results).parent / "summary.json"
+            csv_p = Path(args.results).parent / "leaderboard.csv"
+            generate_benchmark_exports(args.results, summary_p, csv_p)
+            print(f"[Agent Lab] Summary updated at: {summary_p}")
+            print(f"[Agent Lab] Leaderboard CSV exported to: {csv_p}")
+        except Exception as exc:
+            print(f"[Agent Lab Warning] Could not export summary/leaderboard: {exc}")
 
     return 0
 

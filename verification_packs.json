@@ -1,0 +1,109 @@
+{
+  "api_docs": {
+    "name": "API & Developer Documentation",
+    "description": "Versions, deprecations, changelogs, and official documentation",
+    "topic": "general",
+    "time_range": "year",
+    "include_domains": [
+      "docs.python.org",
+      "pypi.org",
+      "developer.mozilla.org",
+      "github.com",
+      "nodejs.org",
+      "react.dev",
+      "nextjs.org",
+      "platform.openai.com",
+      "cloud.google.com",
+      "docs.anthropic.com",
+      "go.dev",
+      "rust-lang.org"
+    ],
+    "search_depth": "advanced",
+    "extract_targets": ["version", "changelog", "deprecation", "release_date"]
+  },
+  "pricing": {
+    "name": "Official Pricing Pages",
+    "description": "Official pricing pages, currency, subscription tiers, and effective dates",
+    "topic": "general",
+    "time_range": "month",
+    "include_domains": [
+      "apple.com",
+      "openai.com",
+      "anthropic.com",
+      "aws.amazon.com",
+      "azure.microsoft.com",
+      "google.com",
+      "github.com",
+      "pricing.github.com",
+      "stripe.com",
+      "microsoft.com"
+    ],
+    "search_depth": "advanced",
+    "extract_targets": ["price", "currency", "effective_date", "tier"]
+  },
+  "regulation": {
+    "name": "Government & Legal Regulations",
+    "description": "Government domains, official statutes, tax rates, and regulatory mandates",
+    "topic": "general",
+    "time_range": "year",
+    "include_domains": [
+      "gov.uk",
+      "gov.in",
+      "irs.gov",
+      "sec.gov",
+      "europa.eu",
+      "fda.gov",
+      "whitehouse.gov",
+      "cbic.gov.in",
+      "legislation.gov.uk",
+      "federalregister.gov"
+    ],
+    "search_depth": "advanced",
+    "extract_targets": ["statute", "tax_rate", "effective_date", "jurisdiction"]
+  },
+  "leadership": {
+    "name": "Executive & Political Leadership",
+    "description": "Official leadership/about pages plus reputable international news agencies",
+    "topic": "news",
+    "time_range": "month",
+    "include_domains": [
+      "reuters.com",
+      "apnews.com",
+      "bloomberg.com",
+      "bbc.com",
+      "wsj.com",
+      "ft.com",
+      "cnbc.com",
+      "wikipedia.org",
+      "pmindia.gov.in",
+      "whitehouse.gov"
+    ],
+    "search_depth": "basic",
+    "extract_targets": ["office_holder", "title", "appointment_date", "departure_date"]
+  },
+  "company_announcement": {
+    "name": "Corporate Newsrooms & Announcements",
+    "description": "Company newsrooms, official press releases, and corporate statements",
+    "topic": "news",
+    "time_range": "week",
+    "include_domains": [
+      "newsroom.apple.com",
+      "openai.com",
+      "blog.google",
+      "press.aboutamazon.com",
+      "prnewswire.com",
+      "businesswire.com"
+    ],
+    "search_depth": "basic",
+    "extract_targets": ["announcement_date", "key_metric", "official_quote"]
+  },
+  "default": {
+    "name": "General Web Verification",
+    "description": "General fallback web verification strategy",
+    "topic": "general",
+    "time_range": null,
+    "include_domains": [],
+    "search_depth": "basic",
+    "extract_targets": ["summary", "facts"]
+  }
+}

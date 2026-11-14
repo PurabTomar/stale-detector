@@ -686,6 +686,48 @@ div[data-testid="stHorizontalBlock"] > div:nth-child(6) [data-testid="stMetric"]
   color: var(--status-unverifiable-text);
   border: 1px solid var(--status-unverifiable-border);
 }
+.pill-skipped {
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #CBD5E1;
+}
+
+.sad-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding-left: 0.5rem;
+}
+.sad-timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.sad-timeline-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.sad-timeline-dot.info { background: #3B82F6; }
+.sad-timeline-dot.warning { background: #F59E0B; }
+.sad-timeline-dot.success { background: #10B981; }
+.sad-timeline-dot.error { background: #EF4444; }
+.sad-timeline-content {
+  display: flex;
+  flex-direction: column;
+}
+.sad-timeline-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text-main);
+}
+.sad-timeline-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
 
 .sad-cat-badge, .sad-meta-pill {
   display: inline-flex;
@@ -852,6 +894,32 @@ div[data-testid="stHorizontalBlock"] > div:nth-child(6) [data-testid="stMetric"]
   background: #F1F5F9;
   color: #64748B;
   border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+.sad-src-stance {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: 4px;
+}
+.sad-src-stance.support {
+  background: #DCFCE7;
+  color: #16A34A;
+  border: 1px solid #86EFAC;
+}
+.sad-src-stance.contradict {
+  background: #FEE2E2;
+  color: #DC2626;
+  border: 1px solid #FCA5A5;
+}
+.sad-src-stance.neutral {
+  background: #F1F5F9;
+  color: #64748B;
+  border: 1px solid #CBD5E1;
 }
 
 /* Evidence Snippets */
@@ -1181,4 +1249,196 @@ div[data-testid="stHorizontalBlock"] > div:nth-child(6) [data-testid="stMetric"]
   div.stButton > button, div.stDownloadButton > button {
     min-height: 44px !important;
   }
+  .sad-claim-card {
+    padding: 1rem 0.75rem !important;
+  }
+  .sad-timeline-strip {
+    font-size: 0.72rem !important;
+    gap: 4px !important;
+    padding: 4px 8px !important;
+  }
+  .sad-claim-badges {
+    gap: 4px !important;
+  }
+  [data-testid="stMetric"] {
+    padding: 0.5rem !important;
+  }
+}
+
+/* 16. Accessibility: Focus Outlines & Polish */
+:focus-visible {
+  outline: 2px solid var(--primary-color, #5B5BF0) !important;
+  outline-offset: 2px !important;
+}
+
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex="0"]:focus-visible {
+  outline: 2px solid var(--primary-color, #5B5BF0) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 3px rgba(91, 91, 240, 0.25) !important;
+}
+
+/* 17. Claim Card Status Colors & Top Explanation Banner */
+.sad-claim-card.status-fresh {
+  border-top: 3px solid #16A34A !important;
+}
+.sad-claim-card.status-outdated {
+  border-top: 3px solid #EA580C !important;
+}
+.sad-claim-card.status-incorrect {
+  border-top: 3px solid #DC2626 !important;
+}
+.sad-claim-card.status-partially-correct,
+.sad-claim-card.status-partially_correct {
+  border-top: 3px solid #D97706 !important;
+}
+.sad-claim-card.status-uncertain {
+  border-top: 3px solid #475569 !important;
+}
+.sad-claim-card.status-unverifiable {
+  border-top: 3px solid #6B7280 !important;
+}
+
+.sad-claim-top-explanation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+.sad-claim-top-explanation.fresh {
+  background: #DCFCE7;
+  color: #166534;
+  border: 1px solid rgba(22, 163, 74, 0.25);
+}
+.sad-claim-top-explanation.outdated {
+  background: #FFEDD5;
+  color: #9A3412;
+  border: 1px solid rgba(234, 88, 12, 0.25);
+}
+.sad-claim-top-explanation.incorrect {
+  background: #FEE2E2;
+  color: #991B1B;
+  border: 1px solid rgba(220, 38, 38, 0.25);
+}
+.sad-claim-top-explanation.partially-correct {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+.sad-claim-top-explanation.uncertain {
+  background: #E2E8F0;
+  color: #1E293B;
+  border: 1px solid rgba(71, 85, 105, 0.25);
+}
+.sad-claim-top-explanation.unverifiable {
+  background: #F3F4F6;
+  color: #374151;
+  border: 1px solid rgba(107, 114, 128, 0.25);
+}
+
+/* 18. Claim Card Timeline Strip */
+.sad-timeline-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--bg-secondary, #F8FAFC);
+  border: 1px solid var(--border-main, #E5E7EF);
+  border-radius: 8px;
+  padding: 6px 12px;
+  margin: 10px 0;
+  font-size: 0.78rem;
+}
+.sad-timeline-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--text-main, #0F172A);
+}
+.sad-timeline-step .timing {
+  color: var(--text-muted, #64748B);
+  font-weight: 400;
+  font-size: 0.72rem;
+}
+.sad-timeline-arrow {
+  color: #94A3B8;
+  font-size: 0.75rem;
+  margin: 0 2px;
+}
+
+/* 19. Confidence Meter */
+.sad-confidence-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+.sad-conf-bar {
+  width: 4px;
+  height: 10px;
+  border-radius: 1px;
+  background: #CBD5E1;
+}
+.sad-conf-bar.active-high {
+  background: #16A34A;
+}
+.sad-conf-bar.active-med {
+  background: #D97706;
+}
+.sad-conf-bar.active-low {
+  background: #DC2626;
+}
+
+/* 20. Source Chips Primary Badge */
+.sad-primary-badge {
+  background: #4338CA;
+  color: #FFFFFF;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  margin-right: 4px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* 21. Skeleton Loaders & Shimmer */
+@keyframes sad-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.sad-skeleton {
+  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+  background-size: 200% 100%;
+  animation: sad-shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+/* 22. Guided Demo Walkthrough Banner */
+.sad-guided-demo-banner {
+  background: linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 100%);
+  border: 1px solid #C7D2FE;
+  border-radius: 12px;
+  padding: 12px 18px;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.sad-guided-step-badge {
+  background: #4F46E5;
+  color: white;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
 }

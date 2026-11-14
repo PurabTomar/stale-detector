@@ -104,6 +104,8 @@ class StepRecord:
     latency_ms: float = 0.0
     cache_hit: bool = False
     error: str | None = None
+    gateway_tokens: int | None = None
+    token_mismatch: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -123,6 +125,8 @@ class StepRecord:
             latency_ms=float(data.get("latency_ms", 0.0) or 0.0),
             cache_hit=bool(data.get("cache_hit", False)),
             error=data.get("error"),
+            gateway_tokens=data.get("gateway_tokens"),
+            token_mismatch=data.get("token_mismatch"),
         )
 
 

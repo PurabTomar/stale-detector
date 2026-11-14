@@ -149,6 +149,26 @@ def execute_single_run(
     started_at = datetime.now(timezone.utc).isoformat()
     t0 = time.perf_counter()
 
+    # If scenario involves misleading instructions, inject adversarial prompt injection into input text
+    run_task = task
+    if scenario in ("misleading_instructions", "misleading_context"):
+        try:
+            from lab.instrument import get_chaos_payloads
+            input_poisons = [p for p in get_chaos_payloads() if p.get("target") == "input_text"]
+            if input_poisons:
+                chosen_injection = input_poisons[(repeat - 1) % len(input_poisons)]["payload"]
+                run_task = Task(
+                    id=task.id,
+                    category=task.category,
+                    input_text=f"{task.input_text}\n\n{chosen_injection}",
+                    expected_status=task.expected_status,
+                    expected_facts=task.expected_facts,
+                    needs_human_check=task.needs_human_check,
+                    tags=task.tags,
+                )
+        except Exception:
+            run_task = task
+
     # Retry loop with exponential backoff on transient 429/503
     max_retries = 3
     backoff_delay = 1.0
@@ -159,7 +179,7 @@ def execute_single_run(
         if budget_tracker.is_exhausted():
             return None
         try:
-            result, steps = adapter.run(task, ctx)
+            result, steps = adapter.run(run_task, ctx)
             if result and result.error:
                 is_transient = any(code in result.error for code in ["429", "503", "rate_limit", "resource_exhausted"])
                 if is_transient and attempt < max_retries:
@@ -217,6 +237,7 @@ def compute_dry_run_estimates(
     agents: list[str],
     tasks: list[Task],
     repeats: int,
+    scenarios: list[str] | None = None,
 ) -> dict[str, Any]:
     """Estimate Tavily credits and LLM calls for a planned benchmark run."""
     estimates_per_agent = {
@@ -225,16 +246,18 @@ def compute_dry_run_estimates(
         "react_loop": {"llm_calls": 3.0, "tavily_credits": 2.0},
         "detector_pipeline": {"llm_calls": 2.0, "tavily_credits": 2.0},
         "external_http": {"llm_calls": 2.0, "tavily_credits": 2.0},
+        "external_agent": {"llm_calls": 2.0, "tavily_credits": 2.0},
     }
 
-    total_runs = len(agents) * len(tasks) * repeats
+    scen_count = len(scenarios) if scenarios else 1
+    total_runs = len(agents) * len(tasks) * repeats * scen_count
     est_credits = 0.0
     est_llm_calls = 0
 
     agent_breakdowns = {}
     for a in agents:
         rate = estimates_per_agent.get(a, {"llm_calls": 2.0, "tavily_credits": 1.0})
-        agent_runs = len(tasks) * repeats
+        agent_runs = len(tasks) * repeats * scen_count
         c = agent_runs * rate["tavily_credits"]
         l = int(agent_runs * rate["llm_calls"])
         est_credits += c
@@ -249,6 +272,7 @@ def compute_dry_run_estimates(
         "total_agents": len(agents),
         "total_tasks": len(tasks),
         "repeats": repeats,
+        "scenarios": scenarios or ["clean"],
         "total_runs": total_runs,
         "est_tavily_credits": est_credits,
         "est_llm_calls": est_llm_calls,
@@ -285,9 +309,20 @@ def run_benchmark(
 
     # 1. Dry Run Mode
     if dry_run:
-        est = compute_dry_run_estimates(agent_names, tasks, repeats)
+        est = compute_dry_run_estimates(agent_names, tasks, repeats, scenarios=scenario_list)
         print("=" * 60)
         print("AGENT LAB BENCHMARK DRY RUN ESTIMATE")
+        print("=" * 60)
+        scen_str = ", ".join(est.get("scenarios", ["clean"]))
+        print(f"Tasks: {est['total_tasks']} | Agents: {est['total_agents']} | Repeats: {repeats} | Scenarios: {scen_str}")
+        print(f"Total planned runs: {est['total_runs']}")
+        print(f"Estimated Tavily credits: {est['est_tavily_credits']:.1f}")
+        print(f"Estimated LLM calls:     {est['est_llm_calls']}")
+        print("\nBreakdown per agent:")
+        for a_name, a_info in est["per_agent"].items():
+            print(f"  - {a_name:18}: {a_info['runs']:3} runs | ~{a_info['est_tavily_credits']:4.1f} credits | ~{a_info['est_llm_calls']:4} LLM calls")
+        print("=" * 60)
+        return []
         print("=" * 60)
         print(f"Tasks: {est['total_tasks']} | Agents: {est['total_agents']} | Repeats: {repeats}")
         print(f"Total planned runs: {est['total_runs']}")

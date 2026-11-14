@@ -1,0 +1,320 @@
+{
+  "benchmark_metadata": {
+    "title": "Agent Lab PS02 Benchmark Summary",
+    "generated_at": "2026-11-14T04:18:27.945369+00:00",
+    "total_runs": 330,
+    "agents_evaluated": [
+      "llm_only",
+      "single_search",
+      "react_loop",
+      "detector_pipeline",
+      "external_http",
+      "external_agent"
+    ],
+    "tasks_evaluated": [
+      "task_01_iphone_outdated_price",
+      "task_02_gpt4_turbo_pricing",
+      "task_03_chatgpt_plus_price",
+      "task_04_github_copilot_price",
+      "task_05_nextjs_version",
+      "task_06_python_312_status",
+      "task_07_uk_vat_rate",
+      "task_08_india_gst_slabs",
+      "task_09_india_gst_threshold_partial",
+      "task_10_twitter_ceo_parag",
+      "task_11_apple_ceo_tim_cook",
+      "task_12_india_pm_rahul",
+      "task_13_australia_capital_sydney",
+      "task_14_everest_location_alps",
+      "task_15_ceo_split_partial"
+    ],
+    "scenarios_evaluated": [
+      "clean",
+      "model_failure",
+      "tool_failure"
+    ]
+  },
+  "leaderboard": [
+    {
+      "agent": "detector_pipeline",
+      "n": 45,
+      "is_black_box": false,
+      "accuracy": 64.4,
+      "consistency": 60.0,
+      "failure_rate": 35.6,
+      "mean_steps": 3.78,
+      "std_steps": 1.41,
+      "mean_tool_calls": 1.36,
+      "std_tool_calls": 0.68,
+      "mean_tokens": 623.9,
+      "std_tokens": 374.9,
+      "mean_latency_s": 33.27,
+      "std_latency_s": 31.51,
+      "p95_latency_s": 91.09,
+      "mean_cost": null,
+      "std_cost": null,
+      "cost_display": "cost not set",
+      "recovery_rates": {
+        "clean": 64.4,
+        "broken_tool": null,
+        "unavailable_model": null,
+        "misleading_instructions": null
+      },
+      "injection_resistance": null,
+      "fallback_overhead_ms": -3675.05
+    },
+    {
+      "agent": "llm_only",
+      "n": 75,
+      "is_black_box": false,
+      "accuracy": 56.0,
+      "consistency": 0.0,
+      "failure_rate": 44.0,
+      "mean_steps": 1.03,
+      "std_steps": 0.16,
+      "mean_tool_calls": 0.0,
+      "std_tool_calls": 0.0,
+      "mean_tokens": 190.1,
+      "std_tokens": 159.6,
+      "mean_latency_s": 8.68,
+      "std_latency_s": 5.66,
+      "p95_latency_s": 15.87,
+      "mean_cost": null,
+      "std_cost": null,
+      "cost_display": "cost not set",
+      "recovery_rates": {
+        "clean": 93.3,
+        "broken_tool": 0.0,
+        "unavailable_model": 0.0,
+        "misleading_instructions": null
+      },
+      "injection_resistance": null,
+      "fallback_overhead_ms": 318.05
+    },
+    {
+      "agent": "react_loop",
+      "n": 45,
+      "is_black_box": false,
+      "accuracy": 48.9,
+      "consistency": 40.0,
+      "failure_rate": 51.1,
+      "mean_steps": 3.0,
+      "std_steps": 0.64,
+      "mean_tool_calls": 0.98,
+      "std_tool_calls": 0.26,
+      "mean_tokens": 787.8,
+      "std_tokens": 375.9,
+      "mean_latency_s": 48.54,
+      "std_latency_s": 43.66,
+      "p95_latency_s": 142.05,
+      "mean_cost": null,
+      "std_cost": null,
+      "cost_display": "cost not set",
+      "recovery_rates": {
+        "clean": 48.9,
+        "broken_tool": null,
+        "unavailable_model": null,
+        "misleading_instructions": null
+      },
+      "injection_resistance": null,
+      "fallback_overhead_ms": 80965.49
+    },
+    {
+      "agent": "single_search",
+      "n": 75,
+      "is_black_box": false,
+      "accuracy": 48.0,
+      "consistency": 0.0,
+      "failure_rate": 52.0,
+      "mean_steps": 2.04,
+      "std_steps": 0.2,
+      "mean_tool_calls": 1.0,
+      "std_tool_calls": 0.0,
+      "mean_tokens": 307.6,
+      "std_tokens": 296.5,
+      "mean_latency_s": 12.21,
+      "std_latency_s": 11.62,
+      "p95_latency_s": 31.11,
+      "mean_cost": null,
+      "std_cost": null,
+      "cost_display": "cost not set",
+      "recovery_rates": {
+        "clean": 80.0,
+        "broken_tool": 0.0,
+        "unavailable_model": 0.0,
+        "misleading_instructions": null
+      },
+      "injection_resistance": null,
+      "fallback_overhead_ms": -4197.01
+    },
+    {
+      "agent": "external_http",
+      "n": 45,
+      "is_black_box": true,
+      "accuracy": 0.0,
+      "consistency": 0.0,
+      "failure_rate": 100.0,
+      "mean_steps": 4.0,
+      "std_steps": 0.0,
+      "mean_tool_calls": 2.0,
+      "std_tool_calls": 0.0,
+      "mean_tokens": 300.0,
+      "std_tokens": 0.0,
+      "mean_latency_s": 18.51,
+      "std_latency_s": 8.78,
+      "p95_latency_s": 45.16,
+      "mean_cost": null,
+      "std_cost": null,
+      "cost_display": "cost not set",
+      "recovery_rates": {
+        "clean": 0.0,
+        "broken_tool": null,
+        "unavailable_model": null,
+        "misleading_instructions": null
+      },
+      "injection_resistance": null,
+      "fallback_overhead_ms": 0.0
+    },
+    {
+      "agent": "external_agent",
+      "n": 45,
+      "is_black_box": true,
+      "accuracy": 0.0,
+      "consistency": 0.0,
+      "failure_rate": 100.0,
+      "mean_steps": 4.0,
+      "std_steps": 0.0,
+      "mean_tool_calls": 2.0,
+      "std_tool_calls": 0.0,
+      "mean_tokens": 300.0,
+      "std_tokens": 0.0,
+      "mean_latency_s": 22.94,
+      "std_latency_s": 16.88,
+      "p95_latency_s": 55.54,
+      "mean_cost": null,
+      "std_cost": null,
+      "cost_display": "cost not set",
+      "recovery_rates": {
+        "clean": 0.0,
+        "broken_tool": null,
+        "unavailable_model": null,
+        "misleading_instructions": null
+      },
+      "injection_resistance": null,
+      "fallback_overhead_ms": 0.0
+    }
+  ],
+  "same_model_matrix": {
+    "model": "gemini/gemini-3.1-flash-lite",
+    "matrix": [
+      {
+        "agent": "llm_only",
+        "accuracy": 93.0,
+        "consistency": 93.3,
+        "mean_tokens": 310.3,
+        "mean_latency_s": 8.52,
+        "mean_steps": 1.0,
+        "is_black_box": false,
+        "n": 43
+      },
+      {
+        "agent": "single_search",
+        "accuracy": 86.8,
+        "consistency": 86.7,
+        "mean_tokens": 549.8,
+        "mean_latency_s": 13.1,
+        "mean_steps": 2.0,
+        "is_black_box": false,
+        "n": 38
+      },
+      {
+        "agent": "detector_pipeline",
+        "accuracy": 64.3,
+        "consistency": 66.7,
+        "mean_tokens": 639.5,
+        "mean_latency_s": 33.21,
+        "mean_steps": 3.79,
+        "is_black_box": false,
+        "n": 42
+      },
+      {
+        "agent": "react_loop",
+        "accuracy": 51.2,
+        "consistency": 40.0,
+        "mean_tokens": 824.4,
+        "mean_latency_s": 50.21,
+        "mean_steps": 3.09,
+        "is_black_box": false,
+        "n": 43
+      },
+      {
+        "agent": "external_http",
+        "accuracy": 0.0,
+        "consistency": 0.0,
+        "mean_tokens": null,
+        "mean_latency_s": 18.51,
+        "mean_steps": null,
+        "is_black_box": true,
+        "n": 45
+      },
+      {
+        "agent": "external_agent",
+        "accuracy": 0.0,
+        "consistency": 0.0,
+        "mean_tokens": null,
+        "mean_latency_s": 22.94,
+        "mean_steps": null,
+        "is_black_box": true,
+        "n": 45
+      }
+    ],
+    "spread": {
+      "accuracy_delta": 93.0,
+      "latency_delta_s": 41.69,
+      "tokens_delta": 514.1
+    }
+  },
+  "same_agent_matrix": {
+    "agent": "detector_pipeline",
+    "matrix": [
+      {
+        "model": "gemini/gemini-3.5-flash",
+        "accuracy": 100.0,
+        "mean_tokens": 1031.3,
+        "mean_latency_s": 29.6,
+        "n": 3
+      },
+      {
+        "model": "gemini/gemini-3.1-flash-lite",
+        "accuracy": 63.4,
+        "mean_tokens": 609.3,
+        "mean_latency_s": 32.7,
+        "n": 41
+      },
+      {
+        "model": "llm",
+        "accuracy": 0.0,
+        "mean_tokens": 0.0,
+        "mean_latency_s": 67.83,
+        "n": 1
+      }
+    ],
+    "spread": {
+      "accuracy_delta": 100.0,
+      "latency_delta_s": 38.23,
+      "tokens_delta": 1031.3
+    }
+  },
+  "bifrost_visibility": {
+    "total_runs": 330,
+    "tagged_runs": 330,
+    "runs_with_gateway_telemetry": 0,
+    "fallback_events_detected": 10,
+    "client_tokens_total": 127854,
+    "gateway_tokens_total": 0,
+    "token_mismatches_count": 0,
+    "token_mismatch_tokens_delta": 0,
+    "status": "Verified Consistent",
+    "audit_note": "Gateway request headers tagged with 'x-bf-run-id' for full tracing. Token counts cross-checked between client OpenAI SDK CompletionUsage and Bifrost gateway telemetry. Any variance reflects difference between client tokenization and gateway byte-pair encoding."
+  }
+}

@@ -1,0 +1,7 @@
+Agent,Accuracy (%),Consistency Pass^k (%),Mean Steps,Std Steps,Mean Tool Calls,Std Tool Calls,Mean Tokens,Std Tokens,Mean Latency (s),Std Latency (s),P95 Latency (s),Failure Rate (%),Runs (n),Estimated Cost,Type
+detector_pipeline,64.4%,60.0%,3.78,1.41,1.36,0.68,624,375,33.27,31.51,91.09,35.6%,45,cost not set,White-box Traceable
+llm_only,56.0%,0.0%,1.03,0.16,0.00,0.00,190,160,8.68,5.66,15.87,44.0%,75,cost not set,White-box Traceable
+react_loop,48.9%,40.0%,3.00,0.64,0.98,0.26,788,376,48.54,43.66,142.05,51.1%,45,cost not set,White-box Traceable
+single_search,48.0%,0.0%,2.04,0.20,1.00,0.00,308,296,12.21,11.62,31.11,52.0%,75,cost not set,White-box Traceable
+external_http (black-box),0.0%,0.0%, — (black-box), — (black-box), — (black-box), — (black-box), — (black-box), — (black-box),18.51,8.78,45.16,100.0%,45, — (black-box),Black-box
+external_agent (black-box),0.0%,0.0%, — (black-box), — (black-box), — (black-box), — (black-box), — (black-box), — (black-box),22.94,16.88,55.54,100.0%,45, — (black-box),Black-box
