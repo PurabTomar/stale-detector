@@ -1209,3 +1209,277 @@ def format_report_markdown(payload: dict) -> str:
         lines.extend(["No LLM telemetry records captured.", ""])
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def format_shareable_summary(payload: dict) -> str:
+    """Render a concise, human-readable plain-text summary of an audit for Slack, email, or PR comments."""
+    summary = payload.get("summary") or {}
+    overall_score = summary.get("overall_score")
+    tier = summary.get("overall_tier") or "N/A"
+    score_str = f"{overall_score}/100 ({tier})" if overall_score is not None else tier
+    mode = payload.get("mode") or "Audit"
+    timestamps = payload.get("timestamps") or {}
+    gen_at = timestamps.get("generated_at") or payload.get("generated_at") or "Recently"
+    models = payload.get("models_used") or ["gemini"]
+
+    claims = payload.get("claims") or []
+    domains: set[str] = set()
+    top_claims_text: list[str] = []
+    for c in claims[:3]:
+        claim_txt = c.get("claim", "")
+        status = c.get("status", "unknown")
+        top_claims_text.append(f"• [{status.upper()}] {claim_txt[:90]}...")
+        for s in c.get("sources") or []:
+            d = s.get("domain") or extract_source_domain(s.get("url") or "")
+            if d:
+                domains.add(d)
+
+    dom_list = ", ".join(sorted(list(domains))[:4]) if domains else "Web sources"
+
+    lines = [
+        "🛡️ Stale-Answer Detector — Audit Summary",
+        "=========================================",
+        f"Freshness Score : {score_str}",
+        f"Mode            : {mode} | Date: {gen_at}",
+        f"Claims Audited  : {summary.get('claims_checked', len(claims))} ({summary.get('fresh', 0)} fresh, {summary.get('outdated', 0)} outdated, {summary.get('incorrect', 0)} incorrect)",
+        f"Primary Sources : {dom_list}",
+        f"Models Evaluated: {', '.join(models)}",
+        "",
+        "Key Verdicts:",
+    ]
+    if top_claims_text:
+        lines.extend(top_claims_text)
+    else:
+        lines.append("• No time-sensitive claims extracted.")
+
+    corrected = payload.get("corrected_answer") or ""
+    if corrected:
+        lines.append("")
+        lines.append(f"Corrected Rewrite: \"{corrected[:140]}...\"")
+
+    lines.extend([
+        "",
+        "Verified via Stale-Answer Detector: https://github.com/PurabTomar/stale-detector",
+    ])
+    return "\n".join(lines).strip()
+
+
+def format_report_html(payload: dict) -> str:
+    """Render an audit report dictionary as a self-contained, offline-compatible HTML file with inline CSS."""
+    summary = payload.get("summary") or {}
+    tokens = payload.get("tokens_used") or {}
+    models = payload.get("models_used") or []
+    timestamps = payload.get("timestamps") or {}
+    gen_at = timestamps.get("generated_at") or payload.get("generated_at") or ""
+    mode = payload.get("mode") or "Audit"
+
+    overall_score = summary.get("overall_score")
+    tier = summary.get("overall_tier") or "N/A"
+    score_display = str(overall_score) if overall_score is not None else "N/A"
+
+    # Status color mapping
+    status_colors = {
+        "fresh": ("#16A34A", "#DCFCE7"),
+        "outdated": ("#EA580C", "#FFEDD5"),
+        "incorrect": ("#DC2626", "#FEE2E2"),
+        "partially_correct": ("#D97706", "#FEF3C7"),
+        "uncertain": ("#475569", "#E2E8F0"),
+        "unverifiable": ("#6B7280", "#F3F4F6"),
+    }
+
+    tier_color = "#16A34A" if "fresh" in tier.lower() else ("#EA580C" if "stale" in tier.lower() or "outdated" in tier.lower() else "#DC2626")
+
+    claims_html: list[str] = []
+    for c in payload.get("claims") or []:
+        st_name = c.get("status", "uncertain")
+        text_col, bg_col = status_colors.get(st_name, ("#475569", "#E2E8F0"))
+        c_score = c.get("score")
+        score_badge = f"{c_score}/100" if c_score is not None else "N/A"
+        claim_txt = escape_html_text(c.get("claim", ""))
+        actual_txt = escape_html_text(c.get("current_info") or c.get("actual", ""))
+        reason_txt = escape_html_text(c.get("reason", ""))
+        category = escape_html_text(c.get("category", "general"))
+
+        src_items: list[str] = []
+        for s in c.get("sources") or []:
+            u = s.get("url", "")
+            t = escape_html_text(s.get("title") or u)
+            stype = escape_html_text(s.get("source_type") or "Source")
+            stance = s.get("stance", "support")
+            stance_col = "#16A34A" if stance == "support" else ("#DC2626" if stance == "contradict" else "#64748B")
+            src_items.append(
+                f'<div style="margin: 4px 0; font-size: 13px;">'
+                f'<span style="background: {stance_col}; color: #fff; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">{stance.upper()}</span> '
+                f'<a href="{escape_html_text(u)}" target="_blank" style="color: #4F46E5; text-decoration: none; font-weight: 600;">{t}</a> '
+                f'<span style="color: #64748B;">({stype})</span>'
+                f'</div>'
+            )
+        src_block = "".join(src_items) if src_items else '<span style="color: #94A3B8;">No external citations recorded</span>'
+
+        claims_html.append(
+            f'<div style="background: rgba(255,255,255,0.7); border: 1px solid rgba(229,231,239,0.8); border-left: 4px solid {text_col}; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 4px 12px rgba(15,23,42,0.03);">'
+            f'<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">'
+            f'<div>'
+            f'<span style="background: {bg_col}; color: {text_col}; font-weight: 700; font-size: 12px; padding: 3px 10px; border-radius: 9999px;">{st_name.upper()}</span> '
+            f'<span style="background: #F1F5F9; color: #475569; font-size: 12px; padding: 3px 10px; border-radius: 9999px;">{category}</span>'
+            f'</div>'
+            f'<span style="font-weight: 800; font-size: 14px; color: {text_col};">{score_badge}</span>'
+            f'</div>'
+            f'<div style="font-size: 14px; font-weight: 600; color: #0F172A; margin: 8px 0;"><strong>Claimed:</strong> {claim_txt}</div>'
+            + (f'<div style="font-size: 14px; color: #16A34A; background: #DCFCE7; padding: 8px 12px; border-radius: 8px; margin: 8px 0;"><strong>Actually (today):</strong> {actual_txt}</div>' if actual_txt else "")
+            + (f'<div style="font-size: 13px; color: #475569; margin: 6px 0;"><strong>Reason:</strong> {reason_txt}</div>' if reason_txt else "")
+            + f'<div style="margin-top: 10px; border-top: 1px dashed #E2E8F0; padding-top: 8px;">'
+            f'<div style="font-size: 11px; font-weight: 700; color: #94A3B8; text-transform: uppercase; margin-bottom: 4px;">Verified Sources:</div>'
+            f'{src_block}'
+            f'</div>'
+            f'</div>'
+        )
+
+    claims_section = "".join(claims_html) if claims_html else '<p style="color: #64748B;">No time-sensitive claims extracted.</p>'
+
+    corrected_answer = payload.get("corrected_answer") or ""
+    corrected_section = ""
+    if corrected_answer:
+        corrected_section = (
+            f'<div style="background: rgba(255,255,255,0.7); border: 1px solid rgba(229,231,239,0.8); border-radius: 12px; padding: 18px; margin: 20px 0;">'
+            f'<h3 style="margin-top: 0; color: #0F172A; font-size: 16px;">Corrected &amp; Rewritten Answer</h3>'
+            f'<div style="font-size: 14px; color: #1E293B; line-height: 1.6; background: #F8FAFC; padding: 12px 16px; border-radius: 8px; border-left: 3px solid #16A34A;">'
+            f'{escape_html_text(corrected_answer)}'
+            f'</div>'
+            f'</div>'
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stale-Answer Detector — Audit Report</title>
+<style>
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: #F8F9FE;
+    color: #0F172A;
+    margin: 0;
+    padding: 30px 20px;
+    line-height: 1.5;
+  }}
+  .container {{
+    max-width: 900px;
+    margin: 0 auto;
+    background: #FFFFFF;
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    border: 1px solid #E5E7EF;
+    overflow: hidden;
+  }}
+  .header {{
+    background: linear-gradient(135deg, #EEF0FF 0%, #FDE7F3 50%, #FFEBDD 100%);
+    padding: 30px 36px;
+    border-bottom: 1px solid #E5E7EF;
+  }}
+  .badge {{
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: {tier_color};
+    color: #FFFFFF;
+  }}
+  .title {{
+    margin: 12px 0 6px 0;
+    font-size: 24px;
+    color: #1E1B4B;
+  }}
+  .meta {{
+    font-size: 13px;
+    color: #64748B;
+  }}
+  .body-content {{
+    padding: 32px 36px;
+  }}
+  .stats-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }}
+  .stat-card {{
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }}
+  .stat-num {{
+    font-size: 20px;
+    font-weight: 800;
+    color: #0F172A;
+  }}
+  .stat-lbl {{
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748B;
+    text-transform: uppercase;
+  }}
+  .footer {{
+    background: #F8FAFC;
+    border-top: 1px solid #E5E7EF;
+    padding: 16px 36px;
+    font-size: 12px;
+    color: #64748B;
+    display: flex;
+    justify-content: space-between;
+  }}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <span class="badge">{tier}</span>
+    <h1 class="title">Stale-Answer Detector — Audit Report</h1>
+    <div class="meta">Mode: <strong>{escape_html_text(mode)}</strong> &bull; Generated: <strong>{escape_html_text(gen_at)}</strong></div>
+  </div>
+  <div class="body-content">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-num" style="color: {tier_color};">{score_display}</div>
+        <div class="stat-lbl">Freshness Score</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num">{summary.get('claims_checked', 0)}</div>
+        <div class="stat-lbl">Claims Checked</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" style="color: #16A34A;">{summary.get('fresh', 0)}</div>
+        <div class="stat-lbl">Fresh</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" style="color: #EA580C;">{summary.get('outdated', 0)}</div>
+        <div class="stat-lbl">Outdated</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" style="color: #DC2626;">{summary.get('incorrect', 0)}</div>
+        <div class="stat-lbl">Incorrect</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num">{int(tokens.get('total_tokens', 0)):,}</div>
+        <div class="stat-lbl">Tokens Used</div>
+      </div>
+    </div>
+
+    {corrected_section}
+
+    <h2 style="font-size: 18px; margin: 24px 0 14px 0; color: #1E293B;">Verified Claims Breakdown</h2>
+    {claims_section}
+  </div>
+  <div class="footer">
+    <span>Verified with <strong>Tavily</strong> &amp; <strong>Bifrost Gateway</strong></span>
+    <span><a href="https://github.com/PurabTomar/stale-detector" target="_blank" style="color: #4F46E5; text-decoration: none;">GitHub Repository &rarr;</a></span>
+  </div>
+</div>
+</body>
+</html>"""
+

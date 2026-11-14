@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from benchmark import (
     format_results_markdown as format_benchmark_markdown,
@@ -60,8 +61,20 @@ from reporting import (
     build_draft_corrected_answer,
     build_report_payload,
     build_side_by_side_word_diff,
+    format_report_html,
     format_report_json,
     format_report_markdown,
+    format_shareable_summary,
+)
+from tab_components import (
+    init_history_if_needed,
+    record_audit_to_history,
+    render_api_playground_tab,
+    render_history_tab,
+    render_home_tab,
+    render_methodology_tab,
+    render_showdown_tab,
+    render_watchlist_strip,
 )
 from verifier import (
     classify_source_type,
@@ -296,79 +309,96 @@ CUSTOM_CSS = """
 
 LIGHT_THEME_CSS = """
 <style>
-/* Light Mode Theme Overrides */
+/* Light Mode Theme Overrides - Modern Bright Glassmorphism */
 :root {
     color-scheme: light !important;
-    --bg-page: #F7F8FC;
-    --bg-card: #FFFFFF;
+    --bg-page: #F8F9FE;
+    --bg-card: rgba(255, 255, 255, 0.65);
     --text-main: #0F172A;
     --text-muted: #64748B;
-    --border-main: #E5E7EF;
+    --border-main: rgba(255, 255, 255, 0.8);
 }
 .stApp {
-    background-color: var(--bg-page) !important;
+    background: radial-gradient(at 0% 0%, #EEF0FF 0px, transparent 50%),
+                radial-gradient(at 100% 0%, #FDE7F3 0px, transparent 50%),
+                radial-gradient(at 100% 100%, #FFEBDD 0px, transparent 50%),
+                radial-gradient(at 0% 100%, #EEF0FF 0px, transparent 50%),
+                #F8F9FE !important;
+    background-attachment: fixed !important;
     color: var(--text-main) !important;
 }
 section[data-testid="stSidebar"] {
-    background-color: var(--bg-card) !important;
+    background: rgba(255, 255, 255, 0.72) !important;
+    backdrop-filter: blur(18px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
     border-right: 1px solid var(--border-main) !important;
 }
 .sad-hero {
-    background: linear-gradient(135deg, rgba(91, 91, 240, 0.05) 0%, rgba(139, 92, 246, 0.08) 100%), #FFFFFF !important;
+    background: rgba(255, 255, 255, 0.65) !important;
+    backdrop-filter: blur(18px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
     border: 1px solid var(--border-main) !important;
 }
 .sad-score-card {
-    background: #FFFFFF !important;
+    background: rgba(255, 255, 255, 0.65) !important;
+    backdrop-filter: blur(18px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
     border: 1px solid var(--border-main) !important;
 }
 .sad-claim-card {
-    background: #FFFFFF !important;
+    background: rgba(255, 255, 255, 0.65) !important;
+    backdrop-filter: blur(18px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
     border: 1px solid var(--border-main) !important;
 }
 .sad-compare-box {
-    background: #F8FAFC !important;
+    background: rgba(241, 245, 249, 0.65) !important;
     border: 1px solid var(--border-main) !important;
 }
 .sad-source-chip {
-    background: #FFFFFF !important;
+    background: rgba(255, 255, 255, 0.8) !important;
     border: 1px solid var(--border-main) !important;
     color: var(--text-main) !important;
 }
 .sad-snippet-card {
-    background: #FFFFFF !important;
+    background: rgba(255, 255, 255, 0.75) !important;
     border: 1px solid var(--border-main) !important;
 }
 .sad-empty-state {
-    background: #FFFFFF !important;
+    background: rgba(255, 255, 255, 0.6) !important;
+    backdrop-filter: blur(18px) !important;
+    -webkit-backdrop-filter: blur(18px) !important;
     border: 1px dashed var(--border-main) !important;
 }
 .sad-diff-card {
-    background: #FFFFFF !important;
+    background: rgba(255, 255, 255, 0.65) !important;
+    backdrop-filter: blur(18px) !important;
     border: 1px solid var(--border-main) !important;
 }
 .pill-fresh {
-    background: #DCFCE7 !important;
+    background: rgba(220, 252, 231, 0.85) !important;
     color: #16A34A !important;
 }
 .pill-outdated {
-    background: #FFEDD5 !important;
+    background: rgba(255, 237, 213, 0.85) !important;
     color: #EA580C !important;
 }
 .pill-uncertain {
-    background: #E2E8F0 !important;
+    background: rgba(226, 232, 240, 0.85) !important;
     color: #475569 !important;
 }
 .pill-unverifiable {
-    background: #F3F4F6 !important;
+    background: rgba(243, 244, 246, 0.85) !important;
     color: #6B7280 !important;
 }
 div.stButton > button[data-testid="stBaseButton-secondary"] {
-    background: transparent !important;
-    color: var(--text-muted) !important;
+    background: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(12px) !important;
     border: 1px solid var(--border-main) !important;
+    color: var(--text-main) !important;
 }
 div.stDownloadButton > button {
-    border-radius: 12px !important;
+    border-radius: 9999px !important;
 }
 </style>
 """
@@ -1208,10 +1238,13 @@ def init_session_state() -> None:
         "gateway_requests": [],
         "last_audit_time_ms": 0.0,
         "session_audit_time_ms": 0.0,
+        "watchlist": [],
+        "showdown_active_id": "iphone",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+    init_history_if_needed()
     try:
         if hasattr(st, "query_params") and "_dark_mode_initialized" not in st.session_state:
             st.session_state["_dark_mode_initialized"] = True
@@ -2864,6 +2897,30 @@ def render_claim_card(
     )
     st.markdown(card_html, unsafe_allow_html=True)
 
+    # Claim Watchlist Toggle Button (in-session monitoring)
+    claim_text_val = str(item.get("claim", "")).strip()
+    if claim_text_val:
+        cur_watchlist = st.session_state.setdefault("watchlist", [])
+        is_claim_watched = any(w.get("claim") == claim_text_val for w in cur_watchlist)
+        w_lbl = "⭐ In Watchlist" if is_claim_watched else "⭐ Watch claim"
+        w_c1, w_c2 = st.columns([0.8, 0.2])
+        with w_c2:
+            if st.button(
+                w_lbl,
+                key=f"watch_claim_{key_prefix}_{index}",
+                help="Pin to session watchlist for delta tracking across re-audits",
+            ):
+                if is_claim_watched:
+                    st.session_state["watchlist"] = [w for w in cur_watchlist if w.get("claim") != claim_text_val]
+                else:
+                    cur_watchlist.append({
+                        "claim": claim_text_val,
+                        "original_status": status,
+                        "current_status": status,
+                        "score": score,
+                    })
+                st.rerun()
+
     # Short evidence snippets (<= 25 words per source) inside an expander under the claim.
     valid_sources = [
         s for s in (item.get("sources") or [])
@@ -3346,6 +3403,9 @@ def render_audit_results(
         return
 
     overall_score = compute_risk_weighted_overall_score(results)
+    checked_text_val = annotated_text or (results[0].get("claim", "") if results else "")
+    src_origin = f"Saved ({SAVED_RESULTS_DATE})" if st.session_state.get("demo_mode") else "Live"
+    record_audit_to_history(checked_text_val, results, source_label=src_origin, mode=key_prefix.capitalize(), score=overall_score)
     fresh_count = sum(1 for r in results if r.get("status") == "fresh")
     outdated_count = sum(1 for r in results if r.get("status") == "outdated")
     incorrect_count = sum(1 for r in results if r.get("status") == "incorrect")
@@ -3983,6 +4043,9 @@ def render_corrected_and_export_section(
             icon=":material/check_circle:",
         )
 
+    # In-session Claim Watchlist strip
+    render_watchlist_strip()
+
     # Report export buttons (available as soon as an audit completes, and automatically
     # reflect the visible corrected comparison / AI rewrite telemetry).
     report_time = audit_at or datetime.now().astimezone()
@@ -4014,6 +4077,8 @@ def render_corrected_and_export_section(
     )
     md_report = format_report_markdown(report_payload)
     json_report = format_report_json(report_payload)
+    html_report = format_report_html(report_payload)
+    summary_text = format_shareable_summary(report_payload)
     ts_slug = report_time.strftime("%Y%m%d-%H%M%S")
 
     st.space("small")
@@ -4028,10 +4093,10 @@ def render_corrected_and_export_section(
         )
     )
 
-    dl_col1, dl_col2, dl_col3 = st.columns(3, gap="small")
+    dl_col1, dl_col2, dl_col3, dl_col4, dl_col5 = st.columns(5, gap="small")
     with dl_col1:
         st.download_button(
-            "Download Markdown",
+            "Markdown",
             data=md_report,
             file_name=f"stale-answer-report-{ts_slug}.md",
             mime="text/markdown",
@@ -4043,7 +4108,7 @@ def render_corrected_and_export_section(
         )
     with dl_col2:
         st.download_button(
-            "Download JSON",
+            "JSON",
             data=json_report,
             file_name=f"stale-answer-report-{ts_slug}.json",
             mime="application/json",
@@ -4070,7 +4135,7 @@ def render_corrected_and_export_section(
                 })
         csv_data = pd.DataFrame(csv_rows).to_csv(index=False).encode("utf-8") if csv_rows else b""
         st.download_button(
-            "Download CSV",
+            "CSV",
             data=csv_data,
             file_name=f"stale-answer-claims-{ts_slug}.csv",
             mime="text/csv",
@@ -4080,6 +4145,23 @@ def render_corrected_and_export_section(
             on_click="ignore",
             width="stretch",
         )
+    with dl_col4:
+        st.download_button(
+            "HTML Report",
+            data=html_report,
+            file_name=f"stale-answer-report-{ts_slug}.html",
+            mime="text/html",
+            key=f"dl_html_{key_prefix}",
+            icon=":material/html:",
+            disabled=is_any_busy,
+            on_click="ignore",
+            width="stretch",
+            help="Self-contained offline HTML report with inline styles (no internet needed)",
+        )
+    with dl_col5:
+        with st.popover("📋 Share Summary", icon=":material/share:"):
+            st.caption("Copy this plain-text summary for Slack, PR comments, or email:")
+            st.code(summary_text, language="text")
 
 
 def build_benchmark_tables(
@@ -4491,6 +4573,202 @@ with st.sidebar:
             )
 
 # ---------------------------------------------------------------------------
+# Highlights Bento Grid & Floating Dock Component
+# ---------------------------------------------------------------------------
+def render_highlights_bento_grid() -> None:
+    """Render the 'Highlights of this app' bento grid with real verified facts from saved evidence."""
+    bento_html = (
+        '<div class="sad-highlights-section">'
+        '<div class="sad-section-head">'
+        '<span class="sad-section-tag">PLATFORM CAPABILITIES</span>'
+        '<h2 class="sad-section-title">Highlights of this app</h2>'
+        '<p class="sad-section-desc">'
+        'Enterprise-grade freshness detection, dual-judge consensus, and framework-independent agent benchmarking.'
+        '</p>'
+        '</div>'
+        '<div class="sad-bento-grid">'
+        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(0) : (parent.sadSwitchTab && parent.sadSwitchTab(0))" role="button" tabindex="0">'
+        '<div class="sad-bento-top">'
+        '<span class="sad-bento-badge badge-saved">Saved</span>'
+        '<span class="sad-bento-arrow">&#8599;</span>'
+        '</div>'
+        '<h3 class="sad-bento-title">Dual-Judge Consensus</h3>'
+        '<p class="sad-bento-metric">100% Agreement</p>'
+        '<p class="sad-bento-fact">'
+        'Cross-evaluated by Gemini 2.5 Flash and Flash-Lite on official primary domains with stance conflict resolution.'
+        '</p>'
+        '</div>'
+        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(0) : (parent.sadSwitchTab && parent.sadSwitchTab(0))" role="button" tabindex="0">'
+        '<div class="sad-bento-top">'
+        '<span class="sad-bento-badge badge-saved">Saved</span>'
+        '<span class="sad-bento-arrow">&#8599;</span>'
+        '</div>'
+        '<h3 class="sad-bento-title">Volatility Classification</h3>'
+        '<p class="sad-bento-metric">6 Volatility Classes</p>'
+        '<p class="sad-bento-fact">'
+        'Distinguishes between facts that changed over time (pricing, laws, APIs) versus claims that were never true.'
+        '</p>'
+        '</div>'
+        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(0) : (parent.sadSwitchTab && parent.sadSwitchTab(0))" role="button" tabindex="0">'
+        '<div class="sad-bento-top">'
+        '<span class="sad-bento-badge badge-live">Live</span>'
+        '<span class="sad-bento-arrow">&#8599;</span>'
+        '</div>'
+        '<h3 class="sad-bento-title">Tavily Live Evidence</h3>'
+        '<p class="sad-bento-metric">6h SQLite Smart Cache</p>'
+        '<p class="sad-bento-fact">'
+        'Pulls official documentation, classifies support/contradict stances, and extracts verbatim quotes (&le;25 words).'
+        '</p>'
+        '</div>'
+        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(5) : (parent.sadSwitchTab && parent.sadSwitchTab(5))" role="button" tabindex="0">'
+        '<div class="sad-bento-top">'
+        '<span class="sad-bento-badge badge-gateway">Gateway</span>'
+        '<span class="sad-bento-arrow">&#8599;</span>'
+        '</div>'
+        '<h3 class="sad-bento-title">Bifrost Gateway Routing</h3>'
+        '<p class="sad-bento-metric">490 Requests &bull; 10 Fallbacks</p>'
+        '<p class="sad-bento-fact">'
+        'Recorded 127,854 tokens and automatic model failover from local gateway execution (Nov 13, 2026).'
+        '</p>'
+        '</div>'
+        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(4) : (parent.sadSwitchTab && parent.sadSwitchTab(4))" role="button" tabindex="0">'
+        '<div class="sad-bento-top">'
+        '<span class="sad-bento-badge badge-saved">Saved</span>'
+        '<span class="sad-bento-arrow">&#8599;</span>'
+        '</div>'
+        '<h3 class="sad-bento-title">Agent Lab Benchmark</h3>'
+        '<p class="sad-bento-metric">330 Recorded Runs</p>'
+        '<p class="sad-bento-fact">'
+        'Evaluates 6 agent architectures across 15 research tasks under clean, model failure, and broken tool conditions.'
+        '</p>'
+        '</div>'
+        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(0) : (parent.sadSwitchTab && parent.sadSwitchTab(0))" role="button" tabindex="0">'
+        '<div class="sad-bento-top">'
+        '<span class="sad-bento-badge badge-saved">Saved</span>'
+        '<span class="sad-bento-arrow">&#8599;</span>'
+        '</div>'
+        '<h3 class="sad-bento-title">Audit Report Export</h3>'
+        '<p class="sad-bento-metric">Markdown &amp; JSON</p>'
+        '<p class="sad-bento-fact">'
+        'Download complete evidence dossiers with credit ledgers, timeline latency strips, and corrected answer diffs.'
+        '</p>'
+        '</div>'
+        '</div>'
+        '</div>'
+    )
+    st.markdown(bento_html, unsafe_allow_html=True)
+
+
+def render_floating_dock_component(quota_state: str) -> None:
+    """Render the floating macOS-style dock at the bottom of the window using components.html."""
+    quota_label = f"Quota: {quota_state}"
+    quota_cls = "quota-live" if quota_state == "Live" else ("quota-limited" if quota_state == "Limited" else "quota-saved")
+    dock_js = f"""
+    <script>
+    (function() {{
+      try {{
+        const pDoc = window.parent.document;
+        if (!pDoc) return;
+        
+        let dockContainer = pDoc.getElementById('sad-dock-container');
+        if (!dockContainer) {{
+          dockContainer = pDoc.createElement('div');
+          dockContainer.id = 'sad-dock-container';
+          pDoc.body.appendChild(dockContainer);
+        }}
+        
+        window.parent.sadSwitchTab = function(idx, scrollTop) {{
+          try {{
+            const tabs = pDoc.querySelectorAll('[data-testid="stTabs"] [data-baseweb="tab"], [role="tablist"] button[role="tab"]');
+            if (tabs && tabs[idx]) {{
+              tabs[idx].click();
+              if (scrollTop !== false) {{
+                pDoc.querySelector('.main, .stApp')?.scrollTo({{ top: 0, behavior: 'smooth' }});
+                window.parent.scrollTo({{ top: 0, behavior: 'smooth' }});
+              }}
+            }}
+          }} catch (e) {{ console.warn(e); }}
+        }};
+        
+        window.parent.sadScrollTop = function() {{
+          try {{
+            pDoc.querySelector('.main, .stApp')?.scrollTo({{ top: 0, behavior: 'smooth' }});
+            window.parent.scrollTo({{ top: 0, behavior: 'smooth' }});
+          }} catch (e) {{ window.parent.scrollTo(0, 0); }}
+        }};
+        
+        window.parent.sadNavigateToGuidedDemo = function() {{
+          window.parent.sadSwitchTab(1, true);
+          setTimeout(() => {{
+            const btns = pDoc.querySelectorAll('button');
+            for (const b of btns) {{
+              if (b.innerText && b.innerText.includes('Guided Demo')) {{
+                b.click();
+                break;
+              }}
+            }}
+          }}, 120);
+        }};
+
+        window.parent.sadNavigateToEvidence = function() {{
+          window.parent.sadSwitchTab(7, false);
+          setTimeout(() => {{
+            const evEl = pDoc.getElementById('bifrost-evidence') || pDoc.querySelector('[data-testid="stExpander"]');
+            if (evEl) evEl.scrollIntoView({{ behavior: 'smooth' }});
+          }}, 150);
+        }};
+
+        dockContainer.innerHTML = `
+          <nav class="sad-dock" aria-label="Quick navigation dock">
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(0)" data-tooltip="Home" aria-label="Home">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <span class="sad-dock-txt">Home</span>
+            </button>
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(1)" data-tooltip="Audit Answer" aria-label="Audit">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              <span class="sad-dock-txt">Audit</span>
+            </button>
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(4)" data-tooltip="Model Showdown" aria-label="Showdown">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              <span class="sad-dock-txt">Showdown</span>
+            </button>
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(6)" data-tooltip="Agent Lab Benchmark" aria-label="Agent Lab">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/></svg>
+              <span class="sad-dock-txt">Lab</span>
+            </button>
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(7)" data-tooltip="Architecture & Flow" aria-label="Architecture">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+              <span class="sad-dock-txt">Arch</span>
+            </button>
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(8)" data-tooltip="Session History" aria-label="History">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span class="sad-dock-txt">History</span>
+            </button>
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(9)" data-tooltip="API Playground" aria-label="API">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span class="sad-dock-txt">API</span>
+            </button>
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(10)" data-tooltip="Methodology" aria-label="Methodology">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
+              <span class="sad-dock-txt">Method</span>
+            </button>
+            <div class="sad-dock-sep"></div>
+            <button class="sad-dock-btn" onclick="parent.sadScrollTop()" data-tooltip="Back to Top" aria-label="Top">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+              <span class="sad-dock-txt">Top</span>
+            </button>
+            <span class="sad-dock-chip {quota_cls}">{quota_label}</span>
+          </nav>
+        `;
+      }} catch (err) {{
+        console.log("Floating dock progressive enhancement standby");
+      }}
+    }})();
+    </script>
+    """
+    components.html(dock_js, height=0, width=0)
+
+# ---------------------------------------------------------------------------
 # Hero header
 # ---------------------------------------------------------------------------
 if gateway_unreachable:
@@ -4501,7 +4779,7 @@ elif use_bifrost_mode:
     bifrost_badge_html = f'<span class="sad-tech-badge"><span class="sad-dot"></span>{routing_badge_text}</span>'
 else:
     routing_badge_text = "Direct Gemini API"
-    bifrost_badge_html = ""
+    bifrost_badge_html = f'<span class="sad-tech-badge"><span class="sad-dot" style="background:#8B5CF6;"></span>{routing_badge_text}</span>'
 demo_hero_badge = (
     '<span class="sad-tech-badge sad-tech-demo"><span class="sad-dot-green"></span>Demo mode (offline)</span>'
     if demo_mode_on
@@ -4526,94 +4804,72 @@ elif quota_state == "Limited":
 else:  # "Saved results"
     quota_badge_html = '<span class="sad-tech-badge" style="border-color: rgba(37,99,235,0.35);"><span class="sad-dot" style="background:#2563EB;"></span>Quota: Saved results</span>'
 
+# Sleek top brand strip
 st.markdown(
-    '<div class="sad-hero">'
-    '<div class="sad-hero-grid">'
-    '<div class="sad-hero-content">'
-    '<h1 class="sad-hero-title">Don&#39;t trust AI blindly. Check its expiry date.</h1>'
-    '<p class="sad-hero-tagline">'
-    'Verify time-sensitive AI answers against live web sources, compute explainable freshness scores, and rewrite stale facts.'
-    '</p>'
-    '<div class="sad-hero-badges">'
-    f'{demo_hero_badge}'
-    f'{quota_badge_html}'
-    '<span class="sad-tech-badge"><span class="sad-dot"></span>Powered by Tavily</span>'
-    '<span class="sad-tech-badge"><span class="sad-dot"></span>Multi-model verified</span>'
-    f'{bifrost_badge_html}'
-    '</div>'
-    '<div class="sad-hero-stats">'
-    '<span class="sad-stat-chip">🌐 Live web sources</span>'
-    '<span class="sad-stat-chip">⚖️ Dual-judge verification</span>'
-    '<span class="sad-stat-chip">⚡ 6h smart cache</span>'
-    '</div>'
-    '</div>'
-    '<div class="sad-hero-video-col">'
-    '<div class="sad-hero-video-container">'
-    '<video class="sad-hero-video" autoplay muted loop playsinline preload="auto" disablepictureinpicture tabindex="-1" aria-label="AI verification engine animation">'
-    '<source src="/app/static/hero-verification.mp4" type="video/mp4">'
-    '<source src="app/static/hero-verification.mp4" type="video/mp4">'
-    '</video>'
-    '</div>'
-    '</div>'
-    '</div>'
-    '</div>',
+    f"""
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem; padding: 2px 4px; flex-wrap: wrap; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-weight: 800; font-size: 1.15rem; background: var(--primary-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+          🛡️ Stale-Answer Detector
+        </span>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        {quota_badge_html}
+        {bifrost_badge_html}
+        {demo_hero_badge}
+      </div>
+    </div>
+    """,
     unsafe_allow_html=True,
 )
 
-if gateway_unreachable:
-    gw_url_str = gateway_health.get("url") if gateway_health else "http://localhost:8080"
-    st.warning(
-        f"⚠️ **Bifrost Gateway unreachable at `{gw_url_str}` — Automatically fallen back to Direct Gemini API.** "
-        "Factual verification audits, Q&A, and reports are running directly via Google Gemini so your session continues uninterrupted.",
-        icon=":material/swap_horiz:",
-    )
-elif not use_bifrost_mode:
-    st.info(
-        "⚡ **Live demo runs direct for reliability; every result and benchmark in this app was produced through Bifrost, see evidence** (in the **Architecture** tab or **Agent Lab &rarr; Gateway** sub-tab).",
-        icon=":material/hub:",
-    )
-
-render_architecture_telemetry_expander(use_bifrost_mode)
-
-# Dismissible Note for Evaluators (PS06 / PS02 hackathon evaluators)
-if not st.session_state.get("evaluator_banner_dismissed", False):
-    evaluator_text = _get_config_value("EVALUATOR_NOTE_TEXT") or (
-        "Welcome judges and evaluators! This live deployment includes session rate-limit protections and automatic fallback to verified saved results. "
-        "Use the Guided Demo (or Demo mode) to test instant, quota-safe audits across all statuses (Fresh, Outdated, Incorrect), "
-        "or run live audits within your session quota."
-    )
-    with st.container(border=True):
-        eb_col1, eb_col2 = st.columns([0.95, 0.05], vertical_alignment="top")
-        with eb_col1:
-            st.markdown(
-                f'<div style="display: flex; gap: 10px; align-items: flex-start;">'
-                f'<span style="font-size: 1.15rem;">📌</span>'
-                f'<div>'
-                f'<strong style="font-size: 0.92rem; color: var(--text-color);">Note for evaluators</strong>'
-                f'<p style="margin: 3px 0 0 0; font-size: 0.84rem; color: var(--text-muted); line-height: 1.45;">'
-                f'{escape_html(evaluator_text)}'
-                f'</p>'
-                f'</div></div>',
-                unsafe_allow_html=True,
-            )
-        with eb_col2:
-            if st.button("✕", key="dismiss_evaluator_banner_btn", help="Dismiss Note for evaluators"):
-                st.session_state["evaluator_banner_dismissed"] = True
-                st.rerun()
+evaluator_text = _get_config_value("EVALUATOR_NOTE_TEXT") or (
+    "Welcome judges and evaluators! This live deployment includes session rate-limit protections and automatic fallback to verified saved results. "
+    "Use the Guided Demo (or Demo mode) to test instant, quota-safe audits across all statuses (Fresh, Outdated, Incorrect), "
+    "or run live audits within your session quota."
+)
 
 # ---------------------------------------------------------------------------
-# Four-tab main workspace:
-# 1. "Audit pasted answer" (annotated answer view + two-column flow)
-# 2. "Ask & Audit" (ask question via Bifrost -> show answer -> auto-audit + highlight)
-# 3. "Audit a URL" (Tavily Extract article -> first 8 claims -> annotated view + report)
-# 4. "Benchmark" (20 labelled claims evaluation, cached in benchmark/results.json)
-# 5. "Agent Lab" (Benchmarking AI research agents, Problem Statement 02)
+# Eleven-tab main workspace:
+# 1. "Home" (hero, 4-step how it works, highlights bento, guided demo, evidence strip, FAQ, evaluator note)
+# 2. "Audit pasted answer" (annotated answer view + two-column flow)
+# 3. "Ask & Audit" (ask question via Bifrost -> show answer -> auto-audit + highlight)
+# 4. "Audit a URL" (Tavily Extract article -> first 8 claims -> annotated view + report)
+# 5. "Model Showdown" (Side-by-side LLM freshness comparison, winner evaluation)
+# 6. "Benchmark" (20 labelled claims evaluation, cached in benchmark/results.json)
+# 7. "Agent Lab" (Benchmarking AI research agents, Problem Statement 02)
+# 8. "Architecture" (SVG flow diagram with live counters, Tavily vs Bifrost cards)
+# 9. "History" (Session audit records, reopen, side-by-side compare, export)
+# 10. "API Playground" (POST /verify schema, cURL, Python, JS snippets, interactive try it)
+# 11. "Methodology" (6 status definitions, LaTeX math formula, stance consensus rules)
 # ---------------------------------------------------------------------------
-tab_pasted, tab_ask, tab_url, tab_benchmark, tab_lab, tab_arch = st.tabs(
-    ["Audit pasted answer", "Ask & Audit", "Audit a URL", "Benchmark", "Agent Lab", "Architecture"]
+tab_home, tab_pasted, tab_ask, tab_url, tab_showdown, tab_benchmark, tab_lab, tab_arch, tab_history, tab_api, tab_methodology = st.tabs(
+    [
+        "Home",
+        "Audit pasted answer",
+        "Ask & Audit",
+        "Audit a URL",
+        "Model Showdown",
+        "Benchmark",
+        "Agent Lab",
+        "Architecture",
+        "History",
+        "API Playground",
+        "Methodology",
+    ]
 )
 
 route_target = "Bifrost" if use_bifrost_mode else "Gemini"
+
+with tab_home:
+    render_home_tab(
+        use_bifrost_mode=use_bifrost_mode,
+        gateway_unreachable=gateway_unreachable,
+        quota_state=quota_state,
+        gateway_health=gateway_health,
+        evaluator_text=evaluator_text,
+        highlights_bento_fn=render_highlights_bento_grid,
+    )
 
 with tab_pasted:
     is_pasted_running = current_busy == "pasted"
@@ -4623,13 +4879,24 @@ with tab_pasted:
         char_count = len(st.session_state.get("answer_input", ""))
         gd_col1, gd_col2 = st.columns([2.2, 1.4], vertical_alignment="center")
         with gd_col1:
-            st.markdown(
-                f'<div class="sad-input-header">'
-                f'<span class="sad-input-title">Input answer</span>'
-                f'<span class="sad-char-counter">{char_count:,} chars</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+            h_c1, h_c2 = st.columns([0.72, 0.28], vertical_alignment="center")
+            with h_c1:
+                st.markdown(
+                    f'<div class="sad-input-header">'
+                    f'<span class="sad-input-title">Input answer</span>'
+                    f'<span class="sad-char-counter">{char_count:,} chars</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            with h_c2:
+                with st.popover("💡 Tips", icon=":material/lightbulb:"):
+                    st.markdown(
+                        "**Recommended claims to test:**\n"
+                        "1. **Tech Specs & Prices**: *\"Apple's latest flagship is iPhone 16 Pro Max starting at $1,199.\"*\n"
+                        "2. **Tax & Legal Regulations**: *\"India GST rates are structured into 5%, 12%, 18%, and 28% slabs.\"*\n"
+                        "3. **Government & Elections**: *\"Narendra Modi is serving his 3rd term as Prime Minister of India.\"*\n"
+                        "4. **API Pricing**: *\"OpenAI GPT-4 Turbo input tokens are $10.00 per 1M tokens.\"*"
+                    )
         with gd_col2:
             if st.button(
                 "✨ Guided Demo",
@@ -4697,6 +4964,7 @@ with tab_pasted:
                 "Paste an LLM-generated answer here or click one of the example chips above..."
             ),
         )
+        st.caption("⌨️ Hint: Press **Ctrl + Enter** to audit")
 
         btn_col1, btn_col2 = st.columns([3, 1], gap="small")
         with btn_col1:
@@ -5478,6 +5746,12 @@ with tab_url:
         gateway_placeholder=gateway_placeholder,
     )
 
+# ---------------------------------------------------------------------------
+# Tab 5: Model Showdown
+# ---------------------------------------------------------------------------
+with tab_showdown:
+    render_showdown_tab(use_bifrost=use_bifrost_mode)
+
 with tab_benchmark:
     is_bench_running = current_busy == "benchmark"
     try:
@@ -5989,6 +6263,30 @@ with tab_lab:
 # ---------------------------------------------------------------------------
 with tab_arch:
     render_architecture_tab(use_bifrost_mode)
+    render_architecture_telemetry_expander(use_bifrost_mode)
+
+# ---------------------------------------------------------------------------
+# Tab 9: History
+# ---------------------------------------------------------------------------
+with tab_history:
+    render_history_tab()
+
+# ---------------------------------------------------------------------------
+# Tab 10: API Playground
+# ---------------------------------------------------------------------------
+with tab_api:
+    render_api_playground_tab()
+
+# ---------------------------------------------------------------------------
+# Tab 11: Methodology
+# ---------------------------------------------------------------------------
+with tab_methodology:
+    render_methodology_tab()
+
+# ---------------------------------------------------------------------------
+# Floating macOS-Style Dock Navigation
+# ---------------------------------------------------------------------------
+render_floating_dock_component(quota_state)
 
 # ---------------------------------------------------------------------------
 # Footer
