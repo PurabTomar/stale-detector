@@ -217,6 +217,62 @@ section[data-testid="stSidebar"] .stMarkdown p {
   justify-content: space-between;
   gap: 1rem;
 }
+.sad-hero-grid {
+  display: grid;
+  grid-template-columns: 1.45fr 1fr;
+  align-items: center;
+  gap: 2rem;
+}
+.sad-hero-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sad-hero-video-col {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+.sad-hero-video-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid rgba(91, 91, 240, 0.18);
+  box-shadow: 0 10px 28px -4px rgba(91, 91, 240, 0.14), 0 2px 8px -2px rgba(15, 23, 42, 0.06);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.sad-hero-video-container:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 34px -4px rgba(91, 91, 240, 0.22), 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+  border-color: rgba(91, 91, 240, 0.32);
+}
+[data-theme="dark"] .sad-hero-video-container,
+body.dark-theme .sad-hero-video-container,
+.stApp.dark-theme .sad-hero-video-container {
+  background: #111827;
+  border-color: rgba(167, 139, 250, 0.28);
+  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.5), 0 0 20px rgba(139, 92, 246, 0.15);
+}
+.sad-hero-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+  border: none;
+  outline: none;
+}
+.sad-hero-video::-webkit-media-controls,
+.sad-hero-video::-webkit-media-controls-enclosure,
+.sad-hero-video::-webkit-media-controls-panel {
+  display: none !important;
+  -webkit-appearance: none;
+}
 .sad-hero-title {
   font-size: 2.2rem !important;
   line-height: 1.25 !important;
@@ -1205,6 +1261,10 @@ div[data-testid="stHorizontalBlock"] > div:nth-child(6) [data-testid="stMetric"]
   .sad-hero {
     padding: 1.75rem;
   }
+  .sad-hero-grid {
+    grid-template-columns: 1.25fr 1fr;
+    gap: 1.25rem;
+  }
   .sad-hero-title {
     font-size: 1.85rem !important;
   }
@@ -1216,6 +1276,14 @@ div[data-testid="stHorizontalBlock"] > div:nth-child(6) [data-testid="stMetric"]
   }
   .sad-hero {
     padding: 1.4rem 1.25rem;
+  }
+  .sad-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .sad-hero-video-col {
+    max-width: 480px;
+    margin: 0 auto;
   }
   .sad-hero-title {
     font-size: 1.5rem !important;
@@ -1441,4 +1509,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   font-weight: 700;
   font-size: 0.75rem;
   text-transform: uppercase;
+}
+
+/* 23. Accessibility: Prefers Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .sad-hero-video-container {
+    box-shadow: 0 4px 12px rgba(91, 91, 240, 0.1) !important;
+    transition: none !important;
+    transform: none !important;
+  }
 }

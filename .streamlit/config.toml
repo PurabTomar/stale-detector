@@ -30,3 +30,6 @@ textColor = "#0F172A"
 borderColor = "#E5E7EF"
 primaryColor = "#5B5BF0"
 linkColor = "#5B5BF0"
+
+[server]
+enableStaticServing = true
