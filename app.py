@@ -948,56 +948,112 @@ def _render_empty_state(
     title: str,
     body_html: str,
     *,
-    pills: tuple[str, ...] = (),
+    pills: tuple[str, ...] = ("iPhone specs", "GST tax rates", "AI pricing"),
     hint: str = "",
     icon_svg: str = "",
 ) -> str:
-    """Build polished empty-state HTML shared across tabs with inline SVG illustration and 3 prompt cards."""
+    """Build compact empty-state HTML (<= 220px tall) with small illustration, 1 line of text, and 3 example chips."""
     friendly_illustration = (
-        '<div class="sad-empty-svg-wrap">'
-        '<svg viewBox="0 0 160 160" width="130" height="130" fill="none" xmlns="http://www.w3.org/2000/svg">'
-        '<rect x="25" y="25" width="110" height="110" rx="28" fill="#5B5BF0" fill-opacity="0.08"/>'
-        '<circle cx="80" cy="80" r="44" fill="#FFFFFF" stroke="#E5E7EF" stroke-width="2"/>'
-        '<path d="M62 80L74 92L98 68" stroke="#16A34A" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>'
-        '<circle cx="114" cy="46" r="7" fill="#5B5BF0"/>'
-        '<circle cx="46" cy="114" r="5" fill="#8B5CF6"/>'
+        '<div class="sad-empty-svg-wrap" style="margin-bottom: 0.35rem;">'
+        '<svg viewBox="0 0 64 64" width="40" height="40" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="8" y="8" width="48" height="48" rx="14" fill="#5B5BF0" fill-opacity="0.1"/>'
+        '<circle cx="32" cy="32" r="18" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>'
+        '<path d="M25 32L30 37L40 26" stroke="#16A34A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'
         '</svg>'
         '</div>'
     )
     pills_html = (
-        '<div class="sad-empty-pills">'
-        + "".join(f'<span class="sad-empty-pill">{escape_html(p)}</span>' for p in pills)
+        '<div class="sad-empty-pills" style="margin-top: 0.45rem; justify-content: center;">'
+        + "".join(f'<span class="sad-empty-pill">{escape_html(p)}</span>' for p in pills[:3])
         + "</div>"
         if pills
         else ""
     )
-    hint_html = f'<div class="sad-empty-hint">{hint}</div>' if hint else ""
-    prompts_html = (
-        '<div class="sad-empty-prompts-grid">'
-        '<div class="sad-empty-prompt-card">'
-        '<div class="sad-empty-prompt-badge">Hardware &amp; Pricing</div>'
-        '<div>"Apple\'s latest flagship is iPhone 15 Pro Max at $1,199 with A17 Pro..."</div>'
-        '</div>'
-        '<div class="sad-empty-prompt-card">'
-        '<div class="sad-empty-prompt-badge">AI Models &amp; APIs</div>'
-        '<div>"OpenAI\'s flagship model is GPT-4 Turbo with 128K context window..."</div>'
-        '</div>'
-        '<div class="sad-empty-prompt-card">'
-        '<div class="sad-empty-prompt-badge">Facts &amp; Leadership</div>'
-        '<div>"The Prime Minister of India is Rahul Gandhi, while Sydney is Australia\'s capital..."</div>'
-        '</div>'
-        '</div>'
-    )
+    hint_html = f'<div class="sad-empty-hint" style="margin-top: 0.35rem; font-size: 0.78rem;">{hint}</div>' if hint else ""
     return (
-        '<div class="sad-empty-state">'
+        '<div class="sad-empty-state sad-empty-state-compact">'
         f'{friendly_illustration}'
-        f'<h4>{escape_html(title)}</h4>'
-        f'<p>{body_html}</p>'
+        f'<h4 style="font-size: 1rem; margin-bottom: 0.2rem; font-weight: 700;">{escape_html(title)}</h4>'
+        f'<p style="font-size: 0.82rem; margin: 0; line-height: 1.3;">{body_html}</p>'
         f'{pills_html}'
         f'{hint_html}'
-        f'{prompts_html}'
         '</div>'
     )
+
+
+def render_stepper_html(current_busy: str | None, has_results: bool, has_input: bool) -> str:
+    """Render 5-step progress stepper: Input > Detect > Verify > Score > Report."""
+    # Step 1: Input
+    if has_results or current_busy:
+        s1_cls, s1_icon = "sad-step-done", "✓"
+    elif has_input:
+        s1_cls, s1_icon = "sad-step-done", "✓"
+    else:
+        s1_cls, s1_icon = "sad-step-running", "1"
+
+    # Step 2: Detect (extract claims)
+    if has_results:
+        s2_cls, s2_icon = "sad-step-done", "✓"
+    elif current_busy in ("pasted", "ask", "url"):
+        s2_cls, s2_icon = "sad-step-running", "2"
+    else:
+        s2_cls, s2_icon = "sad-step-pending", "2"
+
+    # Step 3: Verify (Tavily search & evidence)
+    if has_results:
+        s3_cls, s3_icon = "sad-step-done", "✓"
+    elif current_busy in ("pasted", "ask", "url"):
+        s3_cls, s3_icon = "sad-step-running", "3"
+    else:
+        s3_cls, s3_icon = "sad-step-pending", "3"
+
+    # Step 4: Score (Risk-weighted formula & consensus)
+    if has_results:
+        s4_cls, s4_icon = "sad-step-done", "✓"
+    elif current_busy in ("pasted", "ask", "url"):
+        s4_cls, s4_icon = "sad-step-pending", "4"
+    else:
+        s4_cls, s4_icon = "sad-step-pending", "4"
+
+    # Step 5: Report (Annotated text & export)
+    if has_results:
+        s5_cls, s5_icon = "sad-step-done", "✓"
+    else:
+        s5_cls, s5_icon = "sad-step-pending", "5"
+
+    l1_cls = "sad-step-line sad-step-line-done" if (has_results or current_busy or has_input) else "sad-step-line"
+    l2_cls = "sad-step-line sad-step-line-done" if has_results else "sad-step-line"
+    l3_cls = "sad-step-line sad-step-line-done" if has_results else "sad-step-line"
+    l4_cls = "sad-step-line sad-step-line-done" if has_results else "sad-step-line"
+
+    return f"""
+    <div class="sad-stepper" role="progressbar" aria-label="Freshness audit progress">
+      <div class="sad-step {s1_cls}">
+        <span class="sad-step-icon">{s1_icon}</span>
+        <span class="sad-step-label">1 Input</span>
+      </div>
+      <div class="{l1_cls}"></div>
+      <div class="sad-step {s2_cls}">
+        <span class="sad-step-icon">{s2_icon}</span>
+        <span class="sad-step-label">2 Detect</span>
+      </div>
+      <div class="{l2_cls}"></div>
+      <div class="sad-step {s3_cls}">
+        <span class="sad-step-icon">{s3_icon}</span>
+        <span class="sad-step-label">3 Verify</span>
+      </div>
+      <div class="{l3_cls}"></div>
+      <div class="sad-step {s4_cls}">
+        <span class="sad-step-icon">{s4_icon}</span>
+        <span class="sad-step-label">4 Score</span>
+      </div>
+      <div class="{l4_cls}"></div>
+      <div class="sad-step {s5_cls}">
+        <span class="sad-step-icon">{s5_icon}</span>
+        <span class="sad-step-label">5 Report</span>
+      </div>
+    </div>
+    """
 
 
 def _set_tab_error(
@@ -1643,10 +1699,15 @@ def render_annotated_answer_card(
         legend_html = (
             '<div class="sad-hl-legend">'
             '<span><span class="sad-hl-fresh">Green</span> = Fresh</span>'
+            '<span class="sad-hl-sep">&bull;</span>'
             '<span><span class="sad-hl-outdated">Orange</span> = Outdated</span>'
+            '<span class="sad-hl-sep">&bull;</span>'
             '<span><span class="sad-hl-incorrect">Red</span> = Incorrect</span>'
+            '<span class="sad-hl-sep">&bull;</span>'
             '<span><span class="sad-hl-partially-correct">Amber</span> = Partially correct</span>'
+            '<span class="sad-hl-sep">&bull;</span>'
             '<span><span class="sad-hl-uncertain">Yellow</span> = Uncertain</span>'
+            '<span class="sad-hl-sep">&bull;</span>'
             '<span><span class="sad-hl-unverifiable">Grey</span> = Unverifiable</span>'
             '</div>'
         )
@@ -3762,7 +3823,19 @@ def render_corrected_and_export_section(
     is_any_busy = bool(current_busy)
     is_rewriting_this = current_busy == busy_tag
 
-    st.divider()
+    st.markdown(
+        """
+        <div class="sad-section-divider"></div>
+        <div class="sad-section-num-header">
+          <span class="sad-section-num">4</span>
+          <div>
+            <h3 class="sad-section-title">Corrected answer</h3>
+            <p class="sad-section-sub">Automated surgical rewrite: replaces outdated or incorrect claims with verified current facts</p>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     hdr_col, action_col = st.columns([2.2, 1], vertical_alignment="center", gap="medium")
     with hdr_col:
         st.subheader("Generate corrected answer", icon=":material/auto_fix_high:")
@@ -4081,8 +4154,19 @@ def render_corrected_and_export_section(
     summary_text = format_shareable_summary(report_payload)
     ts_slug = report_time.strftime("%Y%m%d-%H%M%S")
 
-    st.space("small")
-    st.subheader("Export audit report", icon=":material/download:")
+    st.markdown(
+        """
+        <div class="sad-section-divider"></div>
+        <div class="sad-section-num-header">
+          <span class="sad-section-num">5</span>
+          <div>
+            <h3 class="sad-section-title">Export</h3>
+            <p class="sad-section-sub">Download audit findings in standard formats or copy shareable plain-text summary</p>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     models_label = ", ".join(report_payload["models_used"]) or "N/A"
     tokens_total = report_payload["tokens_used"]["total_tokens"]
     st.caption(
@@ -4698,7 +4782,7 @@ def render_floating_dock_component(quota_state: str) -> None:
         }};
         
         window.parent.sadNavigateToGuidedDemo = function() {{
-          window.parent.sadSwitchTab(1, true);
+          window.parent.sadSwitchTab(0, true);
           setTimeout(() => {{
             const btns = pDoc.querySelectorAll('button');
             for (const b of btns) {{
@@ -4711,46 +4795,43 @@ def render_floating_dock_component(quota_state: str) -> None:
         }};
 
         window.parent.sadNavigateToEvidence = function() {{
-          window.parent.sadSwitchTab(7, false);
+          window.parent.sadSwitchTab(3, false);
           setTimeout(() => {{
             const evEl = pDoc.getElementById('bifrost-evidence') || pDoc.querySelector('[data-testid="stExpander"]');
             if (evEl) evEl.scrollIntoView({{ behavior: 'smooth' }});
           }}, 150);
         }};
 
+        pDoc.addEventListener('focusin', function(e) {{
+          if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {{
+            dockContainer.classList.add('sad-dock-hidden');
+          }}
+        }});
+        pDoc.addEventListener('focusout', function(e) {{
+          dockContainer.classList.remove('sad-dock-hidden');
+        }});
+
         dockContainer.innerHTML = `
           <nav class="sad-dock" aria-label="Quick navigation dock">
-            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(0)" data-tooltip="Home" aria-label="Home">
-              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-              <span class="sad-dock-txt">Home</span>
-            </button>
-            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(1)" data-tooltip="Audit Answer" aria-label="Audit">
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(0)" data-tooltip="Audit Answer" aria-label="Audit">
               <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
               <span class="sad-dock-txt">Audit</span>
             </button>
-            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(4)" data-tooltip="Model Showdown" aria-label="Showdown">
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(1)" data-tooltip="Model Showdown" aria-label="Compare">
               <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-              <span class="sad-dock-txt">Showdown</span>
+              <span class="sad-dock-txt">Compare</span>
             </button>
-            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(6)" data-tooltip="Agent Lab Benchmark" aria-label="Agent Lab">
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(2)" data-tooltip="Agent Lab Benchmark" aria-label="Agent Lab">
               <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/></svg>
               <span class="sad-dock-txt">Lab</span>
             </button>
-            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(7)" data-tooltip="Architecture & Flow" aria-label="Architecture">
-              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-              <span class="sad-dock-txt">Arch</span>
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(3)" data-tooltip="Architecture & Methodology" aria-label="Learn">
+              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
+              <span class="sad-dock-txt">Learn</span>
             </button>
-            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(8)" data-tooltip="Session History" aria-label="History">
+            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(4)" data-tooltip="Session History" aria-label="History">
               <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               <span class="sad-dock-txt">History</span>
-            </button>
-            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(9)" data-tooltip="API Playground" aria-label="API">
-              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              <span class="sad-dock-txt">API</span>
-            </button>
-            <button class="sad-dock-btn" onclick="parent.sadSwitchTab(10)" data-tooltip="Methodology" aria-label="Methodology">
-              <svg class="sad-dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
-              <span class="sad-dock-txt">Method</span>
             </button>
             <div class="sad-dock-sep"></div>
             <button class="sad-dock-btn" onclick="parent.sadScrollTop()" data-tooltip="Back to Top" aria-label="Top">
@@ -4769,19 +4850,20 @@ def render_floating_dock_component(quota_state: str) -> None:
     components.html(dock_js, height=0, width=0)
 
 # ---------------------------------------------------------------------------
-# Hero header
+# Hero header & Brand Strip
 # ---------------------------------------------------------------------------
 if gateway_unreachable:
     routing_badge_text = "Gateway Fallback (Direct Gemini)"
-    bifrost_badge_html = f'<span class="sad-tech-badge sad-tech-warning"><span class="sad-dot-orange"></span>{routing_badge_text}</span>'
+    routing_dot_color = "#EA580C"
 elif use_bifrost_mode:
-    routing_badge_text = "Routed via Bifrost"
-    bifrost_badge_html = f'<span class="sad-tech-badge"><span class="sad-dot"></span>{routing_badge_text}</span>'
+    routing_badge_text = "Bifrost gateway"
+    routing_dot_color = "#16A34A"
 else:
     routing_badge_text = "Direct Gemini API"
-    bifrost_badge_html = f'<span class="sad-tech-badge"><span class="sad-dot" style="background:#8B5CF6;"></span>{routing_badge_text}</span>'
+    routing_dot_color = "#8B5CF6"
+
 demo_hero_badge = (
-    '<span class="sad-tech-badge sad-tech-demo"><span class="sad-dot-green"></span>Demo mode (offline)</span>'
+    '<span class="sad-header-chip" style="border-color: rgba(34,197,94,0.4);"><span class="sad-header-chip-dot" style="background:#16A34A;"></span>Demo mode (offline)</span>'
     if demo_mode_on
     else ""
 )
@@ -4798,24 +4880,33 @@ if not quota_state:
             quota_state = "Live"
 
 if quota_state == "Live":
-    quota_badge_html = '<span class="sad-tech-badge" style="border-color: rgba(22,163,74,0.35);"><span class="sad-dot" style="background:#16A34A;"></span>Quota: Live</span>'
+    quota_dot_color = "#16A34A"
+    quota_border = "rgba(22,163,74,0.35)"
 elif quota_state == "Limited":
-    quota_badge_html = '<span class="sad-tech-badge" style="border-color: rgba(234,88,12,0.35);"><span class="sad-dot" style="background:#EA580C;"></span>Quota: Limited</span>'
+    quota_dot_color = "#EA580C"
+    quota_border = "rgba(234,88,12,0.35)"
 else:  # "Saved results"
-    quota_badge_html = '<span class="sad-tech-badge" style="border-color: rgba(37,99,235,0.35);"><span class="sad-dot" style="background:#2563EB;"></span>Quota: Saved results</span>'
+    quota_dot_color = "#64748B"
+    quota_border = "rgba(100,116,139,0.35)"
 
-# Sleek top brand strip
+# Sleek top brand strip with separate chips (no glued text)
 st.markdown(
     f"""
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem; padding: 2px 4px; flex-wrap: wrap; gap: 8px;">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="font-weight: 800; font-size: 1.15rem; background: var(--primary-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+    <div class="sad-app-header">
+      <div class="sad-header-left">
+        <span class="sad-header-brand">
           🛡️ Stale-Answer Detector
         </span>
       </div>
-      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-        {quota_badge_html}
-        {bifrost_badge_html}
+      <div class="sad-header-right">
+        <span class="sad-header-chip" style="border-color: {quota_border};">
+          <span class="sad-header-chip-dot" style="background: {quota_dot_color};"></span>
+          <span>Quota: {quota_state}</span>
+        </span>
+        <span class="sad-header-chip">
+          <span class="sad-header-chip-dot" style="background: {routing_dot_color};"></span>
+          <span>{routing_badge_text}</span>
+        </span>
         {demo_hero_badge}
       </div>
     </div>
@@ -4828,6 +4919,21 @@ evaluator_text = _get_config_value("EVALUATOR_NOTE_TEXT") or (
     "Use the Guided Demo (or Demo mode) to test instant, quota-safe audits across all statuses (Fresh, Outdated, Incorrect), "
     "or run live audits within your session quota."
 )
+
+if not st.session_state.get("dismiss_evaluator_note", False):
+    eval_c1, eval_c2 = st.columns([0.96, 0.04], vertical_alignment="center")
+    with eval_c1:
+        st.markdown(
+            f'<div style="background: rgba(91,91,240,0.06); border: 1px solid var(--border-main); border-radius: 12px; padding: 0.35rem 0.75rem; font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px; margin-bottom: 0.5rem;">'
+            f'<span>💡</span>'
+            f'<span><strong>Note for evaluators:</strong> {escape_html(evaluator_text[:175])}...</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with eval_c2:
+        if st.button("✕", key="dismiss_eval_strip", help="Dismiss note"):
+            st.session_state["dismiss_evaluator_note"] = True
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Eleven-tab main workspace:
@@ -4843,916 +4949,8 @@ evaluator_text = _get_config_value("EVALUATOR_NOTE_TEXT") or (
 # 10. "API Playground" (POST /verify schema, cURL, Python, JS snippets, interactive try it)
 # 11. "Methodology" (6 status definitions, LaTeX math formula, stance consensus rules)
 # ---------------------------------------------------------------------------
-tab_home, tab_pasted, tab_ask, tab_url, tab_showdown, tab_benchmark, tab_lab, tab_arch, tab_history, tab_api, tab_methodology = st.tabs(
-    [
-        "Home",
-        "Audit pasted answer",
-        "Ask & Audit",
-        "Audit a URL",
-        "Model Showdown",
-        "Benchmark",
-        "Agent Lab",
-        "Architecture",
-        "History",
-        "API Playground",
-        "Methodology",
-    ]
-)
-
-route_target = "Bifrost" if use_bifrost_mode else "Gemini"
-
-with tab_home:
-    render_home_tab(
-        use_bifrost_mode=use_bifrost_mode,
-        gateway_unreachable=gateway_unreachable,
-        quota_state=quota_state,
-        gateway_health=gateway_health,
-        evaluator_text=evaluator_text,
-        highlights_bento_fn=render_highlights_bento_grid,
-    )
-
-with tab_pasted:
-    is_pasted_running = current_busy == "pasted"
-    left_col, right_col = st.columns([1, 1.35], gap="large")
-
-    with left_col:
-        char_count = len(st.session_state.get("answer_input", ""))
-        gd_col1, gd_col2 = st.columns([2.2, 1.4], vertical_alignment="center")
-        with gd_col1:
-            h_c1, h_c2 = st.columns([0.72, 0.28], vertical_alignment="center")
-            with h_c1:
-                st.markdown(
-                    f'<div class="sad-input-header">'
-                    f'<span class="sad-input-title">Input answer</span>'
-                    f'<span class="sad-char-counter">{char_count:,} chars</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            with h_c2:
-                with st.popover("💡 Tips", icon=":material/lightbulb:"):
-                    st.markdown(
-                        "**Recommended claims to test:**\n"
-                        "1. **Tech Specs & Prices**: *\"Apple's latest flagship is iPhone 16 Pro Max starting at $1,199.\"*\n"
-                        "2. **Tax & Legal Regulations**: *\"India GST rates are structured into 5%, 12%, 18%, and 28% slabs.\"*\n"
-                        "3. **Government & Elections**: *\"Narendra Modi is serving his 3rd term as Prime Minister of India.\"*\n"
-                        "4. **API Pricing**: *\"OpenAI GPT-4 Turbo input tokens are $10.00 per 1M tokens.\"*"
-                    )
-        with gd_col2:
-            if st.button(
-                "✨ Guided Demo",
-                key="guided_demo_btn",
-                type="secondary",
-                width="stretch",
-                help="Auto-loads 3 cached examples in 30 seconds: iPhone (fresh), GST (outdated), Wrong PM (incorrect)",
-            ):
-                st.session_state["guided_demo_active"] = True
-                st.session_state["guided_demo_step"] = 0
-                step_data = get_guided_demo_step(0)
-                _apply_pasted_demo_sample(step_data["sample"], exact_match=True, sync_widget=True)
-                st.rerun()
-
-        if st.session_state.get("guided_demo_active"):
-            curr_step = int(st.session_state.get("guided_demo_step", 0))
-            step_data = get_guided_demo_step(curr_step)
-            st.markdown(
-                f'<div class="sad-guided-demo-banner">'
-                f'<div>'
-                f'<span class="sad-guided-step-badge">Step {curr_step + 1} of 3</span> '
-                f'<strong>{escape_html(step_data["title"])}</strong> &mdash; '
-                f'<span style="color: var(--text-muted); font-size: 0.85rem;">{escape_html(step_data["caption"])}</span>'
-                f'</div></div>',
-                unsafe_allow_html=True,
-            )
-            g_btn1, g_btn2, g_btn3 = st.columns([1, 1.2, 1], gap="small")
-            with g_btn1:
-                if st.button("◀ Previous", key="gd_prev_btn", disabled=(curr_step <= 0), width="stretch"):
-                    st.session_state["guided_demo_step"] = curr_step - 1
-                    prev_step = get_guided_demo_step(curr_step - 1)
-                    _apply_pasted_demo_sample(prev_step["sample"], exact_match=True, sync_widget=True)
-                    st.rerun()
-            with g_btn2:
-                if st.button("Next Step ▶", key="gd_next_btn", disabled=(curr_step >= len(GUIDED_DEMO_STEPS) - 1), width="stretch", type="primary"):
-                    st.session_state["guided_demo_step"] = curr_step + 1
-                    next_step = get_guided_demo_step(curr_step + 1)
-                    _apply_pasted_demo_sample(next_step["sample"], exact_match=True, sync_widget=True)
-                    st.rerun()
-            with g_btn3:
-                if st.button("Exit Demo ✕", key="gd_exit_btn", width="stretch"):
-                    st.session_state["guided_demo_active"] = False
-                    st.rerun()
-
-        st.markdown('<div class="sad-examples-label">Try an example:</div>', unsafe_allow_html=True)
-        chip_cols = st.columns(len(DEMO_EXAMPLES), gap="small")
-        for ex_idx, ex_item in enumerate(DEMO_EXAMPLES):
-            with chip_cols[ex_idx]:
-                short_name = ex_item["label"].split()[0]
-                if st.button(
-                    short_name,
-                    key=f"pasted_chip_{ex_idx}",
-                    help=f"{ex_item['label']}: {ex_item['text'][:80]}...",
-                    disabled=is_any_busy,
-                    width="stretch",
-                ):
-                    load_demo_example(ex_item["text"])
-
-        st.text_area(
-            "LLM-generated answer",
-            key="answer_input",
-            height=210,
-            label_visibility="collapsed",
-            placeholder=(
-                "Paste an LLM-generated answer here or click one of the example chips above..."
-            ),
-        )
-        st.caption("⌨️ Hint: Press **Ctrl + Enter** to audit")
-
-        btn_col1, btn_col2 = st.columns([3, 1], gap="small")
-        with btn_col1:
-            check_clicked = st.button(
-                "Check Freshness",
-                key="check_freshness_btn",
-                type="primary",
-                icon=("spinner" if is_pasted_running else ":material/verified:"),
-                disabled=is_any_busy,
-                width="stretch",
-            )
-        with btn_col2:
-            st.button(
-                "Clear",
-                key="clear_workspace_btn",
-                type="secondary",
-                icon=":material/delete_outline:",
-                on_click=clear_workspace,
-                disabled=is_any_busy,
-                width="stretch",
-            )
-
-    with right_col:
-        st.subheader("Verification results", icon=":material/fact_check:")
-        pasted_skel_slot = st.empty()
-
-        if check_clicked and not is_any_busy:
-            st.session_state["pasted_error"] = None
-            st.session_state["pasted_rewrite_error"] = None
-            answer_text = st.session_state["answer_input"].strip()
-            if st.session_state.get("demo_mode"):
-                try:
-                    sample, exact = find_cached_pasted_audit(answer_text or None)
-                    _apply_pasted_demo_sample(
-                        sample,
-                        exact_match=(True if not answer_text else exact),
-                        sync_widget=False,
-                    )
-                except FileNotFoundError as exc:
-                    _set_tab_error(
-                        "pasted_error",
-                        exc,
-                        action="loading offline demo cache",
-                        recover_key="demo_recover_pasted_cache",
-                        query_or_url=answer_text,
-                    )
-            elif not answer_text:
-                st.warning(
-                    "Please paste an LLM-generated answer (or pick a sidebar example / enable Demo mode) first.",
-                    icon=":material/warning:",
-                )
-            else:
-                st.session_state["results"] = None
-                st.session_state["extract_model"] = None
-                st.session_state["extract_meta"] = None
-                st.session_state["corrected_answer"] = None
-                st.session_state["corrected_model"] = None
-                st.session_state["corrected_meta"] = None
-                st.session_state["pasted_audit_at"] = None
-                st.session_state["status_steps"] = []
-                st.session_state["demo_pasted_notice"] = ""
-                st.session_state["demo_pasted_rewrite"] = None
-                st.session_state["busy_action"] = "pasted"
-                st.session_state["_busy_armed"] = True
-                st.rerun()
-
-        elif is_pasted_running:
-            answer_text = st.session_state.get("answer_input", "").strip()
-            if not answer_text:
-                st.session_state["busy_action"] = None
-                st.rerun()
-            pasted_finished = False
-            status = None
-            try:
-                # Check visitor session quota before running live audit
-                if not st.session_state.get("demo_mode") and int(st.session_state.get("live_audits_performed") or 0) >= get_max_session_audits():
-                    raise RuntimeError("Live quota is busy, showing saved results. Session audit limit reached.")
-
-                _show_skeleton_slot(pasted_skel_slot, (128, 82, 165))
-                with st.status("Extracting claims", expanded=True) as status:
-                    steps_log: list[str] = []
-                    extract_model, extract_record, verified_results = run_stale_audit(
-                        answer_text=answer_text,
-                        status_widget=status,
-                        steps_log=steps_log,
-                        credits_placeholder=credits_placeholder,
-                        gateway_placeholder=gateway_placeholder,
-                    )
-                    st.session_state["extract_model"] = extract_model
-                    st.session_state["extract_meta"] = extract_record
-                    st.session_state["results"] = verified_results
-                    st.session_state["checked_answer"] = answer_text
-                    st.session_state["pasted_audit_at"] = datetime.now().astimezone()
-                    st.session_state["status_steps"] = steps_log
-                    st.session_state["quota_banner"] = None
-                pasted_finished = True
-            except Exception as exc:
-                if status is not None:
-                    status.update(label="Check failed", state="error", expanded=False)
-                if is_quota_or_rate_limit_error(exc):
-                    st.session_state["quota_status"] = "Saved results"
-                    st.session_state["quota_banner"] = f"Live API limit reached, showing real saved results from {SAVED_RESULTS_DATE}"
-                    try:
-                        sample, exact = find_cached_pasted_audit(answer_text)
-                        _apply_pasted_demo_sample(sample, exact_match=exact, sync_widget=False)
-                        st.session_state["pasted_error"] = None
-                    except Exception:
-                        _set_tab_error(
-                            "pasted_error",
-                            exc,
-                            action="verifying your answer",
-                            recover_key="demo_recover_pasted",
-                            query_or_url=answer_text,
-                        )
-                else:
-                    _set_tab_error(
-                        "pasted_error",
-                        exc,
-                        action="verifying your answer",
-                        recover_key="demo_recover_pasted",
-                        query_or_url=answer_text,
-                    )
-                pasted_finished = True
-            finally:
-                if st.session_state.get("busy_action") == "pasted":
-                    st.session_state["busy_action"] = None
-                _clear_slot(pasted_skel_slot)
-            if pasted_finished:
-                st.rerun()
-
-        # Render collapsed status trail on subsequent reruns (e.g., after rewriting answer).
-        elif st.session_state.get("status_steps"):
-            with st.status(
-                "Done",
-                state="complete",
-                expanded=st.session_state["keep_status_expanded"],
-            ):
-                for step_line in st.session_state["status_steps"]:
-                    st.write(step_line)
-
-        if st.session_state.get("quota_banner"):
-            st.warning(
-                f"⚠️ **{st.session_state['quota_banner']}**",
-                icon=":material/history:",
-            )
-
-        if st.session_state.get("demo_pasted_notice"):
-            _render_demo_banner(st.session_state["demo_pasted_notice"])
-
-        _render_stored_error_with_demo_recovery(
-            "pasted_error",
-            recover_scope="pasted",
-            default_recover_key="demo_recover_pasted",
-        )
-
-        # Render stored verification results (score ring, KPI cards, annotated answer, claim cards).
-        if st.session_state.get("results") is not None or not st.session_state.get("pasted_error"):
-            render_audit_results(
-                results=st.session_state.get("results"),
-                extract_model=st.session_state.get("extract_model"),
-                extract_meta=st.session_state.get("extract_meta"),
-                key_prefix="pasted",
-                just_clicked=bool(
-                    is_pasted_running or (check_clicked and st.session_state.get("results") is not None)
-                ),
-                empty_body=(
-                    f"Paste an LLM answer on the left or choose a sidebar sample, then click "
-                    f"<strong>Check Freshness</strong> ({route_target})."
-                ),
-                annotated_text=st.session_state.get("checked_answer"),
-                annotated_title="Annotated answer",
-            )
-
-    render_corrected_and_export_section(
-        mode="Audit pasted answer",
-        key_prefix="pasted",
-        original_answer=st.session_state.get("checked_answer") or st.session_state.get("answer_input", ""),
-        results=st.session_state.get("results"),
-        corrected_answer=st.session_state.get("corrected_answer"),
-        corrected_model=st.session_state.get("corrected_model"),
-        corrected_meta=st.session_state.get("corrected_meta"),
-        extract_model=st.session_state.get("extract_model"),
-        extract_meta=st.session_state.get("extract_meta"),
-        audit_at=st.session_state.get("pasted_audit_at"),
-        gateway_placeholder=gateway_placeholder,
-    )
-
-with tab_ask:
-    is_ask_running = current_busy == "ask"
-    st.caption(
-        f"Type a question below. The app fetches an answer via {route_target}, shows it, "
-        "runs the live stale-claim audit automatically, and highlights outdated vs. fresh claims inline."
-    )
-
-    q_col, ask_btn_col, ask_clr_col = st.columns(
-        [4, 1.3, 0.75],
-        vertical_alignment="bottom",
-        gap="small",
-    )
-    with q_col:
-        st.text_input(
-            "Ask a question",
-            key="ask_question_input",
-            label_visibility="collapsed",
-            placeholder="e.g. What is the latest iPhone model, chip, and US starting price?",
-        )
-    with ask_btn_col:
-        ask_clicked = st.button(
-            "Ask & Audit",
-            key="ask_and_audit_btn",
-            type="primary",
-            icon=("spinner" if is_ask_running else ":material/send:"),
-            disabled=is_any_busy,
-            width="stretch",
-        )
-    with ask_clr_col:
-        st.button(
-            "Clear",
-            key="ask_clear_btn",
-            icon=":material/delete_outline:",
-            on_click=clear_ask_workspace,
-            disabled=is_any_busy,
-            width="stretch",
-        )
-
-    ask_left, ask_right = st.columns([1, 1.35], gap="large")
-    question_ready = bool(st.session_state.get("ask_question_input", "").strip())
-    ask_is_demo = bool(st.session_state.get("demo_mode"))
-
-    with ask_left:
-        st.subheader("LLM answer", icon=":material/chat_bubble_outline:")
-        ask_left_skel = st.empty()
-        ask_answer_slot = st.empty()
-
-        if is_ask_running or (ask_clicked and question_ready and not ask_is_demo and not is_any_busy):
-            _show_skeleton_slot(ask_left_skel, (150,))
-        elif not (ask_clicked and ask_is_demo and not is_any_busy):
-            saved_ask_answer = st.session_state.get("ask_answer", "")
-            if saved_ask_answer:
-                render_ask_answer_card(
-                    placeholder=ask_answer_slot,
-                    answer_text=saved_ask_answer,
-                    verification_results=st.session_state.get("ask_results"),
-                    question_text=st.session_state.get("ask_question_asked"),
-                    answer_model=st.session_state.get("ask_model"),
-                    answer_meta=st.session_state.get("ask_meta"),
-                    audit_error=bool(
-                        st.session_state.get("ask_error")
-                        and st.session_state.get("ask_results") is None
-                    ),
-                )
-            else:
-                ask_answer_slot.markdown(
-                    _render_empty_state(
-                        "Ask any question",
-                        f"Enter a question above and click <strong>Ask &amp; Audit</strong> "
-                        f"to inspect live {route_target} output with inline claim highlights.",
-                        pills=("Product lineups", "API rates", "Release versions", "Policy rules"),
-                        hint="Or enable <strong>Demo mode</strong> to replay a pre-cached Q&amp;A audit.",
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-    with ask_right:
-        st.subheader("Verification audit", icon=":material/fact_check:")
-        ask_right_skel = st.empty()
-
-        if ask_clicked and not is_any_busy:
-            st.session_state["ask_error"] = None
-            st.session_state["ask_rewrite_error"] = None
-            question_text = st.session_state["ask_question_input"].strip()
-            if ask_is_demo:
-                try:
-                    demo_ask = _apply_ask_demo_sample(question_text or None, sync_widget=False)
-                    render_ask_answer_card(
-                        placeholder=ask_answer_slot,
-                        answer_text=demo_ask["answer_text"],
-                        verification_results=st.session_state.get("ask_results"),
-                        question_text=st.session_state.get("ask_question_asked"),
-                        answer_model=st.session_state.get("ask_model"),
-                        answer_meta=st.session_state.get("ask_meta"),
-                    )
-                except FileNotFoundError as exc:
-                    _set_tab_error(
-                        "ask_error",
-                        exc,
-                        action="loading offline Ask & Audit demo",
-                        recover_key="demo_recover_ask_cache",
-                        query_or_url=question_text,
-                    )
-            elif not question_text:
-                _clear_slot(ask_left_skel)
-                st.warning(
-                    "Please enter a question to ask and audit.",
-                    icon=":material/warning:",
-                )
-            else:
-                st.session_state["ask_question_asked"] = question_text
-                st.session_state["ask_answer"] = ""
-                st.session_state["ask_model"] = None
-                st.session_state["ask_meta"] = None
-                st.session_state["ask_results"] = None
-                st.session_state["ask_extract_model"] = None
-                st.session_state["ask_extract_meta"] = None
-                st.session_state["ask_corrected_answer"] = None
-                st.session_state["ask_corrected_model"] = None
-                st.session_state["ask_corrected_meta"] = None
-                st.session_state["ask_audit_at"] = None
-                st.session_state["ask_status_steps"] = []
-                st.session_state["demo_ask_notice"] = ""
-                st.session_state["demo_ask_rewrite"] = None
-                st.session_state["busy_action"] = "ask"
-                st.session_state["_busy_armed"] = True
-                st.rerun()
-
-        elif is_ask_running:
-            question_text = str(
-                st.session_state.get("ask_question_asked")
-                or st.session_state.get("ask_question_input")
-                or ""
-            ).strip()
-            if not question_text:
-                _clear_slot(ask_left_skel)
-                st.session_state["busy_action"] = None
-                st.rerun()
-
-            ask_finished = False
-            ask_status = None
-            try:
-                # Check visitor session quota before running live audit
-                if not st.session_state.get("demo_mode") and int(st.session_state.get("live_audits_performed") or 0) >= get_max_session_audits():
-                    raise RuntimeError("Live quota is busy, showing saved results. Session audit limit reached.")
-
-                _show_skeleton_slot(ask_right_skel, (128, 82, 165))
-                with st.status(f"Asking LLM via {route_target}", expanded=True) as ask_status:
-                    ask_steps: list[str] = []
-                    st.write(f"Getting answer from LLM via {route_target}...")
-
-                    llm_answer, raw_ask_meta = ask_question(question_text)
-                    ask_record = build_request_telemetry(
-                        "Ask & Audit Q&A",
-                        raw_ask_meta,
-                        model_used=raw_ask_meta.get("model_used") if isinstance(raw_ask_meta, dict) else None,
-                    )
-                    ask_model = ask_record.get("model_used") if ask_record else None
-
-                    st.session_state["ask_answer"] = llm_answer
-                    st.session_state["ask_model"] = ask_model
-                    st.session_state["ask_meta"] = ask_record
-                    append_gateway_request(ask_record)
-                    render_gateway_panel(gateway_placeholder, st.session_state["gateway_requests"])
-
-                    ask_msg = f"Answered via {route_target} ({ask_model})"
-                    if ask_record and ask_record.get("fallback_used"):
-                        fb_route = format_fallback_route(
-                            ask_record.get("primary_model"),
-                            ask_record.get("model_used"),
-                        )
-                        ask_msg += f" — Fallback used: {fb_route}"
-                    ask_steps.append(ask_msg)
-                    st.write(f":material/check: {ask_msg}")
-
-                    # Show the raw LLM answer immediately before the Tavily audit runs.
-                    _clear_slot(ask_left_skel)
-                    render_ask_answer_card(
-                        placeholder=ask_answer_slot,
-                        answer_text=llm_answer,
-                        verification_results=None,
-                        question_text=question_text,
-                        answer_model=ask_model,
-                        answer_meta=ask_record,
-                    )
-
-                    # Automatically run the stale-claim audit using existing extractor + verifier.
-                    ask_status.update(label="Extracting claims", state="running")
-                    ext_model, ext_record, ask_verified = run_stale_audit(
-                        answer_text=llm_answer,
-                        status_widget=ask_status,
-                        steps_log=ask_steps,
-                        credits_placeholder=credits_placeholder,
-                        gateway_placeholder=gateway_placeholder,
-                    )
-
-                    st.session_state["ask_extract_model"] = ext_model
-                    st.session_state["ask_extract_meta"] = ext_record
-                    st.session_state["ask_results"] = ask_verified
-                    st.session_state["ask_audit_at"] = datetime.now().astimezone()
-                    st.session_state["ask_status_steps"] = ask_steps
-                    st.session_state["quota_banner"] = None
-
-                    # Re-render the answer card with inline red/green claim highlights!
-                    render_ask_answer_card(
-                        placeholder=ask_answer_slot,
-                        answer_text=llm_answer,
-                        verification_results=ask_verified,
-                        question_text=question_text,
-                        answer_model=ask_model,
-                        answer_meta=ask_record,
-                    )
-                ask_finished = True
-
-            except Exception as exc:
-                _clear_slot(ask_left_skel)
-                if ask_status is not None:
-                    ask_status.update(label="Ask & Audit failed", state="error", expanded=False)
-                if is_quota_or_rate_limit_error(exc):
-                    st.session_state["quota_status"] = "Saved results"
-                    st.session_state["quota_banner"] = f"Live API limit reached, showing real saved results from {SAVED_RESULTS_DATE}"
-                    try:
-                        demo_ask = _apply_ask_demo_sample(question_text, sync_widget=False)
-                        st.session_state["ask_error"] = None
-                    except Exception:
-                        _set_tab_error(
-                            "ask_error",
-                            exc,
-                            action="running Ask & Audit",
-                            recover_key="demo_recover_ask",
-                            query_or_url=question_text,
-                        )
-                else:
-                    if st.session_state.get("ask_answer"):
-                        render_ask_answer_card(
-                            placeholder=ask_answer_slot,
-                            answer_text=st.session_state["ask_answer"],
-                            verification_results=None,
-                            question_text=st.session_state.get("ask_question_asked"),
-                            answer_model=st.session_state.get("ask_model"),
-                            answer_meta=st.session_state.get("ask_meta"),
-                            audit_error=True,
-                        )
-                    _set_tab_error(
-                        "ask_error",
-                        exc,
-                        action="running Ask & Audit",
-                        recover_key="demo_recover_ask",
-                        query_or_url=question_text,
-                    )
-                ask_finished = True
-            finally:
-                if st.session_state.get("busy_action") == "ask":
-                    st.session_state["busy_action"] = None
-                _clear_slot(ask_left_skel)
-                _clear_slot(ask_right_skel)
-            if ask_finished:
-                st.rerun()
-
-        elif st.session_state.get("ask_status_steps"):
-            with st.status(
-                "Done",
-                state="complete",
-                expanded=st.session_state["keep_status_expanded"],
-            ):
-                for step_line in st.session_state["ask_status_steps"]:
-                    st.write(step_line)
-
-        if st.session_state.get("quota_banner"):
-            st.warning(
-                f"⚠️ **{st.session_state['quota_banner']}**",
-                icon=":material/history:",
-            )
-
-        if st.session_state.get("demo_ask_notice"):
-            _render_demo_banner(st.session_state["demo_ask_notice"])
-
-        _render_stored_error_with_demo_recovery(
-            "ask_error",
-            recover_scope="ask",
-            default_recover_key="demo_recover_ask",
-        )
-
-        if st.session_state.get("ask_results") is not None or not st.session_state.get("ask_error"):
-            render_audit_results(
-                results=st.session_state.get("ask_results"),
-                extract_model=st.session_state.get("ask_extract_model"),
-                extract_meta=st.session_state.get("ask_extract_meta"),
-                key_prefix="ask",
-                just_clicked=bool(
-                    is_ask_running or (ask_clicked and st.session_state.get("ask_results") is not None)
-                ),
-                empty_title="Ready to ask & audit",
-                empty_body=(
-                    f"Type any question above and click <strong>Ask &amp; Audit</strong> to fetch "
-                    f"an LLM response via {route_target} and highlight stale facts automatically."
-                ),
-                empty_pills=("Live LLM answer", "Auto-extract claims", "Inline highlights", "Diff & export"),
-                extra_models=[st.session_state.get("ask_model")],
-                extra_metas=[st.session_state.get("ask_meta")],
-            )
-
-    render_corrected_and_export_section(
-        mode="Ask & Audit",
-        key_prefix="ask",
-        original_answer=st.session_state.get("ask_answer", ""),
-        results=st.session_state.get("ask_results"),
-        corrected_answer=st.session_state.get("ask_corrected_answer"),
-        corrected_model=st.session_state.get("ask_corrected_model"),
-        corrected_meta=st.session_state.get("ask_corrected_meta"),
-        question=st.session_state.get("ask_question_asked"),
-        ask_meta=st.session_state.get("ask_meta"),
-        extract_model=st.session_state.get("ask_extract_model"),
-        extract_meta=st.session_state.get("ask_extract_meta"),
-        audit_at=st.session_state.get("ask_audit_at"),
-        gateway_placeholder=gateway_placeholder,
-    )
-
-with tab_url:
-    is_url_running = current_busy == "url"
-    st.caption(
-        "Paste an article or blog URL below. Tavily Extract pulls the clean text, audits the first "
-        "8 time-sensitive claims in parallel, highlights facts inline, and exports the full report."
-    )
-
-    u_col, u_btn_col, u_clr_col = st.columns(
-        [4, 1.3, 0.75],
-        vertical_alignment="bottom",
-        gap="small",
-    )
-    with u_col:
-        st.text_input(
-            "Article or blog URL",
-            key="url_input",
-            label_visibility="collapsed",
-            placeholder="https://example.com/blog/python-release-guide",
-        )
-    with u_btn_col:
-        url_clicked = st.button(
-            "Audit URL",
-            key="audit_url_btn",
-            type="primary",
-            icon=("spinner" if is_url_running else ":material/travel_explore:"),
-            disabled=is_any_busy,
-            width="stretch",
-        )
-    with u_clr_col:
-        st.button(
-            "Clear",
-            key="url_clear_btn",
-            icon=":material/delete_outline:",
-            on_click=clear_url_workspace,
-            disabled=is_any_busy,
-            width="stretch",
-        )
-
-    url_skel_slot = st.empty()
-
-    if url_clicked and not is_any_busy:
-        st.session_state["url_error"] = None
-        st.session_state["url_rewrite_error"] = None
-        url_val = st.session_state["url_input"].strip()
-        if st.session_state.get("demo_mode"):
-            try:
-                _apply_url_demo_sample(url_val or None, sync_widget=False)
-            except FileNotFoundError as exc:
-                _set_tab_error(
-                    "url_error",
-                    exc,
-                    action="loading offline URL demo",
-                    recover_key="demo_recover_url_cache",
-                    query_or_url=url_val,
-                )
-        elif not url_val:
-            st.warning(
-                "Please enter an article or blog URL to audit.",
-                icon=":material/warning:",
-            )
-        else:
-            st.session_state["url_audited"] = None
-            st.session_state["url_article_title"] = ""
-            st.session_state["url_article_text"] = ""
-            st.session_state["url_article_truncated"] = False
-            st.session_state["url_extract_credits"] = 0.0
-            st.session_state["url_extract_cache_hit"] = False
-            st.session_state["url_total_claims_found"] = 0
-            st.session_state["url_results"] = None
-            st.session_state["url_extract_model"] = None
-            st.session_state["url_extract_meta"] = None
-            st.session_state["url_corrected_answer"] = None
-            st.session_state["url_corrected_model"] = None
-            st.session_state["url_corrected_meta"] = None
-            st.session_state["url_audit_at"] = None
-            st.session_state["url_status_steps"] = []
-            st.session_state["demo_url_notice"] = ""
-            st.session_state["demo_url_rewrite"] = None
-            st.session_state["busy_action"] = "url"
-            st.session_state["_busy_armed"] = True
-            st.rerun()
-
-    elif is_url_running:
-        url_val = st.session_state.get("url_input", "").strip()
-        if not url_val:
-            st.session_state["busy_action"] = None
-            st.rerun()
-        url_finished = False
-        url_status = None
-        try:
-            # Check visitor session quota before running live audit
-            if not st.session_state.get("demo_mode") and int(st.session_state.get("live_audits_performed") or 0) >= get_max_session_audits():
-                raise RuntimeError("Live quota is busy, showing saved results. Session audit limit reached.")
-
-            _show_skeleton_slot(url_skel_slot, (68, 128, 165, 165))
-            with st.status("Extracting article via Tavily Extract", expanded=True) as url_status:
-                url_steps: list[str] = []
-                st.write("Fetching clean article text via Tavily Extract...")
-                article_info = extract_article_from_url(url_val)
-
-                ext_credits = float(article_info.get("credits_used") or 0.0)
-                if ext_credits > 0:
-                    st.session_state["tavily_credits_used"] = round(
-                        float(st.session_state.get("tavily_credits_used", 0.0)) + ext_credits,
-                        2,
-                    )
-                    render_sidebar_credits(
-                        credits_placeholder,
-                        st.session_state["tavily_credits_used"],
-                    )
-
-                resolved_url = str(article_info.get("url") or url_val).strip()
-                article_text = str(article_info.get("content") or "")
-                st.session_state["url_audited"] = resolved_url
-                st.session_state["url_article_title"] = str(article_info.get("title") or "").strip()
-                st.session_state["url_article_text"] = article_text
-                st.session_state["url_article_truncated"] = bool(article_info.get("truncated"))
-                st.session_state["url_extract_credits"] = ext_credits
-                st.session_state["url_extract_cache_hit"] = bool(article_info.get("cache_hit"))
-
-                if article_info.get("cache_hit"):
-                    ext_msg = f"Extracted article ({len(article_text):,} chars, 6h cache hit — 0 credits)"
-                else:
-                    ext_msg = (
-                        f"Extracted article ({len(article_text):,} chars, "
-                        f"{format_credits(ext_credits)} Tavily credit)"
-                    )
-                url_steps.append(ext_msg)
-                st.write(f":material/check: {ext_msg}")
-
-                url_status.update(label="Extracting claims", state="running")
-                url_meta_out: dict = {}
-                ext_model, ext_record, url_verified = run_stale_audit(
-                    answer_text=article_text,
-                    status_widget=url_status,
-                    steps_log=url_steps,
-                    credits_placeholder=credits_placeholder,
-                    gateway_placeholder=gateway_placeholder,
-                    max_claims=8,
-                    audit_meta_out=url_meta_out,
-                )
-
-                st.session_state["url_extract_model"] = ext_model
-                st.session_state["url_extract_meta"] = ext_record
-                st.session_state["url_results"] = url_verified
-                st.session_state["url_total_claims_found"] = int(
-                    url_meta_out.get("total_claims_extracted") or len(url_verified)
-                )
-                st.session_state["url_audit_at"] = datetime.now().astimezone()
-                st.session_state["url_status_steps"] = url_steps
-                st.session_state["quota_banner"] = None
-            url_finished = True
-
-        except Exception as exc:
-            if url_status is not None:
-                url_status.update(label="URL audit failed", state="error", expanded=False)
-            if is_quota_or_rate_limit_error(exc):
-                st.session_state["quota_status"] = "Saved results"
-                st.session_state["quota_banner"] = f"Live API limit reached, showing real saved results from {SAVED_RESULTS_DATE}"
-                try:
-                    _apply_url_demo_sample(url_val, sync_widget=False)
-                    st.session_state["url_error"] = None
-                except Exception:
-                    _set_tab_error(
-                        "url_error",
-                        exc,
-                        action="extracting the URL",
-                        recover_key="demo_recover_url",
-                        query_or_url=url_val,
-                    )
-            else:
-                _set_tab_error(
-                    "url_error",
-                    exc,
-                    action="extracting the URL",
-                    recover_key="demo_recover_url",
-                    query_or_url=url_val,
-                )
-            url_finished = True
-        finally:
-            if st.session_state.get("busy_action") == "url":
-                st.session_state["busy_action"] = None
-            _clear_slot(url_skel_slot)
-        if url_finished:
-            st.rerun()
-
-    elif st.session_state.get("url_status_steps"):
-        with st.status(
-            "Done",
-            state="complete",
-            expanded=st.session_state["keep_status_expanded"],
-        ):
-            for step_line in st.session_state["url_status_steps"]:
-                st.write(step_line)
-
-    if st.session_state.get("quota_banner"):
-        st.warning(
-            f"⚠️ **{st.session_state['quota_banner']}**",
-            icon=":material/history:",
-        )
-
-    if st.session_state.get("demo_url_notice"):
-        _render_demo_banner(st.session_state["demo_url_notice"])
-
-    _render_stored_error_with_demo_recovery(
-        "url_error",
-        recover_scope="url",
-        default_recover_key="demo_recover_url",
-    )
-
-    saved_url = st.session_state.get("url_audited")
-    saved_url_results = st.session_state.get("url_results")
-    saved_article_text = st.session_state.get("url_article_text", "")
-    if saved_url and saved_url_results is not None:
-        url_title = st.session_state.get("url_article_title") or extract_domain(saved_url)
-        safe_href = html.escape(saved_url, quote=True)
-        cache_badge = (
-            "6h cache hit (0 credits)"
-            if st.session_state.get("url_extract_cache_hit")
-            else f"{format_credits(float(st.session_state.get('url_extract_credits') or 0.0))} extract credit"
-        )
-        st.markdown(
-            '<div class="sad-url-source-bar">'
-            '<div>'
-            f'<strong>{escape_html(url_title)}</strong> &bull; '
-            f'<a href="{safe_href}" target="_blank" rel="noopener noreferrer">{escape_html(saved_url)} &#8599;</a>'
-            '</div>'
-            f'<div class="sad-annotated-hint">{len(saved_article_text):,} chars &bull; Tavily Extract: {escape_html(cache_badge)}</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-
-        total_found = int(st.session_state.get("url_total_claims_found") or 0)
-        if total_found > 8:
-            st.info(
-                f"Extracted {total_found} claims from the article — auditing the first 8 claims.",
-                icon=":material/info:",
-            )
-        if st.session_state.get("url_article_truncated"):
-            st.caption("Article text was truncated to the first 12,000 characters for focused auditing.")
-
-    if saved_url_results is not None or not st.session_state.get("url_error"):
-        render_audit_results(
-            results=saved_url_results,
-            extract_model=st.session_state.get("url_extract_model"),
-            extract_meta=st.session_state.get("url_extract_meta"),
-            key_prefix="url",
-            just_clicked=bool(
-                is_url_running or (url_clicked and saved_url_results is not None)
-            ),
-            annotated_text=saved_article_text,
-            annotated_title="Annotated article",
-            empty_title="Ready to audit a URL",
-            empty_body=(
-                "Paste an article or blog URL above and click <strong>Audit URL</strong> to extract "
-                "clean text with Tavily Extract and audit its first 8 time-sensitive claims."
-            ),
-            empty_pills=("Tavily Extract", "First 8 claims", "Annotated article", "Export JSON / MD"),
-        )
-
-    render_corrected_and_export_section(
-        mode="Audit a URL",
-        key_prefix="url",
-        original_answer=saved_article_text,
-        source_url=saved_url,
-        extra_tavily_credits=float(st.session_state.get("url_extract_credits") or 0.0),
-        results=saved_url_results,
-        corrected_answer=st.session_state.get("url_corrected_answer"),
-        corrected_model=st.session_state.get("url_corrected_model"),
-        corrected_meta=st.session_state.get("url_corrected_meta"),
-        extract_model=st.session_state.get("url_extract_model"),
-        extract_meta=st.session_state.get("url_extract_meta"),
-        audit_at=st.session_state.get("url_audit_at"),
-        gateway_placeholder=gateway_placeholder,
-    )
-
-# ---------------------------------------------------------------------------
-# Tab 5: Model Showdown
-# ---------------------------------------------------------------------------
-with tab_showdown:
-    render_showdown_tab(use_bifrost=use_bifrost_mode)
-
-with tab_benchmark:
+def render_benchmark_view(use_bifrost_mode: bool, current_busy: str | None, is_any_busy: bool) -> None:
+    """Render the 20-claim ground truth detector benchmark view."""
     is_bench_running = current_busy == "benchmark"
     try:
         _dataset_preview_cached = load_benchmark_dataset()
@@ -6252,40 +5450,994 @@ with tab_benchmark:
                     },
                 )
 
+
+
 # ---------------------------------------------------------------------------
-# Tab 5: Agent Lab (Benchmarking Research Agents, Problem Statement 02)
+# Five-Group Main Workspace
+# 1. "🔍 Audit" (Input Studio + Overview/Highlights sub-view)
+# 2. "⚖️ Compare" (Model Showdown)
+# 3. "🧪 Agent Lab" (Agent Lab PS02 + Benchmark Ground Truth)
+# 4. "📚 Learn" (Architecture & Telemetry + Methodology + API Playground)
+# 5. "🕒 History" (Session History)
 # ---------------------------------------------------------------------------
+tab_audit, tab_compare, tab_lab, tab_learn, tab_history = st.tabs(
+    [
+        "🔍 Audit",
+        "⚖️ Compare",
+        "🧪 Agent Lab",
+        "📚 Learn",
+        "🕒 History",
+    ]
+)
+
+route_target = "Bifrost" if use_bifrost_mode else "Gemini"
+
+with tab_audit:
+    sec1_col1, sec1_col2 = st.columns([2.3, 1.3], vertical_alignment="center")
+    with sec1_col1:
+        st.markdown(
+            """
+            <div class="sad-section-num-header" style="margin-bottom: 0.25rem;">
+              <span class="sad-section-num">1</span>
+              <div>
+                <h3 class="sad-section-title">Input</h3>
+                <p class="sad-section-sub">Start here &mdash; choose an input mode to audit freshness against live web reality</p>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with sec1_col2:
+        audit_subview = st.segmented_control(
+            "Audit Navigation",
+            options=["Audit Studio", "Overview & Highlights"],
+            default="Audit Studio",
+            key="audit_subview_choice",
+            label_visibility="collapsed",
+        )
+
+    if audit_subview == "Overview & Highlights":
+        render_home_tab(
+            use_bifrost_mode=use_bifrost_mode,
+            gateway_unreachable=gateway_unreachable,
+            quota_state=quota_state,
+            gateway_health=gateway_health,
+            evaluator_text=evaluator_text,
+            highlights_bento_fn=render_highlights_bento_grid,
+        )
+    else:
+        with st.container():
+            st.markdown('<div class="sad-input-studio">', unsafe_allow_html=True)
+            top_c1, top_c2, top_c3 = st.columns([1.1, 2.2, 1.2], vertical_alignment="center")
+            with top_c1:
+                st.markdown(
+                    '<div class="sad-studio-title" style="margin: 0; font-size: 1rem;">'
+                    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+                    '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'
+                    '</svg>'
+                    '<span>Start here</span>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            with top_c2:
+                active_input_mode = st.segmented_control(
+                    "Audit Mode",
+                    options=["Paste an answer", "Ask a question", "Paste a URL"],
+                    default=st.session_state.get("active_input_mode", "Paste an answer"),
+                    key="active_input_mode",
+                    label_visibility="collapsed",
+                )
+            with top_c3:
+                audits_done = int(st.session_state.get("live_audits_performed") or 0)
+                audits_left = max(0, get_max_session_audits() - audits_done)
+                st.markdown(
+                    f'<div style="text-align: right;">'
+                    f'<span class="sad-studio-quota">Audits left: <strong>{audits_left}</strong></span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+            is_pasted_running = current_busy == "pasted"
+            is_ask_running = current_busy == "ask"
+            is_url_running = current_busy == "url"
+
+            check_clicked = False
+            ask_clicked = False
+            url_clicked = False
+
+            if active_input_mode == "Paste an answer":
+                char_count = len(st.session_state.get("answer_input", ""))
+                tool_col1, tool_col2, tool_col3 = st.columns([2.7, 1.1, 0.45], vertical_alignment="center")
+                with tool_col1:
+                    chip_cols = st.columns(len(DEMO_EXAMPLES), gap="small")
+                    for ex_idx, ex_item in enumerate(DEMO_EXAMPLES):
+                        with chip_cols[ex_idx]:
+                            short_name = ex_item["label"].split()[0]
+                            if st.button(
+                                short_name,
+                                key=f"pasted_chip_{ex_idx}",
+                                help=f"{ex_item['label']}: {ex_item['text'][:80]}...",
+                                disabled=is_any_busy,
+                                width="stretch",
+                            ):
+                                load_demo_example(ex_item["text"])
+                with tool_col2:
+                    if st.button(
+                        "✨ Guided Demo",
+                        key="guided_demo_btn",
+                        type="secondary",
+                        width="stretch",
+                        help="Auto-loads 3 cached examples in 30 seconds: iPhone (fresh), GST (outdated), Wrong PM (incorrect)",
+                    ):
+                        st.session_state["guided_demo_active"] = True
+                        st.session_state["guided_demo_step"] = 0
+                        step_data = get_guided_demo_step(0)
+                        _apply_pasted_demo_sample(step_data["sample"], exact_match=True, sync_widget=True)
+                        st.rerun()
+                with tool_col3:
+                    with st.popover("💡 Tips", icon=":material/lightbulb:"):
+                        st.markdown(
+                            "**Recommended claims to test:**\n"
+                            "1. **Tech Specs & Prices**: *\"Apple's latest flagship is iPhone 16 Pro Max starting at $1,199.\"*\n"
+                            "2. **Tax & Legal Regulations**: *\"India GST rates are structured into 5%, 12%, 18%, and 28% slabs.\"*\n"
+                            "3. **Government & Elections**: *\"Narendra Modi is serving his 3rd term as Prime Minister of India.\"*\n"
+                            "4. **API Pricing**: *\"OpenAI GPT-4 Turbo input tokens are $10.00 per 1M tokens.\"*"
+                        )
+
+                if st.session_state.get("guided_demo_active"):
+                    curr_step = int(st.session_state.get("guided_demo_step", 0))
+                    step_data = get_guided_demo_step(curr_step)
+                    st.markdown(
+                        f'<div class="sad-guided-demo-banner">'
+                        f'<div>'
+                        f'<span class="sad-guided-step-badge">Step {curr_step + 1} of 3</span> '
+                        f'<strong>{escape_html(step_data["title"])}</strong> &mdash; '
+                        f'<span style="color: var(--text-muted); font-size: 0.85rem;">{escape_html(step_data["caption"])}</span>'
+                        f'</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                    g_btn1, g_btn2, g_btn3 = st.columns([1, 1.2, 1], gap="small")
+                    with g_btn1:
+                        if st.button("◀ Previous", key="gd_prev_btn", disabled=(curr_step <= 0), width="stretch"):
+                            st.session_state["guided_demo_step"] = curr_step - 1
+                            prev_step = get_guided_demo_step(curr_step - 1)
+                            _apply_pasted_demo_sample(prev_step["sample"], exact_match=True, sync_widget=True)
+                            st.rerun()
+                    with g_btn2:
+                        if st.button("Next Step ▶", key="gd_next_btn", disabled=(curr_step >= len(GUIDED_DEMO_STEPS) - 1), width="stretch", type="primary"):
+                            st.session_state["guided_demo_step"] = curr_step + 1
+                            next_step = get_guided_demo_step(curr_step + 1)
+                            _apply_pasted_demo_sample(next_step["sample"], exact_match=True, sync_widget=True)
+                            st.rerun()
+                    with g_btn3:
+                        if st.button("Exit Demo ✕", key="gd_exit_btn", width="stretch"):
+                            st.session_state["guided_demo_active"] = False
+                            st.rerun()
+
+                st.text_area(
+                    "LLM-generated answer",
+                    key="answer_input",
+                    height=80,
+                    label_visibility="collapsed",
+                    placeholder=(
+                        "Paste an LLM-generated answer here or click one of the example chips above..."
+                    ),
+                )
+                st.caption(f"⌨️ Hint: Press **Ctrl + Enter** to audit &bull; {char_count:,} chars")
+
+                btn_col1, btn_col2 = st.columns([3, 1], gap="small")
+                with btn_col1:
+                    check_clicked = st.button(
+                        "Check Freshness",
+                        key="check_freshness_btn",
+                        type="primary",
+                        icon=("spinner" if is_pasted_running else ":material/verified:"),
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+                with btn_col2:
+                    st.button(
+                        "Clear",
+                        key="clear_workspace_btn",
+                        type="secondary",
+                        icon=":material/delete_outline:",
+                        on_click=clear_workspace,
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+
+            elif active_input_mode == "Ask a question":
+                st.caption(
+                    f"Type a question below. The app fetches an answer via {route_target}, shows it, "
+                    "runs the live stale-claim audit automatically, and highlights outdated vs. fresh claims inline."
+                )
+                q_chips = [
+                    ("iPhone 16 Specs", "What is the latest iPhone model, chip, and US starting price?"),
+                    ("India GST Slabs", "What are the current GST tax slabs in India?"),
+                    ("GPT-4 Turbo Price", "What is the per-million token pricing for OpenAI GPT-4 Turbo?"),
+                ]
+                q_chip_cols = st.columns(len(q_chips), gap="small")
+                for q_idx, (q_lbl, q_text) in enumerate(q_chips):
+                    with q_chip_cols[q_idx]:
+                        if st.button(q_lbl, key=f"ask_chip_{q_idx}", width="stretch", disabled=is_any_busy):
+                            st.session_state["ask_question_input"] = q_text
+                            st.rerun()
+
+                st.text_input(
+                    "Ask a question",
+                    key="ask_question_input",
+                    label_visibility="collapsed",
+                    placeholder="e.g. What is the latest iPhone model, chip, and US starting price?",
+                )
+
+                btn_col1, btn_col2 = st.columns([3, 1], gap="small")
+                with btn_col1:
+                    ask_clicked = st.button(
+                        "Ask & Audit",
+                        key="ask_and_audit_btn",
+                        type="primary",
+                        icon=("spinner" if is_ask_running else ":material/send:"),
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+                with btn_col2:
+                    st.button(
+                        "Clear",
+                        key="ask_clear_btn",
+                        icon=":material/delete_outline:",
+                        on_click=clear_ask_workspace,
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+
+            else:  # "Paste a URL"
+                st.caption(
+                    "Paste an article or blog URL below. Tavily Extract pulls clean text, audits the first "
+                    "8 time-sensitive claims, highlights facts inline, and exports report."
+                )
+                u_chips = [
+                    ("Tech Blog", "https://techcrunch.com/2024/09/09/apple-iphone-16-pro-event/"),
+                    ("Policy Article", "https://pib.gov.in/PressReleasePage.aspx?PRID=1943890"),
+                    ("AI Guide", "https://openai.com/index/hello-gpt-4o/"),
+                ]
+                u_chip_cols = st.columns(len(u_chips), gap="small")
+                for u_idx, (u_lbl, u_text) in enumerate(u_chips):
+                    with u_chip_cols[u_idx]:
+                        if st.button(u_lbl, key=f"url_chip_{u_idx}", width="stretch", disabled=is_any_busy):
+                            st.session_state["url_input"] = u_text
+                            st.rerun()
+
+                st.text_input(
+                    "Article or blog URL",
+                    key="url_input",
+                    label_visibility="collapsed",
+                    placeholder="https://example.com/blog/python-release-guide",
+                )
+
+                btn_col1, btn_col2 = st.columns([3, 1], gap="small")
+                with btn_col1:
+                    url_clicked = st.button(
+                        "Audit URL",
+                        key="audit_url_btn",
+                        type="primary",
+                        icon=("spinner" if is_url_running else ":material/travel_explore:"),
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+                with btn_col2:
+                    st.button(
+                        "Clear",
+                        key="url_clear_btn",
+                        icon=":material/delete_outline:",
+                        on_click=clear_url_workspace,
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # -------------------------------------------------------------------
+        # Progress Stepper directly under Input Studio
+        # -------------------------------------------------------------------
+        has_active_results = bool(
+            (active_input_mode == "Paste an answer" and st.session_state.get("results"))
+            or (active_input_mode == "Ask a question" and st.session_state.get("ask_results"))
+            or (active_input_mode == "Paste a URL" and st.session_state.get("url_results"))
+        )
+        has_active_input = bool(
+            (active_input_mode == "Paste an answer" and st.session_state.get("answer_input", "").strip())
+            or (active_input_mode == "Ask a question" and st.session_state.get("ask_question_input", "").strip())
+            or (active_input_mode == "Paste a URL" and st.session_state.get("url_input", "").strip())
+        )
+        st.markdown(
+            render_stepper_html(current_busy, has_active_results, has_active_input),
+            unsafe_allow_html=True,
+        )
+
+        # -------------------------------------------------------------------
+        # Execute Handlers for Active Mode
+        # -------------------------------------------------------------------
+        if active_input_mode == "Paste an answer":
+            pasted_skel_slot = st.empty()
+            if check_clicked and not is_any_busy:
+                st.session_state["pasted_error"] = None
+                st.session_state["pasted_rewrite_error"] = None
+                answer_text = st.session_state["answer_input"].strip()
+                if st.session_state.get("demo_mode"):
+                    try:
+                        sample, exact = find_cached_pasted_audit(answer_text or None)
+                        _apply_pasted_demo_sample(
+                            sample,
+                            exact_match=(True if not answer_text else exact),
+                            sync_widget=False,
+                        )
+                    except FileNotFoundError as exc:
+                        _set_tab_error(
+                            "pasted_error",
+                            exc,
+                            action="loading offline demo cache",
+                            recover_key="demo_recover_pasted_cache",
+                            query_or_url=answer_text,
+                        )
+                elif not answer_text:
+                    st.warning(
+                        "Please paste an LLM-generated answer (or pick an example / enable Demo mode) first.",
+                        icon=":material/warning:",
+                    )
+                else:
+                    st.session_state["results"] = None
+                    st.session_state["extract_model"] = None
+                    st.session_state["extract_meta"] = None
+                    st.session_state["corrected_answer"] = None
+                    st.session_state["corrected_model"] = None
+                    st.session_state["corrected_meta"] = None
+                    st.session_state["pasted_audit_at"] = None
+                    st.session_state["status_steps"] = []
+                    st.session_state["demo_pasted_notice"] = ""
+                    st.session_state["demo_pasted_rewrite"] = None
+                    st.session_state["busy_action"] = "pasted"
+                    st.session_state["_busy_armed"] = True
+                    st.rerun()
+
+            elif is_pasted_running:
+                answer_text = st.session_state.get("answer_input", "").strip()
+                if not answer_text:
+                    st.session_state["busy_action"] = None
+                    st.rerun()
+                pasted_finished = False
+                status = None
+                try:
+                    if not st.session_state.get("demo_mode") and int(st.session_state.get("live_audits_performed") or 0) >= get_max_session_audits():
+                        raise RuntimeError("Live quota is busy, showing saved results. Session audit limit reached.")
+
+                    _show_skeleton_slot(pasted_skel_slot, (128, 82, 165))
+                    with st.status("Extracting claims", expanded=True) as status:
+                        steps_log: list[str] = []
+                        extract_model, extract_record, verified_results = run_stale_audit(
+                            answer_text=answer_text,
+                            status_widget=status,
+                            steps_log=steps_log,
+                            credits_placeholder=credits_placeholder,
+                            gateway_placeholder=gateway_placeholder,
+                        )
+                        st.session_state["extract_model"] = extract_model
+                        st.session_state["extract_meta"] = extract_record
+                        st.session_state["results"] = verified_results
+                        st.session_state["checked_answer"] = answer_text
+                        st.session_state["pasted_audit_at"] = datetime.now().astimezone()
+                        st.session_state["status_steps"] = steps_log
+                        st.session_state["quota_banner"] = None
+                    pasted_finished = True
+                except Exception as exc:
+                    if status is not None:
+                        status.update(label="Check failed", state="error", expanded=False)
+                    if is_quota_or_rate_limit_error(exc):
+                        st.session_state["quota_status"] = "Saved results"
+                        st.session_state["quota_banner"] = f"Live API limit reached, showing real saved results from {SAVED_RESULTS_DATE}"
+                        try:
+                            sample, exact = find_cached_pasted_audit(answer_text)
+                            _apply_pasted_demo_sample(sample, exact_match=exact, sync_widget=False)
+                            st.session_state["pasted_error"] = None
+                        except Exception:
+                            _set_tab_error(
+                                "pasted_error",
+                                exc,
+                                action="verifying your answer",
+                                recover_key="demo_recover_pasted",
+                                query_or_url=answer_text,
+                            )
+                    else:
+                        _set_tab_error(
+                            "pasted_error",
+                            exc,
+                            action="verifying your answer",
+                            recover_key="demo_recover_pasted",
+                            query_or_url=answer_text,
+                        )
+                    pasted_finished = True
+                finally:
+                    if st.session_state.get("busy_action") == "pasted":
+                        st.session_state["busy_action"] = None
+                    _clear_slot(pasted_skel_slot)
+                if pasted_finished:
+                    st.rerun()
+
+            elif st.session_state.get("status_steps"):
+                with st.status(
+                    "Done",
+                    state="complete",
+                    expanded=st.session_state["keep_status_expanded"],
+                ):
+                    for step_line in st.session_state["status_steps"]:
+                        st.write(step_line)
+
+            if st.session_state.get("quota_banner"):
+                st.warning(f"⚠️ **{st.session_state['quota_banner']}**", icon=":material/history:")
+            if st.session_state.get("demo_pasted_notice"):
+                _render_demo_banner(st.session_state["demo_pasted_notice"])
+            _render_stored_error_with_demo_recovery("pasted_error", recover_scope="pasted", default_recover_key="demo_recover_pasted")
+
+        elif active_input_mode == "Ask a question":
+            question_ready = bool(st.session_state.get("ask_question_input", "").strip())
+            ask_is_demo = bool(st.session_state.get("demo_mode"))
+            ask_left_skel = st.empty()
+            ask_right_skel = st.empty()
+
+            if ask_clicked and not is_any_busy:
+                st.session_state["ask_error"] = None
+                st.session_state["ask_rewrite_error"] = None
+                q_text = st.session_state["ask_question_input"].strip()
+                if ask_is_demo:
+                    try:
+                        _apply_ask_demo_sample(q_text or None, sync_widget=False)
+                    except FileNotFoundError as exc:
+                        _set_tab_error("ask_error", exc, action="loading offline demo Q&A", recover_key="demo_recover_ask_cache", query_or_url=q_text)
+                elif not q_text:
+                    st.warning("Please type a question to ask and audit.", icon=":material/warning:")
+                else:
+                    st.session_state["ask_question_asked"] = q_text
+                    st.session_state["ask_answer"] = ""
+                    st.session_state["ask_model"] = None
+                    st.session_state["ask_meta"] = None
+                    st.session_state["ask_extract_model"] = None
+                    st.session_state["ask_extract_meta"] = None
+                    st.session_state["ask_results"] = None
+                    st.session_state["ask_corrected_answer"] = None
+                    st.session_state["ask_corrected_model"] = None
+                    st.session_state["ask_corrected_meta"] = None
+                    st.session_state["ask_audit_at"] = None
+                    st.session_state["ask_status_steps"] = []
+                    st.session_state["demo_ask_notice"] = ""
+                    st.session_state["demo_ask_rewrite"] = None
+                    st.session_state["busy_action"] = "ask"
+                    st.session_state["_busy_armed"] = True
+                    st.rerun()
+
+            elif is_ask_running:
+                question_text = st.session_state.get("ask_question_input", "").strip()
+                if not question_text:
+                    st.session_state["busy_action"] = None
+                    st.rerun()
+                ask_finished = False
+                ask_status = None
+                try:
+                    if not st.session_state.get("demo_mode") and int(st.session_state.get("live_audits_performed") or 0) >= get_max_session_audits():
+                        raise RuntimeError("Live quota is busy, showing saved results. Session audit limit reached.")
+
+                    _show_skeleton_slot(ask_left_skel, (150,))
+                    _show_skeleton_slot(ask_right_skel, (120, 80))
+                    with st.status(f"Querying {route_target}...", expanded=True) as ask_status:
+                        ask_steps: list[str] = []
+                        llm_answer, ask_model, ask_record = call_bifrost_or_gemini_direct(
+                            prompt=question_text,
+                            model=DEFAULT_LLM_MODEL,
+                            temperature=0.3,
+                            max_tokens=600,
+                            system_instruction=(
+                                "You are a knowledgeable assistant. Answer the user's question concisely "
+                                "and factually based on your knowledge. State specific models, dates, prices, "
+                                "and names where relevant."
+                            ),
+                        )
+                        st.session_state["ask_answer"] = llm_answer
+                        st.session_state["ask_model"] = ask_model
+                        st.session_state["ask_meta"] = ask_record
+                        st.session_state["ask_question_asked"] = question_text
+                        append_gateway_request(ask_record)
+                        if gateway_placeholder is not None:
+                            render_gateway_panel(gateway_placeholder, st.session_state["gateway_requests"])
+                        ask_status.update(label="Auditing LLM answer for freshness...")
+                        ext_model, ext_record, ask_verified = run_stale_audit(
+                            answer_text=llm_answer,
+                            status_widget=ask_status,
+                            steps_log=ask_steps,
+                            credits_placeholder=credits_placeholder,
+                            gateway_placeholder=gateway_placeholder,
+                        )
+                        st.session_state["ask_extract_model"] = ext_model
+                        st.session_state["ask_extract_meta"] = ext_record
+                        st.session_state["ask_results"] = ask_verified
+                        st.session_state["ask_audit_at"] = datetime.now().astimezone()
+                        st.session_state["ask_status_steps"] = ask_steps
+                        st.session_state["quota_banner"] = None
+                    ask_finished = True
+                except Exception as exc:
+                    _clear_slot(ask_left_skel)
+                    if ask_status is not None:
+                        ask_status.update(label="Ask & Audit failed", state="error", expanded=False)
+                    if is_quota_or_rate_limit_error(exc):
+                        st.session_state["quota_status"] = "Saved results"
+                        st.session_state["quota_banner"] = f"Live API limit reached, showing real saved results from {SAVED_RESULTS_DATE}"
+                        try:
+                            _apply_ask_demo_sample(question_text, sync_widget=False)
+                            st.session_state["ask_error"] = None
+                        except Exception:
+                            _set_tab_error("ask_error", exc, action="running Ask & Audit", recover_key="demo_recover_ask", query_or_url=question_text)
+                    else:
+                        _set_tab_error("ask_error", exc, action="running Ask & Audit", recover_key="demo_recover_ask", query_or_url=question_text)
+                    ask_finished = True
+                finally:
+                    if st.session_state.get("busy_action") == "ask":
+                        st.session_state["busy_action"] = None
+                    _clear_slot(ask_left_skel)
+                    _clear_slot(ask_right_skel)
+                if ask_finished:
+                    st.rerun()
+
+            elif st.session_state.get("ask_status_steps"):
+                with st.status("Done", state="complete", expanded=st.session_state["keep_status_expanded"]):
+                    for step_line in st.session_state["ask_status_steps"]:
+                        st.write(step_line)
+
+            if st.session_state.get("quota_banner"):
+                st.warning(f"⚠️ **{st.session_state['quota_banner']}**", icon=":material/history:")
+            if st.session_state.get("demo_ask_notice"):
+                _render_demo_banner(st.session_state["demo_ask_notice"])
+            _render_stored_error_with_demo_recovery("ask_error", recover_scope="ask", default_recover_key="demo_recover_ask")
+
+        else:  # "Paste a URL"
+            url_skel_slot = st.empty()
+            if url_clicked and not is_any_busy:
+                st.session_state["url_error"] = None
+                st.session_state["url_rewrite_error"] = None
+                url_val = st.session_state["url_input"].strip()
+                if st.session_state.get("demo_mode"):
+                    try:
+                        _apply_url_demo_sample(url_val or None, sync_widget=False)
+                    except FileNotFoundError as exc:
+                        _set_tab_error("url_error", exc, action="loading offline URL demo", recover_key="demo_recover_url_cache", query_or_url=url_val)
+                elif not url_val:
+                    st.warning("Please enter an article or blog URL to audit.", icon=":material/warning:")
+                else:
+                    st.session_state["url_audited"] = None
+                    st.session_state["url_article_title"] = ""
+                    st.session_state["url_article_text"] = ""
+                    st.session_state["url_article_truncated"] = False
+                    st.session_state["url_extract_credits"] = 0.0
+                    st.session_state["url_extract_cache_hit"] = False
+                    st.session_state["url_total_claims_found"] = 0
+                    st.session_state["url_results"] = None
+                    st.session_state["url_extract_model"] = None
+                    st.session_state["url_extract_meta"] = None
+                    st.session_state["url_corrected_answer"] = None
+                    st.session_state["url_corrected_model"] = None
+                    st.session_state["url_corrected_meta"] = None
+                    st.session_state["url_audit_at"] = None
+                    st.session_state["url_status_steps"] = []
+                    st.session_state["demo_url_notice"] = ""
+                    st.session_state["demo_url_rewrite"] = None
+                    st.session_state["busy_action"] = "url"
+                    st.session_state["_busy_armed"] = True
+                    st.rerun()
+
+            elif is_url_running:
+                url_val = st.session_state.get("url_input", "").strip()
+                if not url_val:
+                    st.session_state["busy_action"] = None
+                    st.rerun()
+                url_finished = False
+                url_status = None
+                try:
+                    if not st.session_state.get("demo_mode") and int(st.session_state.get("live_audits_performed") or 0) >= get_max_session_audits():
+                        raise RuntimeError("Live quota is busy, showing saved results. Session audit limit reached.")
+
+                    _show_skeleton_slot(url_skel_slot, (120, 90, 160))
+                    with st.status(f"Extracting article text via Tavily...", expanded=True) as url_status:
+                        url_steps: list[str] = []
+                        extract_res = extract_article_cached(url_val, session_id=session_id)
+                        article_text = extract_res["raw_content"]
+                        title = extract_res.get("title") or url_val
+                        truncated = extract_res.get("truncated", False)
+                        total_credits = extract_res.get("credits_used", 0.0)
+                        cache_hit = extract_res.get("cache_hit", False)
+
+                        st.session_state["url_audited"] = url_val
+                        st.session_state["url_article_title"] = title
+                        st.session_state["url_article_text"] = article_text
+                        st.session_state["url_article_truncated"] = truncated
+                        st.session_state["url_extract_credits"] = total_credits
+                        st.session_state["url_extract_cache_hit"] = cache_hit
+
+                        url_steps.append(
+                            f"Extracted clean article text ({len(article_text):,} chars"
+                            + (", truncated to 12k" if truncated else "")
+                            + f", credits: {total_credits:.2f}"
+                            + (", 6h cache hit" if cache_hit else "")
+                            + ")."
+                        )
+                        if credits_placeholder is not None:
+                            render_credits_counter(credits_placeholder, get_session_credits(session_id))
+
+                        url_status.update(label="Extracting and auditing article claims...")
+                        url_ext_model, url_ext_meta, all_url_results = run_stale_audit(
+                            answer_text=article_text,
+                            status_widget=url_status,
+                            steps_log=url_steps,
+                            credits_placeholder=credits_placeholder,
+                            gateway_placeholder=gateway_placeholder,
+                            max_claims=8,
+                        )
+                        st.session_state["url_total_claims_found"] = len(all_url_results)
+                        st.session_state["url_results"] = all_url_results
+                        st.session_state["url_extract_model"] = url_ext_model
+                        st.session_state["url_extract_meta"] = url_ext_meta
+                        st.session_state["url_audit_at"] = datetime.now().astimezone()
+                        st.session_state["url_status_steps"] = url_steps
+                        st.session_state["quota_banner"] = None
+                    url_finished = True
+                except Exception as exc:
+                    if url_status is not None:
+                        url_status.update(label="URL Audit failed", state="error", expanded=False)
+                    if is_quota_or_rate_limit_error(exc):
+                        st.session_state["quota_status"] = "Saved results"
+                        st.session_state["quota_banner"] = f"Live API limit reached, showing real saved results from {SAVED_RESULTS_DATE}"
+                        try:
+                            _apply_url_demo_sample(url_val, sync_widget=False)
+                            st.session_state["url_error"] = None
+                        except Exception:
+                            _set_tab_error("url_error", exc, action="auditing article URL", recover_key="demo_recover_url", query_or_url=url_val)
+                    else:
+                        _set_tab_error("url_error", exc, action="auditing article URL", recover_key="demo_recover_url", query_or_url=url_val)
+                    url_finished = True
+                finally:
+                    if st.session_state.get("busy_action") == "url":
+                        st.session_state["busy_action"] = None
+                    _clear_slot(url_skel_slot)
+                if url_finished:
+                    st.rerun()
+
+            elif st.session_state.get("url_status_steps"):
+                with st.status("Done", state="complete", expanded=st.session_state["keep_status_expanded"]):
+                    for step_line in st.session_state["url_status_steps"]:
+                        st.write(step_line)
+
+            if st.session_state.get("quota_banner"):
+                st.warning(f"⚠️ **{st.session_state['quota_banner']}**", icon=":material/history:")
+            if st.session_state.get("demo_url_notice"):
+                _render_demo_banner(st.session_state["demo_url_notice"])
+            _render_stored_error_with_demo_recovery("url_error", recover_scope="url", default_recover_key="demo_recover_url")
+
+        # -------------------------------------------------------------------
+        # Gather Active Data for Sections 2 - 5
+        # -------------------------------------------------------------------
+        if active_input_mode == "Paste an answer":
+            act_results = st.session_state.get("results")
+            act_text = st.session_state.get("checked_answer") or st.session_state.get("answer_input", "")
+            act_prefix = "pasted"
+            act_ext_model = st.session_state.get("extract_model")
+            act_ext_meta = st.session_state.get("extract_meta")
+            act_corr = st.session_state.get("corrected_answer")
+            act_corr_model = st.session_state.get("corrected_model")
+            act_corr_meta = st.session_state.get("corrected_meta")
+            act_audit_at = st.session_state.get("pasted_audit_at")
+            act_mode_label = "Audit pasted answer"
+            act_card_title = "LLM answer"
+            act_question = None
+            act_url = None
+            act_extra_credits = 0.0
+            act_busy = is_pasted_running
+        elif active_input_mode == "Ask a question":
+            act_results = st.session_state.get("ask_results")
+            act_text = st.session_state.get("ask_answer", "")
+            act_prefix = "ask"
+            act_ext_model = st.session_state.get("ask_extract_model")
+            act_ext_meta = st.session_state.get("ask_extract_meta")
+            act_corr = st.session_state.get("ask_corrected_answer")
+            act_corr_model = st.session_state.get("ask_corrected_model")
+            act_corr_meta = st.session_state.get("ask_corrected_meta")
+            act_audit_at = st.session_state.get("ask_audit_at")
+            act_mode_label = "Ask & Audit"
+            act_card_title = "Q&A Answer"
+            act_question = st.session_state.get("ask_question_asked") or st.session_state.get("ask_question_input", "")
+            act_url = None
+            act_extra_credits = 0.0
+            act_busy = is_ask_running
+        else:  # "Paste a URL"
+            act_results = st.session_state.get("url_results")
+            act_text = st.session_state.get("url_article_text", "")
+            act_prefix = "url"
+            act_ext_model = st.session_state.get("url_extract_model")
+            act_ext_meta = st.session_state.get("url_extract_meta")
+            act_corr = st.session_state.get("url_corrected_answer")
+            act_corr_model = st.session_state.get("url_corrected_model")
+            act_corr_meta = st.session_state.get("url_corrected_meta")
+            act_audit_at = st.session_state.get("url_audit_at")
+            act_mode_label = "Audit a URL"
+            act_card_title = "Extracted article"
+            act_question = None
+            act_url = st.session_state.get("url_audited") or st.session_state.get("url_input", "")
+            act_extra_credits = float(st.session_state.get("url_extract_credits") or 0.0)
+            act_busy = is_url_running
+
+        # ===================================================================
+        # Section 2: Answer and summary (Equal 2-column results grid)
+        # ===================================================================
+        st.markdown(
+            """
+            <div class="sad-section-divider"></div>
+            <div class="sad-section-num-header">
+              <span class="sad-section-num">2</span>
+              <div>
+                <h3 class="sad-section-title">Answer and summary</h3>
+                <p class="sad-section-sub">Side-by-side inspection: annotated source text with inline fact status and overall freshness rating</p>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        res_col1, res_col2 = st.columns([1, 1], gap="large")
+
+        with res_col1:
+            if act_results and act_text.strip():
+                render_annotated_answer_card(
+                    answer_text=act_text,
+                    verification_results=act_results,
+                    key_prefix=act_prefix,
+                    title=act_card_title,
+                )
+            elif act_busy:
+                st.markdown(
+                    f'<div class="sad-result-card">'
+                    f'<div class="sad-result-header"><div class="sad-result-header-title"><span>{act_card_title}</span></div><span class="sad-result-badge">Auditing...</span></div>'
+                    '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f'<div class="sad-result-card">'
+                    f'<div class="sad-result-header"><div class="sad-result-header-title"><span>{act_card_title}</span></div><span class="sad-result-badge">Ready</span></div>'
+                    + _render_empty_state("No answer audited yet", "Paste an LLM answer above or pick an example to inspect inline highlighted facts.", pills=("Prices & specs", "Tax rules", "AI API pricing"))
+                    + '</div>',
+                    unsafe_allow_html=True,
+                )
+
+        with res_col2:
+            if act_results:
+                overall_score = compute_risk_weighted_overall_score(act_results)
+                checked_text_val = act_text or (act_results[0].get("claim", "") if act_results else "")
+                src_origin = f"Saved ({SAVED_RESULTS_DATE})" if st.session_state.get("demo_mode") else "Live"
+                record_audit_to_history(checked_text_val, act_results, source_label=src_origin, mode=act_mode_label, score=overall_score)
+
+                fresh_count = sum(1 for r in act_results if r.get("status") == "fresh")
+                outdated_count = sum(1 for r in act_results if r.get("status") == "outdated")
+                incorrect_count = sum(1 for r in act_results if r.get("status") == "incorrect")
+                partially_correct_count = sum(1 for r in act_results if r.get("status") == "partially_correct")
+                uncertain_count = sum(1 for r in act_results if r.get("status") == "uncertain")
+                unverifiable_count = sum(1 for r in act_results if r.get("status") == "unverifiable")
+                skipped_count = sum(1 for r in act_results if r.get("status") == "skipped")
+                flagged_count = len(act_results) - skipped_count
+
+                verdict_sentence = build_overall_verdict_sentence(act_results)
+
+                models_used = []
+                claim_models = []
+                for r in act_results:
+                    if isinstance(r.get("judge_models"), list) and r.get("judge_models"):
+                        claim_models.extend(str(m) for m in r["judge_models"] if m)
+                    if r.get("model"):
+                        claim_models.append(str(r["model"]))
+                for model_name in [act_ext_model, *claim_models]:
+                    if model_name and model_name not in models_used:
+                        models_used.append(model_name)
+
+                fallback_routes = collect_fallback_routes(act_ext_meta, act_results)
+
+                source_origins = set()
+                for r in act_results:
+                    so = str(r.get("source_origin") or ("saved" if st.session_state.get("demo_mode") else ("cached" if r.get("cache_hit") else "live"))).lower()
+                    source_origins.add(so)
+
+                if "saved" in source_origins or st.session_state.get("demo_mode"):
+                    origin_badge_html = f'💾 Saved ({SAVED_RESULTS_DATE})'
+                elif "cached" in source_origins and "live" not in source_origins:
+                    origin_badge_html = '⚡ Cached (6h TTL)'
+                else:
+                    origin_badge_html = '🟢 Live Verification'
+
+                score_ring_html = render_score_ring_html(
+                    overall_score,
+                    models_used,
+                    fallback_routes=fallback_routes,
+                    verdict_sentence=verdict_sentence,
+                    results=act_results,
+                )
+
+                st.markdown(
+                    f"""
+                    <div class="sad-result-card">
+                      <div class="sad-result-header">
+                        <div class="sad-result-header-title">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                          </svg>
+                          <span>Verification summary</span>
+                        </div>
+                        <span class="sad-result-badge">{origin_badge_html}</span>
+                      </div>
+                      <div class="sad-result-body" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                        {score_ring_html}
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 0.85rem; padding-top: 0.65rem; border-top: 1px solid var(--border-main);">
+                          <span class="sad-cat-badge" style="border-color: rgba(22,163,74,0.3); color: #16A34A;">Fresh: <strong>{fresh_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(234,88,12,0.3); color: #EA580C;">Outdated: <strong>{outdated_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(220,38,38,0.3); color: #DC2626;">Incorrect: <strong>{incorrect_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(217,119,6,0.3); color: #D97706;">Partial: <strong>{partially_correct_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(100,116,139,0.3); color: #64748B;">Uncertain: <strong>{uncertain_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(148,163,184,0.3); color: #94A3B8;">Unverifiable: <strong>{unverifiable_count}</strong></span>
+                        </div>
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; display: flex; justify-content: space-between; flex-wrap: wrap;">
+                          <span>🔍 Analyzed: <strong>{len(act_results)}</strong> claims</span>
+                          <span>⚡ Verified: <strong>{flagged_count}</strong> live facts</span>
+                          <span>🛡️ Skipped: <strong>{skipped_count}</strong> stable</span>
+                        </div>
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            elif act_busy:
+                st.markdown(
+                    '<div class="sad-result-card">'
+                    '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification summary</span></div><span class="sad-result-badge">Auditing...</span></div>'
+                    '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    '<div class="sad-result-card">'
+                    '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification summary</span></div><span class="sad-result-badge">Standby</span></div>'
+                    + _render_empty_state("Awaiting verification", "Score ring, fact breakdown, consensus stance, and primary sources will appear here.", pills=("Risk-weighted score", "Stance consensus", "6 freshness statuses"))
+                    + '</div>',
+                    unsafe_allow_html=True,
+                )
+
+        # ===================================================================
+        # Section 3: Claims
+        # ===================================================================
+        if act_results:
+            st.markdown(
+                """
+                <div class="sad-section-divider"></div>
+                <div class="sad-section-num-header">
+                  <span class="sad-section-num">3</span>
+                  <div>
+                    <h3 class="sad-section-title">Claims</h3>
+                    <p class="sad-section-sub">Granular claim-by-claim verification: claimed facts vs. live web reality with primary sources</p>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            show_queries = st.session_state.get("show_search_queries", False)
+            for row_idx in range(0, len(act_results), 2):
+                c_cols = st.columns(2, gap="medium")
+                with c_cols[0]:
+                    render_claim_card(row_idx + 1, act_results[row_idx], show_query=show_queries, key_prefix=act_prefix)
+                if row_idx + 1 < len(act_results):
+                    with c_cols[1]:
+                        render_claim_card(row_idx + 2, act_results[row_idx + 1], show_query=show_queries, key_prefix=act_prefix)
+
+            # In-session Claim Watchlist strip
+            render_watchlist_strip()
+
+            audit_led = st.session_state.get("last_audit_ledger") or compute_audit_ledger(act_results, act_ext_meta)
+            sess_led = st.session_state.get("session_ledger") or audit_led
+            with st.expander("🤝 How Tavily and Bifrost Contribute (Contribution Ledger)", expanded=False, icon=":material/handshake:"):
+                st.caption("Detailed contribution metrics showing exactly how live Tavily search and Bifrost AI gateway work together.")
+                l_col1, l_col2 = st.columns(2, gap="medium")
+                with l_col1:
+                    st.markdown("#### 🌐 Tavily Web Intelligence")
+                    st.markdown(
+                        f"- **Live searches executed:** `{audit_led['tavily']['searches']}` (Session: `{sess_led['tavily']['searches']}`)  \n"
+                        f"- **Deep extracts performed:** `{audit_led['tavily']['extracts']}` (Session: `{sess_led['tavily']['extracts']}`)  \n"
+                        f"- **Tavily search credits:** `{audit_led['tavily']['credits']:.2f}` (Session: `{sess_led['tavily']['credits']:.2f}`)  \n"
+                        f"- **Unique independent domains:** `{len(audit_led['tavily']['unique_domains'])}` (Session: `{len(sess_led['tavily']['unique_domains'])}`)  \n"
+                        f"- **Primary / official sources:** `{audit_led['tavily']['primary_sources']}` (Session: `{sess_led['tavily']['primary_sources']}`)"
+                    )
+                with l_col2:
+                    st.markdown("#### ⚡ Bifrost AI Gateway")
+                    cost_str = f"${audit_led['bifrost']['cost']:.5f}" if audit_led['bifrost']['cost_set'] else "Pricing unconfigured"
+                    sess_cost_str = f"${sess_led['bifrost']['cost']:.5f}" if sess_led['bifrost']['cost_set'] else "Pricing unconfigured"
+                    models_list = ", ".join(f"`{m}`" for m in audit_led['bifrost']['models']) or "`Default`"
+                    st.markdown(
+                        f"- **LLM calls routed:** `{audit_led['bifrost']['calls']}` (Session: `{sess_led['bifrost']['calls']}`)  \n"
+                        f"- **Models used:** {models_list}  \n"
+                        f"- **Gateway fallbacks triggered:** `{audit_led['bifrost']['fallbacks']}` (Session: `{sess_led['bifrost']['fallbacks']}`)  \n"
+                        f"- **Tokens processed:** `{audit_led['bifrost']['total_tokens']:,}` (In: `{audit_led['bifrost']['tokens_in']:,}` | Out: `{audit_led['bifrost']['tokens_out']:,}`)  \n"
+                        f"- **Gateway latency:** `{audit_led['bifrost']['total_latency_ms']:.0f} ms`  \n"
+                        f"- **Estimated cost:** `{cost_str}` (Session: `{sess_cost_str}`)"
+                    )
+
+            with st.expander("ℹ️ How the Freshness Score is Computed", expanded=False, icon=":material/calculate:"):
+                st.markdown(
+                    "Every claim's freshness score is calculated deterministically from four objective pillars:\n\n"
+                    "1. **Evidence Agreement (40% weight):** Ratio of independent registered domains supporting the claim vs. contradicting it.\n"
+                    "2. **Source Authority (25% weight):** Primary official sources (`docs.*`, `*.gov`, company newsrooms) receive 100%, reputable news outlets receive 75%, blogs receive 50%, forums receive 20%.\n"
+                    "3. **Evidence Recency (20% weight):** Sources published within 30 days receive 100%, within 6 months 85%, within 1 year 70%, and older/undated sources receive 50%.\n"
+                    "4. **Multi-Model Consensus (15% weight):** Dual-judge consistency across distinct LLM families (penalizes disagreements to Uncertain `40–74`).\n\n"
+                    "**Enforced Score Bands:**\n"
+                    "- **Fresh:** `75 – 100` | **Partially Correct:** `45 – 74` | **Uncertain:** `40 – 74`\n"
+                    "- **Outdated:** `10 – 39` | **Incorrect:** `0 – 15` | **Unverifiable:** `Score N/A`"
+                )
+
+            # ===============================================================
+            # Section 4: Corrected answer & Section 5: Export
+            # ===============================================================
+            render_corrected_and_export_section(
+                mode=act_mode_label,
+                key_prefix=act_prefix,
+                original_answer=act_text,
+                results=act_results,
+                corrected_answer=act_corr,
+                corrected_model=act_corr_model,
+                corrected_meta=act_corr_meta,
+                question=act_question,
+                source_url=act_url,
+                extract_model=act_ext_model,
+                extract_meta=act_ext_meta,
+                extra_tavily_credits=act_extra_credits,
+                audit_at=act_audit_at,
+                gateway_placeholder=gateway_placeholder,
+            )
+
+with tab_compare:
+    render_showdown_tab(use_bifrost=use_bifrost_mode)
+
 with tab_lab:
-    render_agent_lab_tab()
+    lab_subview = st.segmented_control(
+        "Agent Lab View",
+        options=["Agent Lab (PS02)", "Ground Truth Benchmark (20 Claims)"],
+        default="Agent Lab (PS02)",
+        key="lab_subview_choice",
+        label_visibility="collapsed",
+    )
+    if lab_subview == "Agent Lab (PS02)":
+        render_agent_lab_tab()
+    else:
+        render_benchmark_view(use_bifrost_mode, current_busy, is_any_busy)
 
-# ---------------------------------------------------------------------------
-# Tab 6: Architecture (Interactive SVG Flow & Dual-Tech Showcase)
-# ---------------------------------------------------------------------------
-with tab_arch:
-    render_architecture_tab(use_bifrost_mode)
-    render_architecture_telemetry_expander(use_bifrost_mode)
+with tab_learn:
+    learn_subview = st.segmented_control(
+        "Learn Navigation",
+        options=["Architecture & Telemetry", "Detection Methodology", "API Playground"],
+        default="Architecture & Telemetry",
+        key="learn_subview_choice",
+        label_visibility="collapsed",
+    )
+    if learn_subview == "Architecture & Telemetry":
+        render_architecture_tab(use_bifrost_mode)
+        render_architecture_telemetry_expander(use_bifrost_mode)
+    elif learn_subview == "Detection Methodology":
+        render_methodology_tab()
+    else:
+        render_api_playground_tab()
 
-# ---------------------------------------------------------------------------
-# Tab 9: History
-# ---------------------------------------------------------------------------
 with tab_history:
     render_history_tab()
 
-# ---------------------------------------------------------------------------
-# Tab 10: API Playground
-# ---------------------------------------------------------------------------
-with tab_api:
-    render_api_playground_tab()
-
-# ---------------------------------------------------------------------------
-# Tab 11: Methodology
-# ---------------------------------------------------------------------------
-with tab_methodology:
-    render_methodology_tab()
-
-# ---------------------------------------------------------------------------
-# Floating macOS-Style Dock Navigation
-# ---------------------------------------------------------------------------
 render_floating_dock_component(quota_state)
 
 # ---------------------------------------------------------------------------
