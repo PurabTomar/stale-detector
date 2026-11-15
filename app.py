@@ -325,36 +325,46 @@ CUSTOM_CSS = """
     color: #F1F5F9 !important;
 }
 
-/* Navigation Tabs - Dark Contrast */
+/* Navigation Tabs - Dark Contrast (React Aria Components & BaseWeb support) */
+[data-testid="stTabs"] [data-testid="stTab"],
 [data-testid="stTabs"] [data-baseweb="tab"],
-div[role="tablist"] button[role="tab"] {
+div[role="tablist"] [role="tab"] {
     color: #94A3B8 !important;
     opacity: 1 !important;
     border-bottom: none !important;
+    border: none !important;
 }
+[data-testid="stTabs"] [data-testid="stTab"] p,
+[data-testid="stTabs"] [data-testid="stTab"] span,
+[data-testid="stTabs"] [data-testid="stTab"] div,
 [data-testid="stTabs"] [data-baseweb="tab"] p,
 [data-testid="stTabs"] [data-baseweb="tab"] span,
 [data-testid="stTabs"] [data-baseweb="tab"] div,
-div[role="tablist"] button[role="tab"] p,
-div[role="tablist"] button[role="tab"] span,
-div[role="tablist"] button[role="tab"] div {
+div[role="tablist"] [role="tab"] p,
+div[role="tablist"] [role="tab"] span,
+div[role="tablist"] [role="tab"] div {
     color: #94A3B8 !important;
     opacity: 1 !important;
 }
+[data-testid="stTabs"] [data-testid="stTab"]:hover,
 [data-testid="stTabs"] [data-baseweb="tab"]:hover,
-div[role="tablist"] button[role="tab"]:hover {
+div[role="tablist"] [role="tab"]:hover {
     color: #F8FAFC !important;
     background-color: rgba(255, 255, 255, 0.06) !important;
 }
+[data-testid="stTabs"] [data-testid="stTab"]:hover p,
+[data-testid="stTabs"] [data-testid="stTab"]:hover span,
 [data-testid="stTabs"] [data-baseweb="tab"]:hover p,
 [data-testid="stTabs"] [data-baseweb="tab"]:hover span,
-div[role="tablist"] button[role="tab"]:hover p,
-div[role="tablist"] button[role="tab"]:hover span {
+div[role="tablist"] [role="tab"]:hover p,
+div[role="tablist"] [role="tab"]:hover span {
     color: #F8FAFC !important;
 }
+[data-testid="stTabs"] [data-testid="stTab"][aria-selected="true"],
+[data-testid="stTabs"] [data-testid="stTab"][data-selected="true"],
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"],
-[data-testid="stTabs"] button[role="tab"][aria-selected="true"],
-div[role="tablist"] button[role="tab"][aria-selected="true"] {
+div[role="tablist"] [role="tab"][aria-selected="true"],
+div[role="tablist"] [role="tab"][data-selected="true"] {
     color: #FFFFFF !important;
     font-weight: 700 !important;
     background-color: rgba(99, 102, 241, 0.32) !important;
@@ -363,13 +373,17 @@ div[role="tablist"] button[role="tab"][aria-selected="true"] {
     border-bottom: 1px solid rgba(129, 140, 248, 0.7) !important;
     box-shadow: 0 0 16px rgba(99, 102, 241, 0.5) !important;
     border-radius: 9999px !important;
+    outline: none !important;
 }
+[data-testid="stTabs"] [data-testid="stTab"][aria-selected="true"] p,
+[data-testid="stTabs"] [data-testid="stTab"][aria-selected="true"] span,
+[data-testid="stTabs"] [data-testid="stTab"][aria-selected="true"] div,
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] p,
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] span,
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] div,
-div[role="tablist"] button[role="tab"][aria-selected="true"] p,
-div[role="tablist"] button[role="tab"][aria-selected="true"] span,
-div[role="tablist"] button[role="tab"][aria-selected="true"] div {
+div[role="tablist"] [role="tab"][aria-selected="true"] p,
+div[role="tablist"] [role="tab"][aria-selected="true"] span,
+div[role="tablist"] [role="tab"][aria-selected="true"] div {
     color: #FFFFFF !important;
     font-weight: 700 !important;
 }
@@ -379,6 +393,9 @@ div[data-baseweb="tab-highlight"],
 div[data-baseweb="tab-border"],
 [data-testid="stTabs"] div[data-baseweb="tab-highlight"],
 [data-testid="stTabs"] div[data-baseweb="tab-border"],
+[data-testid="stTabs"] .react-aria-SelectionIndicator,
+[data-testid="stTabs"] [data-testid="stTab"] .react-aria-SelectionIndicator,
+div[role="tablist"] .react-aria-SelectionIndicator,
 [data-testid="stTabs"] [data-baseweb="tab-list"] > div:not([data-baseweb="tab"]) {
     display: none !important;
     visibility: hidden !important;
