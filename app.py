@@ -295,14 +295,34 @@ def load_css() -> str:
 # ---------------------------------------------------------------------------
 CUSTOM_CSS = """
 <style>
-/* Dark Mode and Core Overrides */
-[data-theme="dark"], body.dark-theme, .stApp.dark-theme {
+/* Dark Mode and Core Overrides — Deep Space Glassmorphism */
+:root, [data-theme="dark"], body.dark-theme, .stApp.dark-theme, .stApp {
     color-scheme: dark !important;
-    --bg-page: #0B0F19;
-    --bg-card: #131A2A;
-    --text-main: #F1F5F9;
-    --text-muted: #94A3B8;
-    --border-main: #243047;
+    --bg-page: #070913 !important;
+    --bg-page-gradient: radial-gradient(at 15% 15%, #181028 0px, transparent 55%),
+                        radial-gradient(at 85% 15%, #0B1E2D 0px, transparent 55%),
+                        radial-gradient(at 50% 85%, #11142E 0px, transparent 60%),
+                        #070913 !important;
+    --bg-card: rgba(18, 22, 38, 0.72) !important;
+    --bg-card-solid: #121626 !important;
+    --bg-card-subtle: rgba(18, 22, 38, 0.5) !important;
+    --bg-secondary: rgba(24, 30, 52, 0.7) !important;
+    --bg-input: rgba(14, 18, 32, 0.85) !important;
+    --tab-bg: rgba(18, 22, 38, 0.7) !important;
+    --border-main: rgba(255, 255, 255, 0.12) !important;
+    --border-subtle: rgba(255, 255, 255, 0.07) !important;
+    --text-main: #F1F5F9 !important;
+    --text-muted: #94A3B8 !important;
+    --text-subtle: #64748B !important;
+    --shadow-card: 0 16px 36px -4px rgba(0, 0, 0, 0.5), 0 0 20px rgba(91, 91, 240, 0.1) !important;
+}
+.stApp {
+    background: radial-gradient(at 15% 15%, #181028 0px, transparent 55%),
+                radial-gradient(at 85% 15%, #0B1E2D 0px, transparent 55%),
+                radial-gradient(at 50% 85%, #11142E 0px, transparent 60%),
+                #070913 !important;
+    background-attachment: fixed !important;
+    color: #F1F5F9 !important;
 }
 </style>
 """
@@ -310,13 +330,21 @@ CUSTOM_CSS = """
 LIGHT_THEME_CSS = """
 <style>
 /* Light Mode Theme Overrides - Modern Bright Glassmorphism */
-:root {
+:root, .stApp, body {
     color-scheme: light !important;
-    --bg-page: #F8F9FE;
-    --bg-card: rgba(255, 255, 255, 0.65);
-    --text-main: #0F172A;
-    --text-muted: #64748B;
-    --border-main: rgba(255, 255, 255, 0.8);
+    --bg-page: #F8F9FE !important;
+    --bg-card: rgba(255, 255, 255, 0.65) !important;
+    --bg-card-solid: #FFFFFF !important;
+    --bg-card-subtle: rgba(255, 255, 255, 0.45) !important;
+    --bg-secondary: rgba(241, 245, 249, 0.65) !important;
+    --bg-input: rgba(255, 255, 255, 0.85) !important;
+    --tab-bg: rgba(255, 255, 255, 0.65) !important;
+    --border-main: rgba(255, 255, 255, 0.8) !important;
+    --border-subtle: rgba(229, 231, 239, 0.6) !important;
+    --text-main: #0F172A !important;
+    --text-muted: #64748B !important;
+    --text-subtle: #94A3B8 !important;
+    --shadow-card: 0 8px 30px -4px rgba(91, 91, 240, 0.08), 0 2px 8px -2px rgba(15, 23, 42, 0.04) !important;
 }
 .stApp {
     background: radial-gradient(at 0% 0%, #EEF0FF 0px, transparent 50%),
@@ -325,7 +353,7 @@ LIGHT_THEME_CSS = """
                 radial-gradient(at 0% 100%, #EEF0FF 0px, transparent 50%),
                 #F8F9FE !important;
     background-attachment: fixed !important;
-    color: var(--text-main) !important;
+    color: #0F172A !important;
 }
 section[data-testid="stSidebar"] {
     background: rgba(255, 255, 255, 0.72) !important;
@@ -948,24 +976,44 @@ def _render_empty_state(
     title: str,
     body_html: str,
     *,
-    pills: tuple[str, ...] = ("iPhone specs", "GST tax rates", "AI pricing"),
+    pills: tuple[str, ...] = ("Prices & specs", "Tax rules", "AI API pricing"),
     hint: str = "",
     icon_svg: str = "",
+    variant: str = "default",
 ) -> str:
-    """Build compact empty-state HTML (<= 220px tall) with small illustration, 1 line of text, and 3 example chips."""
+    """Build compact empty-state HTML (<= 220px tall) with glowing orbital illustration, 1 line of text, and 3 example chips."""
+    grad_id = "chkBlue" if variant != "cyan" else "chkSilver"
+    orbit_color = "rgba(56, 189, 248, 0.45)" if variant != "cyan" else "rgba(6, 182, 212, 0.45)"
+    dot_color = "#38BDF8" if variant != "cyan" else "#22D3EE"
+    stroke_grad = "url(#" + grad_id + ")"
+
     friendly_illustration = (
-        '<div class="sad-empty-svg-wrap" style="margin-bottom: 0.35rem;">'
-        '<svg viewBox="0 0 64 64" width="40" height="40" fill="none" xmlns="http://www.w3.org/2000/svg">'
-        '<rect x="8" y="8" width="48" height="48" rx="14" fill="#5B5BF0" fill-opacity="0.1"/>'
-        '<circle cx="32" cy="32" r="18" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>'
-        '<path d="M25 32L30 37L40 26" stroke="#16A34A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<div class="sad-empty-svg-wrap" style="margin: 0 auto 0.5rem auto; width: 72px; height: 56px; display: flex; align-items: center; justify-content: center;">'
+        '<svg viewBox="0 0 80 60" width="72" height="54" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<defs>'
+        '<linearGradient id="chkBlue" x1="20" y1="15" x2="60" y2="50" gradientUnits="userSpaceOnUse">'
+        '<stop offset="0%" stop-color="#38BDF8"/>'
+        '<stop offset="100%" stop-color="#818CF8"/>'
+        '</linearGradient>'
+        '<linearGradient id="chkSilver" x1="20" y1="15" x2="60" y2="50" gradientUnits="userSpaceOnUse">'
+        '<stop offset="0%" stop-color="#94A3B8"/>'
+        '<stop offset="100%" stop-color="#E2E8F0"/>'
+        '</linearGradient>'
+        '<filter id="glowOrb" x="-20%" y="-20%" width="140%" height="140%">'
+        '<feGaussianBlur stdDeviation="2.5" result="blur"/>'
+        '<feComposite in="SourceGraphic" in2="blur" operator="over"/>'
+        '</filter>'
+        '</defs>'
+        f'<ellipse cx="40" cy="32" rx="34" ry="13" transform="rotate(-15 40 32)" stroke="{orbit_color}" stroke-width="1.5" stroke-dasharray="3 3"/>'
+        f'<circle cx="68" cy="24" r="2.5" fill="{dot_color}" filter="url(#glowOrb)"/>'
+        f'<path d="M28 32L36 40L52 22" stroke="{stroke_grad}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glowOrb)"/>'
         '</svg>'
         '</div>'
     )
     pills_html = (
-        '<div class="sad-empty-pills" style="margin-top: 0.45rem; justify-content: center;">'
-        + "".join(f'<span class="sad-empty-pill">{escape_html(p)}</span>' for p in pills[:3])
-        + "</div>"
+        '<div style="display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px;">'
+        + "".join(f'<span class="sad-empty-pill">{escape_html(p)}</span>' for p in pills)
+        + '</div>'
         if pills
         else ""
     )
@@ -973,8 +1021,8 @@ def _render_empty_state(
     return (
         '<div class="sad-empty-state sad-empty-state-compact">'
         f'{friendly_illustration}'
-        f'<h4 style="font-size: 1rem; margin-bottom: 0.2rem; font-weight: 700;">{escape_html(title)}</h4>'
-        f'<p style="font-size: 0.82rem; margin: 0; line-height: 1.3;">{body_html}</p>'
+        f'<h4 class="sad-empty-title" style="font-size: 1rem; margin-bottom: 0.25rem; font-weight: 700;">{escape_html(title)}</h4>'
+        f'<p class="sad-empty-desc" style="font-size: 0.82rem; margin: 0; line-height: 1.35; color: var(--text-muted); max-width: 360px;">{body_html}</p>'
         f'{pills_html}'
         f'{hint_html}'
         '</div>'
@@ -982,75 +1030,73 @@ def _render_empty_state(
 
 
 def render_stepper_html(current_busy: str | None, has_results: bool, has_input: bool) -> str:
-    """Render 5-step progress stepper: Input > Detect > Verify > Score > Report."""
-    # Step 1: Input
+    """Render 5-stage progress pipeline tracker: 01 Input > 02 Detect > 03 Verify > 04 Score > 05 Report."""
+    # Step 1: 01 Input
     if has_results or current_busy:
-        s1_cls, s1_icon = "sad-step-done", "✓"
+        s1_cls = "sad-pipe-step pipe-done"
     elif has_input:
-        s1_cls, s1_icon = "sad-step-done", "✓"
+        s1_cls = "sad-pipe-step pipe-done"
     else:
-        s1_cls, s1_icon = "sad-step-running", "1"
+        s1_cls = "sad-pipe-step pipe-active"
 
-    # Step 2: Detect (extract claims)
+    # Step 2: 02 Detect
     if has_results:
-        s2_cls, s2_icon = "sad-step-done", "✓"
+        s2_cls = "sad-pipe-step pipe-done"
     elif current_busy in ("pasted", "ask", "url"):
-        s2_cls, s2_icon = "sad-step-running", "2"
+        s2_cls = "sad-pipe-step pipe-active"
     else:
-        s2_cls, s2_icon = "sad-step-pending", "2"
+        s2_cls = "sad-pipe-step pipe-pending"
 
-    # Step 3: Verify (Tavily search & evidence)
+    # Step 3: 03 Verify
     if has_results:
-        s3_cls, s3_icon = "sad-step-done", "✓"
+        s3_cls = "sad-pipe-step pipe-done"
     elif current_busy in ("pasted", "ask", "url"):
-        s3_cls, s3_icon = "sad-step-running", "3"
+        s3_cls = "sad-pipe-step pipe-active"
     else:
-        s3_cls, s3_icon = "sad-step-pending", "3"
+        s3_cls = "sad-pipe-step pipe-pending"
 
-    # Step 4: Score (Risk-weighted formula & consensus)
+    # Step 4: 04 Score
     if has_results:
-        s4_cls, s4_icon = "sad-step-done", "✓"
-    elif current_busy in ("pasted", "ask", "url"):
-        s4_cls, s4_icon = "sad-step-pending", "4"
+        s4_cls = "sad-pipe-step pipe-done"
     else:
-        s4_cls, s4_icon = "sad-step-pending", "4"
+        s4_cls = "sad-pipe-step pipe-pending"
 
-    # Step 5: Report (Annotated text & export)
+    # Step 5: 05 Report
     if has_results:
-        s5_cls, s5_icon = "sad-step-done", "✓"
+        s5_cls = "sad-pipe-step pipe-done"
     else:
-        s5_cls, s5_icon = "sad-step-pending", "5"
+        s5_cls = "sad-pipe-step pipe-pending"
 
-    l1_cls = "sad-step-line sad-step-line-done" if (has_results or current_busy or has_input) else "sad-step-line"
-    l2_cls = "sad-step-line sad-step-line-done" if has_results else "sad-step-line"
-    l3_cls = "sad-step-line sad-step-line-done" if has_results else "sad-step-line"
-    l4_cls = "sad-step-line sad-step-line-done" if has_results else "sad-step-line"
+    arr1_cls = "pipe-arrow-active" if (has_results or current_busy or has_input) else ""
+    arr2_cls = "pipe-arrow-active" if (has_results or current_busy) else ""
+    arr3_cls = "pipe-arrow-active" if has_results else ""
+    arr4_cls = "pipe-arrow-active" if has_results else ""
 
     return f"""
-    <div class="sad-stepper" role="progressbar" aria-label="Freshness audit progress">
-      <div class="sad-step {s1_cls}">
-        <span class="sad-step-icon">{s1_icon}</span>
-        <span class="sad-step-label">1 Input</span>
+    <div class="sad-pipeline-tracker" role="progressbar" aria-label="Freshness audit pipeline tracker">
+      <div class="{s1_cls}">
+        <span class="sad-pipe-badge">01</span>
+        <span class="sad-pipe-name">INPUT</span>
       </div>
-      <div class="{l1_cls}"></div>
-      <div class="sad-step {s2_cls}">
-        <span class="sad-step-icon">{s2_icon}</span>
-        <span class="sad-step-label">2 Detect</span>
+      <span class="sad-pipe-arrow {arr1_cls}">→</span>
+      <div class="{s2_cls}">
+        <span class="sad-pipe-badge">02</span>
+        <span class="sad-pipe-name">DETECT</span>
       </div>
-      <div class="{l2_cls}"></div>
-      <div class="sad-step {s3_cls}">
-        <span class="sad-step-icon">{s3_icon}</span>
-        <span class="sad-step-label">3 Verify</span>
+      <span class="sad-pipe-arrow {arr2_cls}">→</span>
+      <div class="{s3_cls}">
+        <span class="sad-pipe-badge">03</span>
+        <span class="sad-pipe-name">VERIFY</span>
       </div>
-      <div class="{l3_cls}"></div>
-      <div class="sad-step {s4_cls}">
-        <span class="sad-step-icon">{s4_icon}</span>
-        <span class="sad-step-label">4 Score</span>
+      <span class="sad-pipe-arrow {arr3_cls}">→</span>
+      <div class="{s4_cls}">
+        <span class="sad-pipe-badge">04</span>
+        <span class="sad-pipe-name">SCORE</span>
       </div>
-      <div class="{l4_cls}"></div>
-      <div class="sad-step {s5_cls}">
-        <span class="sad-step-icon">{s5_icon}</span>
-        <span class="sad-step-label">5 Report</span>
+      <span class="sad-pipe-arrow {arr4_cls}">→</span>
+      <div class="{s5_cls}">
+        <span class="sad-pipe-badge">05</span>
+        <span class="sad-pipe-name">REPORT</span>
       </div>
     </div>
     """
@@ -1220,8 +1266,7 @@ def clear_url_workspace() -> None:
 
 def init_session_state() -> None:
     """Initialize required keys in Streamlit session_state."""
-    is_test_env = "unittest" in sys.modules or any("test" in arg.lower() for arg in sys.argv)
-    default_dark = True if is_test_env else False
+    default_dark = True
     defaults = {
         "busy_action": None,
         "_busy_armed": False,
@@ -4889,23 +4934,32 @@ else:  # "Saved results"
     quota_dot_color = "#64748B"
     quota_border = "rgba(100,116,139,0.35)"
 
-# Sleek top brand strip with separate chips (no glued text)
+# Unified Sticky Top Navbar: Left brand title, Right live architecture status pills
 st.markdown(
     f"""
     <div class="sad-app-header">
       <div class="sad-header-left">
         <span class="sad-header-brand">
-          🛡️ Stale-Answer Detector
+          <span class="sad-brand-icon">🛡️</span>
+          <span class="sad-brand-text">Stale-Answer Detector</span>
         </span>
       </div>
       <div class="sad-header-right">
-        <span class="sad-header-chip" style="border-color: {quota_border};">
+        <span class="sad-header-chip chip-quota" style="border-color: {quota_border};">
           <span class="sad-header-chip-dot" style="background: {quota_dot_color};"></span>
           <span>Quota: {quota_state}</span>
         </span>
-        <span class="sad-header-chip">
+        <span class="sad-header-chip chip-tavily">
+          <span class="sad-header-chip-dot" style="background: #06B6D4;"></span>
+          <span>Tavily Search</span>
+        </span>
+        <span class="sad-header-chip chip-bifrost">
           <span class="sad-header-chip-dot" style="background: {routing_dot_color};"></span>
           <span>{routing_badge_text}</span>
+        </span>
+        <span class="sad-header-chip chip-gemini">
+          <span class="sad-header-chip-dot" style="background: #3B82F6;"></span>
+          <span>Gemini API</span>
         </span>
         {demo_hero_badge}
       </div>
@@ -4919,21 +4973,6 @@ evaluator_text = _get_config_value("EVALUATOR_NOTE_TEXT") or (
     "Use the Guided Demo (or Demo mode) to test instant, quota-safe audits across all statuses (Fresh, Outdated, Incorrect), "
     "or run live audits within your session quota."
 )
-
-if not st.session_state.get("dismiss_evaluator_note", False):
-    eval_c1, eval_c2 = st.columns([0.96, 0.04], vertical_alignment="center")
-    with eval_c1:
-        st.markdown(
-            f'<div style="background: rgba(91,91,240,0.06); border: 1px solid var(--border-main); border-radius: 12px; padding: 0.35rem 0.75rem; font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px; margin-bottom: 0.5rem;">'
-            f'<span>💡</span>'
-            f'<span><strong>Note for evaluators:</strong> {escape_html(evaluator_text[:175])}...</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-    with eval_c2:
-        if st.button("✕", key="dismiss_eval_strip", help="Dismiss note"):
-            st.session_state["dismiss_evaluator_note"] = True
-            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Eleven-tab main workspace:
@@ -5473,70 +5512,99 @@ tab_audit, tab_compare, tab_lab, tab_learn, tab_history = st.tabs(
 route_target = "Bifrost" if use_bifrost_mode else "Gemini"
 
 with tab_audit:
-    sec1_col1, sec1_col2 = st.columns([2.3, 1.3], vertical_alignment="center")
-    with sec1_col1:
-        st.markdown(
-            """
-            <div class="sad-section-num-header" style="margin-bottom: 0.25rem;">
-              <span class="sad-section-num">1</span>
-              <div>
-                <h3 class="sad-section-title">Input</h3>
-                <p class="sad-section-sub">Start here &mdash; choose an input mode to audit freshness against live web reality</p>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with sec1_col2:
-        audit_subview = st.segmented_control(
-            "Audit Navigation",
-            options=["Audit Studio", "Overview & Highlights"],
-            default="Audit Studio",
-            key="audit_subview_choice",
-            label_visibility="collapsed",
-        )
+    # -------------------------------------------------------------------
+    # 2. Compact Evaluator Banner (directly below top navbar)
+    # -------------------------------------------------------------------
+    if not st.session_state.get("dismiss_evaluator_note", False):
+        eval_c1, eval_c2 = st.columns([0.96, 0.04], vertical_alignment="center")
+        with eval_c1:
+            st.markdown(
+                f'<div class="sad-eval-banner">'
+                f'<span class="sad-eval-icon">💡</span>'
+                f'<span class="sad-eval-text"><strong>Note for evaluators:</strong> {escape_html(evaluator_text[:185])}...</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with eval_c2:
+            if st.button("✕", key="dismiss_eval_strip", help="Dismiss note"):
+                st.session_state["dismiss_evaluator_note"] = True
+                st.rerun()
 
-    if audit_subview == "Overview & Highlights":
-        render_home_tab(
-            use_bifrost_mode=use_bifrost_mode,
-            gateway_unreachable=gateway_unreachable,
-            quota_state=quota_state,
-            gateway_health=gateway_health,
-            evaluator_text=evaluator_text,
-            highlights_bento_fn=render_highlights_bento_grid,
-        )
-    else:
-        with st.container():
-            st.markdown('<div class="sad-input-studio">', unsafe_allow_html=True)
-            top_c1, top_c2, top_c3 = st.columns([1.1, 2.2, 1.2], vertical_alignment="center")
-            with top_c1:
-                st.markdown(
-                    '<div class="sad-studio-title" style="margin: 0; font-size: 1rem;">'
-                    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
-                    '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'
-                    '</svg>'
-                    '<span>Start here</span>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-            with top_c2:
-                active_input_mode = st.segmented_control(
-                    "Audit Mode",
-                    options=["Paste an answer", "Ask a question", "Paste a URL"],
-                    default=st.session_state.get("active_input_mode", "Paste an answer"),
-                    key="active_input_mode",
+    # -------------------------------------------------------------------
+    # 3. Top-Level 5-Stage Pipeline Tracker (ABOVE the Input card)
+    # -------------------------------------------------------------------
+    active_mode_val = st.session_state.get("active_input_mode", "Paste an answer")
+    has_active_results = bool(
+        (active_mode_val == "Paste an answer" and st.session_state.get("results"))
+        or (active_mode_val == "Ask a question" and st.session_state.get("ask_results"))
+        or (active_mode_val == "Paste a URL" and st.session_state.get("url_results"))
+    )
+    has_active_input = bool(
+        (active_mode_val == "Paste an answer" and st.session_state.get("answer_input", "").strip())
+        or (active_mode_val == "Ask a question" and st.session_state.get("ask_question_input", "").strip())
+        or (active_mode_val == "Paste a URL" and st.session_state.get("url_input", "").strip())
+    )
+    st.markdown(
+        render_stepper_html(current_busy, has_active_results, has_active_input),
+        unsafe_allow_html=True,
+    )
+
+    # -------------------------------------------------------------------
+    # 4. Section 1: Streamlined Input Studio Card (No dead space)
+    # -------------------------------------------------------------------
+    with st.container():
+        st.markdown('<span id="sad-input-studio-anchor" style="display:none;"></span>', unsafe_allow_html=True)
+        # Unified Card Header: Left title, Center mode selector, Right view toggle + audits counter
+        hdr_c1, hdr_c2, hdr_c3 = st.columns([0.9, 1.8, 2.1], vertical_alignment="center", gap="medium")
+        with hdr_c1:
+            st.markdown(
+                """
+                <div class="sad-section-num-header" style="margin: 0;">
+                  <span class="sad-section-num">1</span>
+                  <div>
+                    <h3 class="sad-section-title" style="font-size: 1.02rem; margin: 0;">Input</h3>
+                    <p class="sad-section-sub" style="font-size: 0.74rem; margin: 0;">Audit freshness</p>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with hdr_c2:
+            active_input_mode = st.segmented_control(
+                "Audit Mode",
+                options=["Paste an answer", "Ask a question", "Paste a URL"],
+                default=st.session_state.get("active_input_mode", "Paste an answer"),
+                key="active_input_mode",
+                label_visibility="collapsed",
+            )
+        with hdr_c3:
+            audits_done = int(st.session_state.get("live_audits_performed") or 0)
+            audits_left = max(0, get_max_session_audits() - audits_done)
+            v_col1, v_col2 = st.columns([2.0, 0.9], vertical_alignment="center", gap="small")
+            with v_col1:
+                audit_subview = st.segmented_control(
+                    "Audit Navigation",
+                    options=["Audit Studio", "Overview & Highlights"],
+                    default=st.session_state.get("audit_subview_choice", "Audit Studio"),
+                    key="audit_subview_choice",
                     label_visibility="collapsed",
                 )
-            with top_c3:
-                audits_done = int(st.session_state.get("live_audits_performed") or 0)
-                audits_left = max(0, get_max_session_audits() - audits_done)
+            with v_col2:
                 st.markdown(
-                    f'<div style="text-align: right;">'
-                    f'<span class="sad-studio-quota">Audits left: <strong>{audits_left}</strong></span>'
-                    f'</div>',
+                    f'<div style="text-align: right;"><span class="sad-studio-quota" style="white-space: nowrap;">Audits left: <strong>{audits_left}</strong></span></div>',
                     unsafe_allow_html=True,
                 )
 
+        if audit_subview == "Overview & Highlights":
+            render_home_tab(
+                use_bifrost_mode=use_bifrost_mode,
+                gateway_unreachable=gateway_unreachable,
+                quota_state=quota_state,
+                gateway_health=gateway_health,
+                evaluator_text=evaluator_text,
+                highlights_bento_fn=render_highlights_bento_grid,
+            )
+        else:
             is_pasted_running = current_busy == "pasted"
             is_ask_running = current_busy == "ask"
             is_url_running = current_busy == "url"
@@ -5547,21 +5615,20 @@ with tab_audit:
 
             if active_input_mode == "Paste an answer":
                 char_count = len(st.session_state.get("answer_input", ""))
-                tool_col1, tool_col2, tool_col3 = st.columns([2.7, 1.1, 0.45], vertical_alignment="center")
-                with tool_col1:
-                    chip_cols = st.columns(len(DEMO_EXAMPLES), gap="small")
-                    for ex_idx, ex_item in enumerate(DEMO_EXAMPLES):
-                        with chip_cols[ex_idx]:
-                            short_name = ex_item["label"].split()[0]
-                            if st.button(
-                                short_name,
-                                key=f"pasted_chip_{ex_idx}",
-                                help=f"{ex_item['label']}: {ex_item['text'][:80]}...",
-                                disabled=is_any_busy,
-                                width="stretch",
-                            ):
-                                load_demo_example(ex_item["text"])
-                with tool_col2:
+                ex_labels = ["iPhone", "GPT", "India", "Company", "World"]
+                chip_cols = st.columns([1, 1, 1, 1, 1, 1.8, 1.4], vertical_alignment="center", gap="small")
+                for ex_idx, ex_lbl in enumerate(ex_labels):
+                    with chip_cols[ex_idx]:
+                        if st.button(
+                            ex_lbl,
+                            key=f"pasted_chip_{ex_idx}",
+                            help=f"{DEMO_EXAMPLES[ex_idx]['label']}: {DEMO_EXAMPLES[ex_idx]['text'][:80]}...",
+                            disabled=is_any_busy,
+                            width="stretch",
+                        ):
+                            load_demo_example(DEMO_EXAMPLES[ex_idx]["text"])
+
+                with chip_cols[5]:
                     if st.button(
                         "✨ Guided Demo",
                         key="guided_demo_btn",
@@ -5574,7 +5641,8 @@ with tab_audit:
                         step_data = get_guided_demo_step(0)
                         _apply_pasted_demo_sample(step_data["sample"], exact_match=True, sync_widget=True)
                         st.rerun()
-                with tool_col3:
+
+                with chip_cols[6]:
                     with st.popover("💡 Tips", icon=":material/lightbulb:"):
                         st.markdown(
                             "**Recommended claims to test:**\n"
@@ -5617,7 +5685,7 @@ with tab_audit:
                 st.text_area(
                     "LLM-generated answer",
                     key="answer_input",
-                    height=80,
+                    height=85,
                     label_visibility="collapsed",
                     placeholder=(
                         "Paste an LLM-generated answer here or click one of the example chips above..."
@@ -5625,7 +5693,7 @@ with tab_audit:
                 )
                 st.caption(f"⌨️ Hint: Press **Ctrl + Enter** to audit &bull; {char_count:,} chars")
 
-                btn_col1, btn_col2 = st.columns([3, 1], gap="small")
+                btn_col1, btn_col2 = st.columns([0.8, 0.2], gap="small")
                 with btn_col1:
                     check_clicked = st.button(
                         "Check Freshness",
@@ -5670,7 +5738,7 @@ with tab_audit:
                     placeholder="e.g. What is the latest iPhone model, chip, and US starting price?",
                 )
 
-                btn_col1, btn_col2 = st.columns([3, 1], gap="small")
+                btn_col1, btn_col2 = st.columns([0.8, 0.2], gap="small")
                 with btn_col1:
                     ask_clicked = st.button(
                         "Ask & Audit",
@@ -5714,7 +5782,7 @@ with tab_audit:
                     placeholder="https://example.com/blog/python-release-guide",
                 )
 
-                btn_col1, btn_col2 = st.columns([3, 1], gap="small")
+                btn_col1, btn_col2 = st.columns([0.8, 0.2], gap="small")
                 with btn_col1:
                     url_clicked = st.button(
                         "Audit URL",
@@ -5733,26 +5801,6 @@ with tab_audit:
                         disabled=is_any_busy,
                         width="stretch",
                     )
-
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # -------------------------------------------------------------------
-        # Progress Stepper directly under Input Studio
-        # -------------------------------------------------------------------
-        has_active_results = bool(
-            (active_input_mode == "Paste an answer" and st.session_state.get("results"))
-            or (active_input_mode == "Ask a question" and st.session_state.get("ask_results"))
-            or (active_input_mode == "Paste a URL" and st.session_state.get("url_results"))
-        )
-        has_active_input = bool(
-            (active_input_mode == "Paste an answer" and st.session_state.get("answer_input", "").strip())
-            or (active_input_mode == "Ask a question" and st.session_state.get("ask_question_input", "").strip())
-            or (active_input_mode == "Paste a URL" and st.session_state.get("url_input", "").strip())
-        )
-        st.markdown(
-            render_stepper_html(current_busy, has_active_results, has_active_input),
-            unsafe_allow_html=True,
-        )
 
         # -------------------------------------------------------------------
         # Execute Handlers for Active Mode
@@ -6207,8 +6255,8 @@ with tab_audit:
             else:
                 st.markdown(
                     f'<div class="sad-result-card">'
-                    f'<div class="sad-result-header"><div class="sad-result-header-title"><span>{act_card_title}</span></div><span class="sad-result-badge">Ready</span></div>'
-                    + _render_empty_state("No answer audited yet", "Paste an LLM answer above or pick an example to inspect inline highlighted facts.", pills=("Prices & specs", "Tax rules", "AI API pricing"))
+                    f'<div class="sad-result-header"><div class="sad-result-header-title"><span>{act_card_title}</span></div><span class="sad-status-pill pill-ready">Ready</span></div>'
+                    + _render_empty_state("No answer audited yet", "Paste an LLM answer above or pick an example to inspect inline highlighted facts.", pills=("Prices & specs", "Tax rules", "AI API pricing"), variant="purple")
                     + '</div>',
                     unsafe_allow_html=True,
                 )
@@ -6308,8 +6356,8 @@ with tab_audit:
             else:
                 st.markdown(
                     '<div class="sad-result-card">'
-                    '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification summary</span></div><span class="sad-result-badge">Standby</span></div>'
-                    + _render_empty_state("Awaiting verification", "Score ring, fact breakdown, consensus stance, and primary sources will appear here.", pills=("Risk-weighted score", "Stance consensus", "6 freshness statuses"))
+                    '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification summary</span></div><span class="sad-status-pill pill-standby">Standby</span></div>'
+                    + _render_empty_state("Awaiting verification", "Score ring, fact breakdown, consensus stance, and primary sources will appear here.", pills=("Risk-weighted score", "Stance consensus", "6 freshness statuses"), variant="cyan")
                     + '</div>',
                     unsafe_allow_html=True,
                 )

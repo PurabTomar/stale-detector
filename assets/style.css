@@ -524,19 +524,12 @@ div[role="tablist"] button[role="tab"][aria-selected="true"]::after {
   display: none !important;
 }
 
-/* Tab Icons */
-[data-testid="stTabs"] [data-baseweb="tab"]:nth-child(1)::before,
-div[role="tablist"] button[role="tab"]:nth-child(1)::before { content: '📋'; }
-[data-testid="stTabs"] [data-baseweb="tab"]:nth-child(2)::before,
-div[role="tablist"] button[role="tab"]:nth-child(2)::before { content: '💬'; }
-[data-testid="stTabs"] [data-baseweb="tab"]:nth-child(3)::before,
-div[role="tablist"] button[role="tab"]:nth-child(3)::before { content: '🔗'; }
-[data-testid="stTabs"] [data-baseweb="tab"]:nth-child(4)::before,
-div[role="tablist"] button[role="tab"]:nth-child(4)::before { content: '📊'; }
-[data-testid="stTabs"] [data-baseweb="tab"]:nth-child(5)::before,
-div[role="tablist"] button[role="tab"]:nth-child(5)::before { content: '🧪'; }
-[data-testid="stTabs"] [data-baseweb="tab"]:nth-child(6)::before,
-div[role="tablist"] button[role="tab"]:nth-child(6)::before { content: '🏛️'; }
+/* Tab Icons Clean Fallback */
+[data-testid="stTabs"] [data-baseweb="tab"]::before,
+div[role="tablist"] button[role="tab"]::before {
+  content: none !important;
+  display: none !important;
+}
 
 /* 6. Floating Dock (macOS-Style Bottom Navigation) */
 #sad-dock-container {
@@ -1526,87 +1519,384 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 
 /* ==========================================================================
-   20. Input-First Systematic Layout & Numbered Sections
+   20. Systematic UI/UX Overhaul & Glassmorphic Layout Refactor
    ========================================================================== */
 
 /* Main Container & Page Padding */
 .block-container {
   max-width: 1200px !important;
   margin: 0 auto !important;
-  padding-top: 1.25rem !important;
+  padding-top: 0.85rem !important;
   padding-left: 1.5rem !important;
   padding-right: 1.5rem !important;
-  padding-bottom: 140px !important;
+  padding-bottom: 120px !important;
 }
 
-.sad-hl-legend {
-  display: flex !important;
-  flex-wrap: wrap !important;
-  gap: 8px !important;
-  align-items: center !important;
-  margin-top: 0.65rem !important;
-  padding-top: 0.5rem !important;
-  border-top: 1px solid var(--border-main) !important;
-  font-size: 0.78rem !important;
-  color: var(--text-muted) !important;
-}
-.sad-hl-sep {
-  color: var(--border-main);
-  font-size: 0.7rem;
-}
-
-/* Header & Top Bar */
+/* 1. Unified Sticky Top Navbar */
 .sad-app-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-  padding: 4px 2px;
-  flex-wrap: wrap;
-  gap: 12px;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 8px 18px !important;
+  margin-bottom: 0.65rem !important;
+  background: var(--bg-card) !important;
+  backdrop-filter: blur(20px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(190%) !important;
+  border: 1px solid var(--border-main) !important;
+  border-radius: var(--radius-pill) !important;
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  flex-wrap: wrap !important;
+  gap: 12px !important;
 }
 .sad-header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
 }
 .sad-header-brand {
-  font-family: var(--font-heading);
-  font-weight: 800;
-  font-size: 1.25rem;
-  letter-spacing: -0.02em;
-  background: var(--primary-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  font-family: var(--font-heading) !important;
+  font-weight: 800 !important;
+  font-size: 1.25rem !important;
+  letter-spacing: -0.02em !important;
+  background: var(--primary-gradient) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+.sad-brand-icon {
+  -webkit-text-fill-color: initial !important;
+  font-size: 1.3rem !important;
+  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.5));
 }
 .sad-header-right {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
+  display: flex !important;
+  gap: 8px !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
 }
 .sad-header-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  padding: 0.28rem 0.7rem;
-  border-radius: 9999px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-main);
-  color: var(--text-main);
-  box-shadow: var(--shadow-sm);
-  white-space: nowrap;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 0.76rem !important;
+  font-weight: 600 !important;
+  padding: 0.26rem 0.7rem !important;
+  border-radius: 9999px !important;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-main) !important;
+  color: var(--text-main) !important;
+  box-shadow: var(--shadow-sm) !important;
+  white-space: nowrap !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+.sad-header-chip:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15) !important;
 }
 .sad-header-chip-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  flex-shrink: 0 !important;
+  box-shadow: 0 0 6px currentColor !important;
+}
+
+/* 2. Compact Evaluator Banner */
+.sad-eval-banner {
+  background: rgba(91, 91, 240, 0.08) !important;
+  border: 1px solid rgba(91, 91, 240, 0.25) !important;
+  border-radius: 12px !important;
+  padding: 0.35rem 0.85rem !important;
+  font-size: 0.8rem !important;
+  color: var(--text-muted) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-bottom: 0.75rem !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
+.sad-eval-icon {
+  font-size: 0.9rem !important;
+}
+.sad-eval-text {
+  flex: 1 !important;
+  line-height: 1.35 !important;
+}
+
+/* 3. Top-Level 5-Stage Pipeline Tracker */
+.sad-pipeline-tracker {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  margin: 0.4rem auto 1.15rem auto !important;
+  padding: 7px 18px !important;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-main) !important;
+  border-radius: 9999px !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  max-width: 680px !important;
+  flex-wrap: wrap !important;
+}
+.sad-pipe-step {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 5px 12px !important;
+  border-radius: 9999px !important;
+  font-family: var(--font-heading) !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  white-space: nowrap !important;
+}
+.sad-pipe-badge {
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+  opacity: 0.85 !important;
+}
+.sad-pipe-name {
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+}
+.sad-pipe-step.pipe-pending {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-muted) !important;
+  opacity: 0.75 !important;
+}
+.sad-pipe-step.pipe-active {
+  background: linear-gradient(135deg, rgba(91, 91, 240, 0.25) 0%, rgba(139, 92, 246, 0.35) 100%) !important;
+  border: 1.5px solid #8B5CF6 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.55), inset 0 0 8px rgba(139, 92, 246, 0.25) !important;
+  transform: scale(1.04) !important;
+}
+.sad-pipe-step.pipe-done {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border: 1.5px solid rgba(16, 185, 129, 0.5) !important;
+  color: #10B981 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2) !important;
+}
+.sad-pipe-arrow {
+  color: var(--text-muted) !important;
+  font-size: 0.85rem !important;
+  font-weight: 700 !important;
+  opacity: 0.4 !important;
+  transition: all 0.2s ease !important;
+}
+.sad-pipe-arrow.pipe-arrow-active {
+  color: #8B5CF6 !important;
+  opacity: 1 !important;
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.7) !important;
+}
+
+/* 4. Section 1: Streamlined Input Studio Card */
+.sad-input-studio {
+  background: var(--bg-card) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+  border: 1px solid var(--border-main) !important;
+  border-radius: 20px !important;
+  padding: 0.95rem 1.25rem !important;
+  margin-bottom: 0.75rem !important;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.25), 0 4px 12px -2px rgba(91, 91, 240, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+  transition: transform 0.25s ease, box-shadow 0.25s ease !important;
+}
+.sad-studio-quota {
+  font-size: 0.8rem !important;
+  color: var(--text-muted) !important;
+  font-weight: 600 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  padding: 3px 10px !important;
+  border-radius: 9999px !important;
+  border: 1px solid var(--border-main) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* Popover & Tips Dropdown Fix — Never Truncate */
+[data-testid="stPopover"] {
+  min-width: 96px !important;
+  width: auto !important;
+}
+[data-testid="stPopover"] > button,
+[data-testid="stPopover"] button[kind="secondary"],
+div[data-testid="stPopover"] button {
+  min-width: 96px !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  padding: 6px 14px !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  border-radius: var(--radius-pill) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+[data-testid="stPopover"] > button:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(91, 91, 240, 0.25) !important;
+}
+
+/* Example Chips & Action Buttons */
+.sad-input-studio button {
+  border-radius: var(--radius-pill) !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease !important;
+}
+.sad-input-studio button:hover {
+  transform: translateY(-2px) !important;
+}
+
+/* Textarea Focus Ring */
+[data-testid="stTextArea"] textarea {
+  border-radius: 14px !important;
+  border: 1px solid var(--border-main) !important;
+  background: var(--bg-input) !important;
+  color: var(--text-main) !important;
+  font-size: 0.88rem !important;
+  line-height: 1.45 !important;
+  padding: 10px 14px !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+[data-testid="stTextArea"] textarea:focus {
+  border-color: #5B5BF0 !important;
+  box-shadow: 0 0 0 2px rgba(91, 91, 240, 0.3) !important;
+  outline: none !important;
+}
+
+/* Primary Check Freshness Button: Rich Gradient */
+button[key="check_freshness_btn"],
+#check_freshness_btn {
+  background: linear-gradient(135deg, #5B5BF0 0%, #8B5CF6 50%, #EC4899 100%) !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+  border: none !important;
+  box-shadow: 0 4px 16px rgba(91, 91, 240, 0.35) !important;
+}
+button[key="check_freshness_btn"]:hover,
+#check_freshness_btn:hover {
+  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 50%, #DB2777 100%) !important;
+  box-shadow: 0 6px 20px rgba(91, 91, 240, 0.45) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* Clear Button: Ghost/Outline Style */
+button[key="clear_workspace_btn"],
+#clear_workspace_btn {
+  background: transparent !important;
+  border: 1px solid var(--border-main) !important;
+  color: var(--text-muted) !important;
+}
+button[key="clear_workspace_btn"]:hover,
+#clear_workspace_btn:hover {
+  background: rgba(220, 38, 38, 0.08) !important;
+  border-color: rgba(220, 38, 38, 0.35) !important;
+  color: #DC2626 !important;
+  transform: translateY(-2px) !important;
+}
+
+/* 5. Section 2: Side-by-Side Inspection & Result Cards */
+.sad-results-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 24px !important;
+  align-items: stretch !important;
+  margin-bottom: 1.5rem !important;
+}
+.sad-result-card {
+  background: var(--bg-card) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+  border: 1px solid var(--border-main) !important;
+  border-radius: 20px !important;
+  padding: 1.25rem 1.5rem !important;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.28), 0 4px 12px -2px rgba(91, 91, 240, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 420px !important;
+  height: 100% !important;
+  transition: transform 0.25s ease, box-shadow 0.25s ease !important;
+}
+.sad-result-card:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 16px 40px -4px rgba(0, 0, 0, 0.35), 0 6px 16px -2px rgba(91, 91, 240, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+}
+.sad-result-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 1rem !important;
+  padding-bottom: 0.75rem !important;
+  border-bottom: 1px solid var(--border-main) !important;
+}
+.sad-result-header-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-family: var(--font-heading) !important;
+  font-size: 1.05rem !important;
+  font-weight: 700 !important;
+  color: var(--text-main) !important;
+}
+
+/* Status Pills (Ready, Standby, etc.) */
+.sad-status-pill {
+  padding: 4px 12px !important;
+  border-radius: 9999px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  white-space: nowrap !important;
+}
+.sad-status-pill.pill-ready {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border: 1px solid rgba(16, 185, 129, 0.45) !important;
+  color: #10B981 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25) !important;
+}
+.sad-status-pill.pill-standby {
+  background: rgba(148, 163, 184, 0.15) !important;
+  border: 1px solid rgba(148, 163, 184, 0.35) !important;
+  color: #94A3B8 !important;
+  box-shadow: 0 0 10px rgba(148, 163, 184, 0.15) !important;
+}
+
+/* Empty State Pill Badges Fix (No Text Collisions) */
+.sad-empty-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 5px 14px !important;
+  border-radius: 9999px !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  color: var(--text-main) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12) !important;
+  transition: all 0.2s ease !important;
+  white-space: nowrap !important;
+}
+.sad-empty-pill:hover {
+  transform: translateY(-2px) !important;
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 4px 12px rgba(91, 91, 240, 0.25) !important;
 }
 
 /* Numbered Section Headers */
@@ -1651,172 +1941,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   margin: 2px 0 0;
 }
 
-/* Input Studio Glass Card */
-.sad-input-studio {
-  background: var(--bg-card);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid var(--border-main);
-  border-radius: 20px;
-  padding: 0.85rem 1.15rem;
-  margin-bottom: 0.65rem;
-  box-shadow: var(--shadow-card);
-}
-.sad-studio-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.75rem;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.sad-studio-title {
-  font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 1.05rem;
-  color: var(--text-main);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.sad-studio-quota {
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.5);
-  padding: 2px 10px;
-  border-radius: 9999px;
-  border: 1px solid var(--border-main);
-}
-.sad-studio-examples-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0.5rem 0;
-  flex-wrap: wrap;
-}
-
-/* Progress Stepper */
-.sad-stepper {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 1rem 0 1.5rem;
-  padding: 0.75rem 1.25rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-main);
-  border-radius: 16px;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: var(--shadow-sm);
-  gap: 8px;
-  overflow-x: auto;
-}
-.sad-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.sad-step-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 700;
-  flex-shrink: 0;
-  transition: all 0.25s ease;
-}
-.sad-step-done .sad-step-icon {
-  background: #16A34A;
-  color: #FFFFFF;
-}
-.sad-step-done .sad-step-label {
-  color: var(--text-main);
-}
-.sad-step-running .sad-step-icon {
-  background: var(--primary-gradient);
-  color: #FFFFFF;
-  box-shadow: 0 0 12px rgba(91, 91, 240, 0.5);
-  animation: sadPulse 1.6s infinite ease-in-out;
-}
-.sad-step-running .sad-step-label {
-  color: #5B5BF0;
-  font-weight: 700;
-}
-.sad-step-pending .sad-step-icon {
-  background: rgba(148, 163, 184, 0.18);
-  color: var(--text-muted);
-  border: 1px solid var(--border-main);
-}
-.sad-step-pending .sad-step-label {
-  color: var(--text-muted);
-}
-.sad-step-line {
-  flex: 1;
-  height: 2px;
-  min-width: 14px;
-  max-width: 50px;
-  background: rgba(148, 163, 184, 0.25);
-  border-radius: 2px;
-}
-.sad-step-line-done {
-  background: #16A34A;
-}
-
-/* Two-Column Equal Results Grid */
-.sad-results-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  align-items: stretch;
-  margin-bottom: 1.5rem;
-}
-.sad-result-card {
-  background: var(--bg-card);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid var(--border-main);
-  border-radius: 20px;
-  padding: 1.25rem 1.5rem;
-  box-shadow: var(--shadow-card);
-  display: flex;
-  flex-direction: column;
-  min-height: 420px;
-  height: 100%;
-}
-.sad-result-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--border-main);
-}
-.sad-result-header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-heading);
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--text-main);
-}
-.sad-result-badge {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 9999px;
-  border: 1px solid var(--border-main);
-  background: rgba(255, 255, 255, 0.6);
-  color: var(--text-muted);
-}
-
 /* Claims Responsive Equal-Height Grid */
 .sad-claims-grid {
   display: grid;
@@ -1826,28 +1950,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   margin-bottom: 1.5rem;
 }
 
-/* Compact Empty States (<= 220px) */
-.sad-empty-state-compact {
-  max-height: 220px;
-  padding: 1.25rem 1rem !important;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+/* Footer & Floating Dock Spacing */
+.sad-footer {
+  text-align: center !important;
+  padding: 2.25rem 0 90px !important;
+  color: var(--text-muted) !important;
+  font-size: 0.85rem !important;
 }
-.sad-empty-state-compact .sad-empty-illustration {
-  width: 44px;
-  height: 44px;
-  margin-bottom: 0.5rem;
+.sad-footer a {
+  color: var(--primary-color) !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
 }
-.sad-empty-state-compact .sad-empty-title {
-  font-size: 0.98rem;
-  margin-bottom: 0.25rem;
-}
-.sad-empty-state-compact .sad-empty-desc {
-  font-size: 0.82rem;
-  margin-bottom: 0.5rem;
+.sad-footer a:hover {
+  text-decoration: underline !important;
 }
 
 /* Dock Hide on Input / Textarea Focus */
@@ -1863,10 +1979,13 @@ body:has(input:focus, textarea:focus) .sad-dock,
 /* Responsive Grid Stacking */
 @media (max-width: 900px) {
   .sad-results-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
   }
   .sad-claims-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
+  }
+  .sad-pipeline-tracker {
+    border-radius: 16px !important;
   }
 }
