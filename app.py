@@ -1247,18 +1247,18 @@ def _render_empty_state(
     """Build volumetric 3D glowing orbital checkmark illustration, title, description, and chips."""
     is_cyan = variant == "cyan"
     grad_id = "chkCyan" if is_cyan else "chkPurple"
-    ring_stroke = "rgba(6, 182, 212, 0.45)" if is_cyan else "rgba(129, 140, 248, 0.45)"
-    dot_fill = "#22D3EE" if is_cyan else "#60A5FA"
+    ring_stroke = "rgba(6, 182, 212, 0.45)" if is_cyan else "rgba(168, 85, 247, 0.45)"
+    dot_fill = "#22D3EE" if is_cyan else "#C084FC"
     filter_id = "glowCyan" if is_cyan else "glowPurple"
 
     friendly_illustration = (
-        '<div class="sad-empty-svg-wrap" style="margin: 0.12rem auto 0.45rem auto; width: 110px; height: 68px; display: flex; align-items: center; justify-content: center;">'
-        '<svg viewBox="0 0 110 70" width="112" height="70" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<div class="sad-empty-svg-wrap" style="margin: 0.05rem auto 0.25rem auto; width: 92px; height: 58px; display: flex; align-items: center; justify-content: center;">'
+        '<svg viewBox="0 0 110 70" width="94" height="58" fill="none" xmlns="http://www.w3.org/2000/svg">'
         '<defs>'
         + (
             '<linearGradient id="chkCyan" x1="30" y1="20" x2="80" y2="55" gradientUnits="userSpaceOnUse">'
-            '<stop offset="0%" stop-color="#94A3B8"/>'
-            '<stop offset="60%" stop-color="#38BDF8"/>'
+            '<stop offset="0%" stop-color="#67E8F9"/>'
+            '<stop offset="50%" stop-color="#06B6D4"/>'
             '<stop offset="100%" stop-color="#0284C7"/>'
             '</linearGradient>'
             if is_cyan
@@ -1287,18 +1287,18 @@ def _render_empty_state(
         '</div>'
     )
     pills_html = (
-        '<div style="display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px;">'
+        '<div style="display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px;">'
         + "".join(f'<span class="sad-empty-pill">{escape_html(p)}</span>' for p in pills)
         + '</div>'
         if pills
         else ""
     )
-    hint_html = f'<div class="sad-empty-hint" style="margin-top: 0.35rem; font-size: 0.78rem;">{hint}</div>' if hint else ""
+    hint_html = f'<div class="sad-empty-hint" style="margin-top: 0.25rem; font-size: 0.78rem;">{hint}</div>' if hint else ""
     return (
         '<div class="sad-empty-state sad-empty-state-compact">'
         f'{friendly_illustration}'
-        f'<h4 class="sad-empty-title" style="font-size: 1.05rem; margin-bottom: 0.25rem; font-weight: 700; color: #FFFFFF;">{escape_html(title)}</h4>'
-        f'<p class="sad-empty-desc" style="font-size: 0.84rem; margin: 0; line-height: 1.4; color: #94A3B8; max-width: 380px;">{body_html}</p>'
+        f'<h4 class="sad-empty-title" style="font-size: 1rem; margin-bottom: 0.15rem; font-weight: 700; color: #FFFFFF;">{escape_html(title)}</h4>'
+        f'<p class="sad-empty-desc" style="font-size: 0.82rem; margin: 0; line-height: 1.35; color: #94A3B8; max-width: 380px;">{body_html}</p>'
         f'{pills_html}'
         f'{hint_html}'
         '</div>'
@@ -2042,9 +2042,18 @@ def render_annotated_answer_card(
         hint_text = f"{len(verification_results)} claim(s) audited"
 
     st.markdown(
-        '<div class="sad-annotated-card">'
-        '<div class="sad-annotated-head">'
-        f'<span class="sad-annotated-title">{escape_html(title)}</span>'
+        '<div class="sad-result-card sad-result-card-purple sad-annotated-card">'
+        '<div class="sad-result-header">'
+        '<div class="sad-liquid-tab sad-liquid-tab-purple">'
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>'
+        '<polyline points="14 2 14 8 20 8"></polyline>'
+        '<line x1="16" y1="13" x2="8" y2="13"></line>'
+        '<line x1="16" y1="17" x2="8" y2="17"></line>'
+        '<polyline points="10 9 9 9 8 9"></polyline>'
+        '</svg>'
+        f'<span>{escape_html(title)}</span>'
+        '</div>'
         f'<span class="sad-annotated-hint">{hint_text}</span>'
         '</div>'
         f'<div class="sad-ask-body">{body_html}</div>'
@@ -6537,11 +6546,11 @@ with tab_audit:
     # ===================================================================
     st.markdown(
         """
-        <div class="sad-section-num-header" style="justify-content: center; margin-top: 0.15rem; margin-bottom: 0.1rem;">
-          <span class="sad-section-num" style="background: linear-gradient(135deg, #8B5CF6, #EC4899); border-radius: 8px; width: 26px; height: 26px; font-weight: 800; font-size: 14px; color: #FFF; box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);">2</span>
-          <h3 class="sad-section-title" style="font-size: 1.35rem; font-weight: 800; margin: 0; color: #FFFFFF;">Answer and summary</h3>
+        <div class="sad-section-num-header" style="justify-content: center; margin-top: 0.05rem; margin-bottom: 0.05rem;">
+          <span class="sad-section-num" style="background: linear-gradient(135deg, #8B5CF6, #EC4899); border-radius: 8px; width: 24px; height: 24px; font-weight: 800; font-size: 13px; color: #FFF; box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);">2</span>
+          <h3 class="sad-section-title" style="font-size: 1.25rem; font-weight: 800; margin: 0; color: #FFFFFF;">Answer and summary</h3>
         </div>
-        <div style="text-align: center; color: #94A3B8; font-size: 13px; margin-bottom: 0.75rem; letter-spacing: -0.01em;">
+        <div style="text-align: center; color: #94A3B8; font-size: 12.5px; margin-bottom: 0.4rem; letter-spacing: -0.01em;">
           Side-by-side inspection: annotated source text with inline fact status and overall freshness rating
         </div>
         """,
@@ -6561,7 +6570,7 @@ with tab_audit:
         elif act_busy:
             st.markdown(
                 f'<div class="sad-result-card sad-result-card-purple">'
-                f'<div class="sad-result-header"><div class="sad-result-header-title"><span>{act_card_title}</span></div><span class="sad-result-badge">Auditing...</span></div>'
+                f'<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg><span>{act_card_title}</span></div><span class="sad-result-badge">Auditing...</span></div>'
                 '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
                 '</div>',
                 unsafe_allow_html=True,
@@ -6569,7 +6578,7 @@ with tab_audit:
         else:
             st.markdown(
                 f'<div class="sad-result-card sad-result-card-purple">'
-                f'<div class="sad-result-header"><div class="sad-result-header-title"><span>LLM Answer</span></div><span class="sad-status-pill pill-ready">READY</span></div>'
+                f'<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg><span>LLM Answer</span></div><span class="sad-status-pill pill-ready"><span class="sad-pulse-dot dot-ready"></span>READY</span></div>'
                 + _render_empty_state("No answer audited yet", "Paste an LLM answer above or pick an example to inspect inline highlighted facts.", pills=("Prices & specs", "Tax rules", "AI API pricing"), variant="purple")
                 + '</div>',
                 unsafe_allow_html=True,
@@ -6628,14 +6637,14 @@ with tab_audit:
 
             st.markdown(
                 f"""
-                <div class="sad-result-card">
+                <div class="sad-result-card sad-result-card-cyan">
                   <div class="sad-result-header">
-                    <div class="sad-result-header-title">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    <div class="sad-liquid-tab sad-liquid-tab-cyan">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        <path d="m9 12 2 2 4-4"></path>
                       </svg>
-                      <span>Verification summary</span>
+                      <span>Verification Summary</span>
                     </div>
                     <span class="sad-result-badge">{origin_badge_html}</span>
                   </div>
@@ -6662,7 +6671,7 @@ with tab_audit:
         elif act_busy:
             st.markdown(
                 '<div class="sad-result-card sad-result-card-cyan">'
-                '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification Summary</span></div><span class="sad-result-badge">Auditing...</span></div>'
+                '<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-cyan"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg><span>Verification Summary</span></div><span class="sad-result-badge">Auditing...</span></div>'
                 '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
                 '</div>',
                 unsafe_allow_html=True,
@@ -6670,7 +6679,7 @@ with tab_audit:
         else:
             st.markdown(
                 '<div class="sad-result-card sad-result-card-cyan">'
-                '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification Summary</span></div><span class="sad-status-pill pill-standby">STANDBY</span></div>'
+                '<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-cyan"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg><span>Verification Summary</span></div><span class="sad-status-pill pill-standby"><span class="sad-pulse-dot dot-standby"></span>STANDBY</span></div>'
                 + _render_empty_state("Awaiting verification", "Score ring, fact breakdown, consensus stance, and primary sources will appear here.", pills=("Risk-weighted score", "Stance consensus", "freshness statuses"), variant="cyan")
                 + '</div>',
                 unsafe_allow_html=True,

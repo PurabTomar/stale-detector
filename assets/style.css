@@ -2241,11 +2241,11 @@ div[data-testid="stSegmentedControl"] button[aria-checked="true"] span {
   -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
   border: 1px solid var(--border-main) !important;
   border-radius: 20px !important;
-  padding: 0.9rem 1.25rem !important;
+  padding: 0.65rem 1.15rem !important;
   box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.28), 0 4px 12px -2px rgba(91, 91, 240, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
   display: flex !important;
   flex-direction: column !important;
-  min-height: 350px !important;
+  min-height: 290px !important;
   height: 100% !important;
   transition: transform 0.25s ease, box-shadow 0.25s ease !important;
 }
@@ -2254,86 +2254,107 @@ div[data-testid="stSegmentedControl"] button[aria-checked="true"] span {
   box-shadow: 0 16px 40px -4px rgba(0, 0, 0, 0.35), 0 6px 16px -2px rgba(91, 91, 240, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
 }
 
-/* 3D Stacked Layered Glass Cards (Purple & Cyan Plate Elevation) */
+/* 3D Stacked Layered Glass Cards (Liquid Purple & Liquid Cyan) */
+.sad-result-card::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 42% !important;
+  border-radius: 19px 19px 100px 100px / 19px 19px 32px 32px !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 65%, rgba(255, 255, 255, 0) 100%) !important;
+  pointer-events: none !important;
+  z-index: 1 !important;
+}
+
 .sad-result-card-purple {
   position: relative !important;
   border-radius: 20px !important;
-  border: 1px solid rgba(168, 85, 247, 0.38) !important;
-  background: rgba(15, 23, 42, 0.78) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(192, 132, 252, 0.45) !important;
+  background: 
+    radial-gradient(120% 90% at 15% -10%, rgba(255, 255, 255, 0.12) 0%, transparent 55%),
+    radial-gradient(90% 90% at 85% 105%, rgba(168, 85, 247, 0.15) 0%, transparent 60%),
+    linear-gradient(145deg, rgba(26, 20, 48, 0.8) 0%, rgba(15, 23, 42, 0.88) 100%) !important;
+  backdrop-filter: blur(24px) saturate(220%) brightness(108%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(220%) brightness(108%) !important;
   box-shadow: 
-    0 -1px 18px rgba(168, 85, 247, 0.25),
-    0 12px 32px rgba(0, 0, 0, 0.6),
+    inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.48),
+    inset 0 -1.5px 1.5px 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 32px 0 rgba(168, 85, 247, 0.12),
+    0 -1px 22px rgba(168, 85, 247, 0.28),
+    0 16px 36px rgba(0, 0, 0, 0.65),
     /* First stacked under-plate */
-    0 12px 0 -4px rgba(24, 18, 43, 0.88),
-    0 13px 0 -3px rgba(168, 85, 247, 0.38),
+    0 12px 0 -4px rgba(28, 20, 52, 0.92),
+    0 13px 0 -3px rgba(168, 85, 247, 0.45),
     /* Second stacked under-plate */
-    0 22px 0 -8px rgba(15, 12, 30, 0.94),
-    0 23px 0 -7px rgba(168, 85, 247, 0.22),
-    0 32px 42px rgba(0, 0, 0, 0.72) !important;
+    0 22px 0 -8px rgba(18, 14, 36, 0.96),
+    0 23px 0 -7px rgba(168, 85, 247, 0.26),
+    0 32px 48px rgba(0, 0, 0, 0.75) !important;
 }
 .sad-result-card-purple:hover {
   transform: translateY(-2px) !important;
   box-shadow: 
-    0 -1px 22px rgba(168, 85, 247, 0.35),
-    0 16px 36px rgba(0, 0, 0, 0.65),
-    0 14px 0 -4px rgba(24, 18, 43, 0.9),
-    0 15px 0 -3px rgba(168, 85, 247, 0.45),
-    0 24px 0 -8px rgba(15, 12, 30, 0.96),
-    0 25px 0 -7px rgba(168, 85, 247, 0.28),
-    0 36px 46px rgba(0, 0, 0, 0.75) !important;
+    inset 0 2px 2px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1.5px 1.5px 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 36px 0 rgba(168, 85, 247, 0.2),
+    0 -1px 26px rgba(168, 85, 247, 0.38),
+    0 20px 42px rgba(0, 0, 0, 0.7),
+    0 14px 0 -4px rgba(28, 20, 52, 0.94),
+    0 15px 0 -3px rgba(168, 85, 247, 0.52),
+    0 24px 0 -8px rgba(18, 14, 36, 0.98),
+    0 25px 0 -7px rgba(168, 85, 247, 0.32),
+    0 36px 52px rgba(0, 0, 0, 0.8) !important;
 }
 
 .sad-result-card-cyan {
   position: relative !important;
   border-radius: 20px !important;
-  border: 1px solid rgba(6, 182, 212, 0.38) !important;
-  background: rgba(15, 23, 42, 0.78) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(34, 211, 238, 0.45) !important;
+  background: 
+    radial-gradient(120% 90% at 15% -10%, rgba(255, 255, 255, 0.12) 0%, transparent 55%),
+    radial-gradient(90% 90% at 85% 105%, rgba(6, 182, 212, 0.15) 0%, transparent 60%),
+    linear-gradient(145deg, rgba(14, 30, 48, 0.8) 0%, rgba(15, 23, 42, 0.88) 100%) !important;
+  backdrop-filter: blur(24px) saturate(220%) brightness(108%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(220%) brightness(108%) !important;
   box-shadow: 
-    0 -1px 18px rgba(6, 182, 212, 0.25),
-    0 12px 32px rgba(0, 0, 0, 0.6),
+    inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.48),
+    inset 0 -1.5px 1.5px 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 32px 0 rgba(6, 182, 212, 0.12),
+    0 -1px 22px rgba(6, 182, 212, 0.28),
+    0 16px 36px rgba(0, 0, 0, 0.65),
     /* First stacked under-plate */
-    0 12px 0 -4px rgba(13, 27, 42, 0.88),
-    0 13px 0 -3px rgba(6, 182, 212, 0.38),
+    0 12px 0 -4px rgba(14, 32, 50, 0.92),
+    0 13px 0 -3px rgba(6, 182, 212, 0.45),
     /* Second stacked under-plate */
-    0 22px 0 -8px rgba(8, 18, 30, 0.94),
-    0 23px 0 -7px rgba(6, 182, 212, 0.22),
-    0 32px 42px rgba(0, 0, 0, 0.72) !important;
+    0 22px 0 -8px rgba(10, 22, 36, 0.96),
+    0 23px 0 -7px rgba(6, 182, 212, 0.26),
+    0 32px 48px rgba(0, 0, 0, 0.75) !important;
 }
 .sad-result-card-cyan:hover {
   transform: translateY(-2px) !important;
   box-shadow: 
-    0 -1px 22px rgba(6, 182, 212, 0.35),
-    0 16px 36px rgba(0, 0, 0, 0.65),
-    0 14px 0 -4px rgba(13, 27, 42, 0.9),
-    0 15px 0 -3px rgba(6, 182, 212, 0.45),
-    0 24px 0 -8px rgba(8, 18, 30, 0.96),
-    0 25px 0 -7px rgba(6, 182, 212, 0.28),
-    0 36px 46px rgba(0, 0, 0, 0.75) !important;
+    inset 0 2px 2px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1.5px 1.5px 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 36px 0 rgba(6, 182, 212, 0.2),
+    0 -1px 26px rgba(6, 182, 212, 0.38),
+    0 20px 42px rgba(0, 0, 0, 0.7),
+    0 14px 0 -4px rgba(14, 32, 50, 0.94),
+    0 15px 0 -3px rgba(6, 182, 212, 0.52),
+    0 24px 0 -8px rgba(10, 22, 36, 0.98),
+    0 25px 0 -7px rgba(6, 182, 212, 0.32),
+    0 36px 52px rgba(0, 0, 0, 0.8) !important;
 }
 
-.sad-result-card-purple .sad-empty-pill {
-  background: rgba(30, 41, 59, 0.65) !important;
-  border: 1px solid rgba(168, 85, 247, 0.45) !important;
-  color: #F8FAFC !important;
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.15) !important;
-}
-.sad-result-card-cyan .sad-empty-pill {
-  background: rgba(30, 41, 59, 0.65) !important;
-  border: 1px solid rgba(6, 182, 212, 0.45) !important;
-  color: #F8FAFC !important;
-  box-shadow: 0 0 10px rgba(6, 182, 212, 0.15) !important;
-}
 .sad-result-header {
   display: flex !important;
   justify-content: space-between !important;
   align-items: center !important;
-  margin-bottom: 0.45rem !important;
-  padding-bottom: 0.45rem !important;
-  border-bottom: 1px solid var(--border-main) !important;
+  margin-bottom: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  position: relative !important;
+  z-index: 2 !important;
 }
 
 /* Compact Glass Styling for Input Studio Expander */
@@ -2359,6 +2380,64 @@ div[data-testid="stSegmentedControl"] button[aria-checked="true"] span {
 [data-testid="stExpander"] details summary svg {
   color: #818CF8 !important;
 }
+/* Liquid Glass Tabs for Result Card Headers */
+.sad-liquid-tab {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 5px 14px !important;
+  border-radius: 12px !important;
+  font-family: var(--font-heading) !important;
+  font-size: 0.98rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+  backdrop-filter: blur(16px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(200%) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  position: relative !important;
+  z-index: 2 !important;
+}
+.sad-liquid-tab-purple {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.28) 0%, rgba(236, 72, 153, 0.16) 100%) !important;
+  border: 1px solid rgba(192, 132, 252, 0.55) !important;
+  color: #FFFFFF !important;
+  box-shadow: 
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.35),
+    0 4px 14px -2px rgba(168, 85, 247, 0.35) !important;
+}
+.sad-liquid-tab-purple svg {
+  color: #D8B4FE !important;
+  filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.6)) !important;
+}
+.sad-liquid-tab-purple:hover {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.38) 0%, rgba(236, 72, 153, 0.24) 100%) !important;
+  border-color: rgba(192, 132, 252, 0.75) !important;
+  box-shadow: 
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.6),
+    0 6px 18px -2px rgba(168, 85, 247, 0.5) !important;
+}
+.sad-liquid-tab-cyan {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.28) 0%, rgba(59, 130, 246, 0.16) 100%) !important;
+  border: 1px solid rgba(34, 211, 238, 0.55) !important;
+  color: #FFFFFF !important;
+  box-shadow: 
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.35),
+    0 4px 14px -2px rgba(6, 182, 212, 0.35) !important;
+}
+.sad-liquid-tab-cyan svg {
+  color: #67E8F9 !important;
+  filter: drop-shadow(0 0 6px rgba(6, 182, 212, 0.6)) !important;
+}
+.sad-liquid-tab-cyan:hover {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.38) 0%, rgba(59, 130, 246, 0.24) 100%) !important;
+  border-color: rgba(34, 211, 238, 0.75) !important;
+  box-shadow: 
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.6),
+    0 6px 18px -2px rgba(6, 182, 212, 0.5) !important;
+}
+
 .sad-result-header-title {
   display: flex !important;
   align-items: center !important;
@@ -2369,33 +2448,56 @@ div[data-testid="stSegmentedControl"] button[aria-checked="true"] span {
   color: var(--text-main) !important;
 }
 
-/* Status Pills (Ready, Standby, etc.) */
+/* Status Pills (Ready, Standby, etc.) with Liquid Glass styling */
 .sad-status-pill {
   padding: 4px 12px !important;
   border-radius: 9999px !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.04em !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
   text-transform: uppercase !important;
   display: inline-flex !important;
   align-items: center !important;
-  gap: 5px !important;
+  gap: 6px !important;
   white-space: nowrap !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  position: relative !important;
+  z-index: 2 !important;
 }
 .sad-status-pill.pill-ready {
-  background: rgba(16, 185, 129, 0.15) !important;
-  border: 1px solid rgba(16, 185, 129, 0.45) !important;
-  color: #10B981 !important;
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25) !important;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(5, 150, 105, 0.12) 100%) !important;
+  border: 1px solid rgba(52, 211, 153, 0.55) !important;
+  color: #34D399 !important;
+  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.35), 0 0 14px rgba(16, 185, 129, 0.3) !important;
 }
 .sad-status-pill.pill-standby {
-  background: rgba(148, 163, 184, 0.15) !important;
-  border: 1px solid rgba(148, 163, 184, 0.35) !important;
-  color: #94A3B8 !important;
-  box-shadow: 0 0 10px rgba(148, 163, 184, 0.15) !important;
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(30, 41, 59, 0.45) 100%) !important;
+  border: 1px solid rgba(34, 211, 238, 0.5) !important;
+  color: #22D3EE !important;
+  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.35), 0 0 14px rgba(6, 182, 212, 0.25) !important;
+}
+.sad-pulse-dot {
+  width: 6px !important;
+  height: 6px !important;
+  border-radius: 50% !important;
+  display: inline-block !important;
+  animation: sad-pulse-glow 2s infinite ease-in-out !important;
+}
+.sad-pulse-dot.dot-ready {
+  background: #34D399 !important;
+  box-shadow: 0 0 8px #34D399 !important;
+}
+.sad-pulse-dot.dot-standby {
+  background: #22D3EE !important;
+  box-shadow: 0 0 8px #22D3EE !important;
+}
+@keyframes sad-pulse-glow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
 }
 
-/* Empty State Pill Badges Fix (No Text Collisions) */
+/* Empty State Pill Badges Fix (Liquid Glass Capsules) */
 .sad-empty-pill {
   display: inline-flex !important;
   align-items: center !important;
@@ -2404,19 +2506,36 @@ div[data-testid="stSegmentedControl"] button[aria-checked="true"] span {
   font-size: 0.78rem !important;
   font-weight: 600 !important;
   letter-spacing: -0.01em !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  border: 1px solid rgba(255, 255, 255, 0.16) !important;
-  color: var(--text-main) !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12) !important;
-  transition: all 0.2s ease !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  position: relative !important;
+  z-index: 2 !important;
   white-space: nowrap !important;
 }
-.sad-empty-pill:hover {
-  transform: translateY(-2px) !important;
-  border-color: var(--primary-color) !important;
-  box-shadow: 0 4px 12px rgba(91, 91, 240, 0.25) !important;
+.sad-result-card-purple .sad-empty-pill {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(168, 85, 247, 0.14) 100%) !important;
+  border: 1px solid rgba(192, 132, 252, 0.45) !important;
+  color: #F8FAFC !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.25), 0 0 12px rgba(168, 85, 247, 0.18) !important;
+}
+.sad-result-card-purple .sad-empty-pill:hover {
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.85) 0%, rgba(168, 85, 247, 0.28) 100%) !important;
+  border-color: rgba(192, 132, 252, 0.75) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 0 16px rgba(168, 85, 247, 0.35) !important;
+  transform: translateY(-1px) !important;
+}
+.sad-result-card-cyan .sad-empty-pill {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(6, 182, 212, 0.14) 100%) !important;
+  border: 1px solid rgba(34, 211, 238, 0.45) !important;
+  color: #F8FAFC !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.25), 0 0 12px rgba(6, 182, 212, 0.18) !important;
+}
+.sad-result-card-cyan .sad-empty-pill:hover {
+  background: linear-gradient(135deg, rgba(51, 65, 85, 0.85) 0%, rgba(6, 182, 212, 0.28) 100%) !important;
+  border-color: rgba(34, 211, 238, 0.75) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 0 16px rgba(6, 182, 212, 0.35) !important;
+  transform: translateY(-1px) !important;
 }
 
 /* Numbered Section Headers */
