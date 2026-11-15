@@ -1,14 +1,14 @@
-# Light theme for Stale-Answer Detector (Clean, modern, premium SaaS look)
+# Dark theme for Stale-Answer Detector (Cosmic Glassmorphism)
 [theme]
-base = "light"
-primaryColor = "#5B5BF0"
-backgroundColor = "#F7F8FC"
-secondaryBackgroundColor = "#FFFFFF"
-codeBackgroundColor = "#F1F5F9"
-textColor = "#0F172A"
-linkColor = "#5B5BF0"
-borderColor = "#E5E7EF"
-codeTextColor = "#0F172A"
+base = "dark"
+primaryColor = "#6366F1"
+backgroundColor = "#0B0F19"
+secondaryBackgroundColor = "#1E293B"
+codeBackgroundColor = "#0F172A"
+textColor = "#F8FAFC"
+linkColor = "#818CF8"
+borderColor = "rgba(148, 163, 184, 0.2)"
+codeTextColor = "#F8FAFC"
 showWidgetBorder = true
 showSidebarBorder = true
 baseRadius = "12px"
@@ -18,18 +18,18 @@ codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+
 paddingTop = "1.5rem"
 paddingBottom = "2.5rem"
 
-greenColor = "#16A34A"
-yellowColor = "#D97706"
-redColor = "#DC2626"
+greenColor = "#10B981"
+yellowColor = "#F59E0B"
+redColor = "#EF4444"
 
 [theme.sidebar]
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F7F8FC"
-codeBackgroundColor = "#F1F5F9"
-textColor = "#0F172A"
-borderColor = "#E5E7EF"
-primaryColor = "#5B5BF0"
-linkColor = "#5B5BF0"
+backgroundColor = "#0F172A"
+secondaryBackgroundColor = "#1E293B"
+codeBackgroundColor = "#0F172A"
+textColor = "#F8FAFC"
+borderColor = "rgba(148, 163, 184, 0.2)"
+primaryColor = "#6366F1"
+linkColor = "#818CF8"
 
 [server]
 enableStaticServing = true

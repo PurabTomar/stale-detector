@@ -324,6 +324,229 @@ CUSTOM_CSS = """
     background-attachment: fixed !important;
     color: #F1F5F9 !important;
 }
+
+/* Navigation Tabs - Dark Contrast */
+[data-testid="stTabs"] [data-baseweb="tab"],
+div[role="tablist"] button[role="tab"] {
+    color: #94A3B8 !important;
+    opacity: 1 !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab"] p,
+[data-testid="stTabs"] [data-baseweb="tab"] span,
+[data-testid="stTabs"] [data-baseweb="tab"] div,
+div[role="tablist"] button[role="tab"] p,
+div[role="tablist"] button[role="tab"] span,
+div[role="tablist"] button[role="tab"] div {
+    color: #94A3B8 !important;
+    opacity: 1 !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab"]:hover,
+div[role="tablist"] button[role="tab"]:hover {
+    color: #F8FAFC !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab"]:hover p,
+[data-testid="stTabs"] [data-baseweb="tab"]:hover span,
+div[role="tablist"] button[role="tab"]:hover p,
+div[role="tablist"] button[role="tab"]:hover span {
+    color: #F8FAFC !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"],
+div[role="tablist"] button[role="tab"][aria-selected="true"] {
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+    background: rgba(99, 102, 241, 0.2) !important;
+    border: 1px solid #6366F1 !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] p,
+[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] span,
+div[role="tablist"] button[role="tab"][aria-selected="true"] p,
+div[role="tablist"] button[role="tab"][aria-selected="true"] span {
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+}
+
+/* Secondary Buttons & Chips - Dark Glass Contrast */
+button[data-testid="stBaseButton-secondary"],
+button[kind="secondary"],
+div[data-testid="stPopover"] > button,
+div.stButton > button[data-testid="stBaseButton-secondary"],
+div.stButton > button:not([data-testid="stBaseButton-primary"]):not([kind="primary"]) {
+    background: rgba(30, 41, 59, 0.75) !important;
+    background-color: rgba(30, 41, 59, 0.75) !important;
+    border: 1px solid rgba(148, 163, 184, 0.25) !important;
+    color: #F8FAFC !important;
+    font-weight: 500 !important;
+}
+button[data-testid="stBaseButton-secondary"] p,
+button[data-testid="stBaseButton-secondary"] span,
+button[kind="secondary"] p,
+button[kind="secondary"] span,
+div[data-testid="stPopover"] > button p,
+div[data-testid="stPopover"] > button span,
+div.stButton > button:not([data-testid="stBaseButton-primary"]) p,
+div.stButton > button:not([data-testid="stBaseButton-primary"]) span {
+    color: #F8FAFC !important;
+    font-weight: 500 !important;
+}
+button[data-testid="stBaseButton-secondary"]:hover,
+button[kind="secondary"]:hover,
+div[data-testid="stPopover"] > button:hover,
+div.stButton > button:not([data-testid="stBaseButton-primary"]):hover {
+    background: rgba(51, 65, 85, 0.9) !important;
+    background-color: rgba(51, 65, 85, 0.9) !important;
+    border: 1px solid #818CF8 !important;
+    color: #FFFFFF !important;
+    transform: translateY(-1px) !important;
+}
+button[data-testid="stBaseButton-secondary"]:hover p,
+button[data-testid="stBaseButton-secondary"]:hover span,
+button[kind="secondary"]:hover p,
+button[kind="secondary"]:hover span,
+div[data-testid="stPopover"] > button:hover p,
+div[data-testid="stPopover"] > button:hover span,
+div.stButton > button:not([data-testid="stBaseButton-primary"]):hover p,
+div.stButton > button:not([data-testid="stBaseButton-primary"]):hover span {
+    color: #FFFFFF !important;
+}
+
+/* Guided Demo Chip */
+button[aria-label*="Guided Demo"],
+div[data-testid="stColumn"]:has(#sad-guided-demo-anchor) button {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(168, 85, 247, 0.25)) !important;
+    border: 1px solid rgba(168, 85, 247, 0.5) !important;
+    color: #F8FAFC !important;
+}
+button[aria-label*="Guided Demo"] p,
+button[aria-label*="Guided Demo"] span,
+div[data-testid="stColumn"]:has(#sad-guided-demo-anchor) button p,
+div[data-testid="stColumn"]:has(#sad-guided-demo-anchor) button span {
+    color: #F8FAFC !important;
+}
+button[aria-label*="Guided Demo"]:hover,
+div[data-testid="stColumn"]:has(#sad-guided-demo-anchor) button:hover {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(168, 85, 247, 0.4)) !important;
+    border: 1px solid #A855F7 !important;
+    color: #FFFFFF !important;
+}
+
+/* Primary Action Buttons */
+button[data-testid="stBaseButton-primary"],
+button[kind="primary"] {
+    background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%) !important;
+    background-color: #6366F1 !important;
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+    border: none !important;
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35) !important;
+}
+button[data-testid="stBaseButton-primary"] p,
+button[data-testid="stBaseButton-primary"] span,
+button[kind="primary"] p,
+button[kind="primary"] span {
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+}
+button[data-testid="stBaseButton-primary"]:hover,
+button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%) !important;
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4) !important;
+    color: #FFFFFF !important;
+}
+
+/* Segmented Controls / ButtonGroups */
+div.stButtonGroup,
+div[data-testid="stButtonGroup"],
+div[data-testid="stSegmentedControl"],
+div[data-testid="stButtonGroup"] > div,
+div[data-testid="stSegmentedControl"] > div {
+    background: #0F172A !important;
+    background-color: #0F172A !important;
+    padding: 4px !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(148, 163, 184, 0.2) !important;
+}
+div.stButtonGroup button,
+div[data-testid="stButtonGroup"] button,
+div[data-testid="stSegmentedControl"] button {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #94A3B8 !important;
+    border: none !important;
+    border-radius: 8px !important;
+}
+div.stButtonGroup button p,
+div.stButtonGroup button span,
+div[data-testid="stButtonGroup"] button p,
+div[data-testid="stButtonGroup"] button span,
+div[data-testid="stSegmentedControl"] button p,
+div[data-testid="stSegmentedControl"] button span {
+    color: #94A3B8 !important;
+}
+div.stButtonGroup button:hover,
+div[data-testid="stButtonGroup"] button:hover,
+div[data-testid="stSegmentedControl"] button:hover {
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: #F8FAFC !important;
+}
+div.stButtonGroup button:hover p,
+div.stButtonGroup button:hover span,
+div[data-testid="stButtonGroup"] button:hover p,
+div[data-testid="stButtonGroup"] button:hover span,
+div[data-testid="stSegmentedControl"] button:hover p,
+div[data-testid="stSegmentedControl"] button:hover span {
+    color: #F8FAFC !important;
+}
+div.stButtonGroup button[data-selected],
+div.stButtonGroup button[aria-selected="true"],
+div.stButtonGroup button[aria-checked="true"],
+div[data-testid="stButtonGroup"] button[data-selected],
+div[data-testid="stButtonGroup"] button[aria-selected="true"],
+div[data-testid="stButtonGroup"] button[aria-checked="true"],
+div[data-testid="stSegmentedControl"] button[data-selected],
+div[data-testid="stSegmentedControl"] button[aria-selected="true"],
+div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
+    background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+    background-color: #6366F1 !important;
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 10px rgba(99, 102, 241, 0.35) !important;
+}
+div.stButtonGroup button[data-selected] p,
+div.stButtonGroup button[data-selected] span,
+div.stButtonGroup button[aria-selected="true"] p,
+div.stButtonGroup button[aria-selected="true"] span,
+div[data-testid="stButtonGroup"] button[data-selected] p,
+div[data-testid="stButtonGroup"] button[data-selected] span,
+div[data-testid="stButtonGroup"] button[aria-selected="true"] p,
+div[data-testid="stButtonGroup"] button[aria-selected="true"] span,
+div[data-testid="stSegmentedControl"] button[data-selected] p,
+div[data-testid="stSegmentedControl"] button[data-selected] span,
+div[data-testid="stSegmentedControl"] button[aria-selected="true"] p,
+div[data-testid="stSegmentedControl"] button[aria-selected="true"] span {
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+}
+
+/* Textarea & Inputs */
+[data-testid="stTextArea"] textarea,
+[data-testid="stTextInput"] input {
+    background: rgba(15, 23, 42, 0.85) !important;
+    background-color: rgba(15, 23, 42, 0.85) !important;
+    border: 1px solid rgba(148, 163, 184, 0.3) !important;
+    border-radius: 14px !important;
+    color: #F8FAFC !important;
+}
+[data-testid="stTextArea"] textarea::placeholder,
+[data-testid="stTextInput"] input::placeholder {
+    color: #94A3B8 !important;
+    opacity: 0.8 !important;
+}
+[data-testid="stTextArea"] textarea:focus,
+[data-testid="stTextInput"] input:focus {
+    border-color: #6366F1 !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25) !important;
+}
 </style>
 """
 
@@ -4925,8 +5148,8 @@ if not quota_state:
             quota_state = "Live"
 
 if quota_state == "Live":
-    quota_dot_color = "#16A34A"
-    quota_border = "rgba(22,163,74,0.35)"
+    quota_dot_color = "#10B981"
+    quota_border = "rgba(16, 185, 129, 0.35)"
 elif quota_state == "Limited":
     quota_dot_color = "#EA580C"
     quota_border = "rgba(234,88,12,0.35)"
@@ -4954,8 +5177,8 @@ st.markdown(
           <span>Tavily Search</span>
         </span>
         <span class="sad-header-chip chip-bifrost">
-          <span class="sad-header-chip-dot" style="background: {routing_dot_color};"></span>
-          <span>{routing_badge_text}</span>
+          <span class="sad-header-chip-dot" style="background: #A855F7;"></span>
+          <span>Bifrost Gateway</span>
         </span>
         <span class="sad-header-chip chip-gemini">
           <span class="sad-header-chip-dot" style="background: #3B82F6;"></span>
@@ -5563,7 +5786,6 @@ with tab_audit:
                   <span class="sad-section-num">1</span>
                   <div>
                     <h3 class="sad-section-title" style="font-size: 1.02rem; margin: 0;">Input</h3>
-                    <p class="sad-section-sub" style="font-size: 0.74rem; margin: 0;">Audit freshness</p>
                   </div>
                 </div>
                 """,
@@ -5609,6 +5831,13 @@ with tab_audit:
             is_ask_running = current_busy == "ask"
             is_url_running = current_busy == "url"
 
+            st.markdown(
+                '<div style="color: #94A3B8; font-size: 14px; margin-bottom: 12px; margin-top: 4px;">'
+                'Start here — choose an input mode to audit freshness against live web reality'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
             check_clicked = False
             ask_clicked = False
             url_clicked = False
@@ -5629,6 +5858,7 @@ with tab_audit:
                             load_demo_example(DEMO_EXAMPLES[ex_idx]["text"])
 
                 with chip_cols[5]:
+                    st.markdown('<span id="sad-guided-demo-anchor" style="display:none;"></span>', unsafe_allow_html=True)
                     if st.button(
                         "✨ Guided Demo",
                         key="guided_demo_btn",
