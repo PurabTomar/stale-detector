@@ -330,6 +330,7 @@ CUSTOM_CSS = """
 div[role="tablist"] button[role="tab"] {
     color: #94A3B8 !important;
     opacity: 1 !important;
+    border-bottom: none !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab"] p,
 [data-testid="stTabs"] [data-baseweb="tab"] span,
@@ -343,7 +344,7 @@ div[role="tablist"] button[role="tab"] div {
 [data-testid="stTabs"] [data-baseweb="tab"]:hover,
 div[role="tablist"] button[role="tab"]:hover {
     color: #F8FAFC !important;
-    background: rgba(255, 255, 255, 0.06) !important;
+    background-color: rgba(255, 255, 255, 0.06) !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab"]:hover p,
 [data-testid="stTabs"] [data-baseweb="tab"]:hover span,
@@ -352,18 +353,40 @@ div[role="tablist"] button[role="tab"]:hover span {
     color: #F8FAFC !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"],
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"],
 div[role="tablist"] button[role="tab"][aria-selected="true"] {
     color: #FFFFFF !important;
-    font-weight: 600 !important;
-    background: rgba(99, 102, 241, 0.2) !important;
-    border: 1px solid #6366F1 !important;
+    font-weight: 700 !important;
+    background-color: rgba(99, 102, 241, 0.32) !important;
+    background-image: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(168, 85, 247, 0.25)) !important;
+    border: 1px solid rgba(129, 140, 248, 0.7) !important;
+    border-bottom: 1px solid rgba(129, 140, 248, 0.7) !important;
+    box-shadow: 0 0 16px rgba(99, 102, 241, 0.5) !important;
+    border-radius: 9999px !important;
 }
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] p,
 [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] span,
+[data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] div,
 div[role="tablist"] button[role="tab"][aria-selected="true"] p,
-div[role="tablist"] button[role="tab"][aria-selected="true"] span {
+div[role="tablist"] button[role="tab"][aria-selected="true"] span,
+div[role="tablist"] button[role="tab"][aria-selected="true"] div {
     color: #FFFFFF !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
+}
+[data-baseweb="tab-highlight"],
+[data-baseweb="tab-border"],
+div[data-baseweb="tab-highlight"],
+div[data-baseweb="tab-border"],
+[data-testid="stTabs"] div[data-baseweb="tab-highlight"],
+[data-testid="stTabs"] div[data-baseweb="tab-border"],
+[data-testid="stTabs"] [data-baseweb="tab-list"] > div:not([data-baseweb="tab"]) {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    width: 0 !important;
+    border: none !important;
+    background: transparent !important;
 }
 
 /* Secondary Buttons & Chips - Dark Glass Contrast */
@@ -1204,37 +1227,50 @@ def _render_empty_state(
     icon_svg: str = "",
     variant: str = "default",
 ) -> str:
-    """Build compact empty-state HTML (<= 220px tall) with glowing orbital illustration, 1 line of text, and 3 example chips."""
-    grad_id = "chkBlue" if variant != "cyan" else "chkSilver"
-    orbit_color = "rgba(56, 189, 248, 0.45)" if variant != "cyan" else "rgba(6, 182, 212, 0.45)"
-    dot_color = "#38BDF8" if variant != "cyan" else "#22D3EE"
-    stroke_grad = "url(#" + grad_id + ")"
+    """Build volumetric 3D glowing orbital checkmark illustration, title, description, and chips."""
+    is_cyan = variant == "cyan"
+    grad_id = "chkCyan" if is_cyan else "chkPurple"
+    ring_stroke = "rgba(6, 182, 212, 0.45)" if is_cyan else "rgba(129, 140, 248, 0.45)"
+    dot_fill = "#22D3EE" if is_cyan else "#60A5FA"
+    filter_id = "glowCyan" if is_cyan else "glowPurple"
 
     friendly_illustration = (
-        '<div class="sad-empty-svg-wrap" style="margin: 0 auto 0.5rem auto; width: 72px; height: 56px; display: flex; align-items: center; justify-content: center;">'
-        '<svg viewBox="0 0 80 60" width="72" height="54" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<div class="sad-empty-svg-wrap" style="margin: 0.12rem auto 0.45rem auto; width: 110px; height: 68px; display: flex; align-items: center; justify-content: center;">'
+        '<svg viewBox="0 0 110 70" width="112" height="70" fill="none" xmlns="http://www.w3.org/2000/svg">'
         '<defs>'
-        '<linearGradient id="chkBlue" x1="20" y1="15" x2="60" y2="50" gradientUnits="userSpaceOnUse">'
-        '<stop offset="0%" stop-color="#38BDF8"/>'
-        '<stop offset="100%" stop-color="#818CF8"/>'
-        '</linearGradient>'
-        '<linearGradient id="chkSilver" x1="20" y1="15" x2="60" y2="50" gradientUnits="userSpaceOnUse">'
-        '<stop offset="0%" stop-color="#94A3B8"/>'
-        '<stop offset="100%" stop-color="#E2E8F0"/>'
-        '</linearGradient>'
-        '<filter id="glowOrb" x="-20%" y="-20%" width="140%" height="140%">'
-        '<feGaussianBlur stdDeviation="2.5" result="blur"/>'
+        + (
+            '<linearGradient id="chkCyan" x1="30" y1="20" x2="80" y2="55" gradientUnits="userSpaceOnUse">'
+            '<stop offset="0%" stop-color="#94A3B8"/>'
+            '<stop offset="60%" stop-color="#38BDF8"/>'
+            '<stop offset="100%" stop-color="#0284C7"/>'
+            '</linearGradient>'
+            if is_cyan
+            else
+            '<linearGradient id="chkPurple" x1="30" y1="20" x2="80" y2="55" gradientUnits="userSpaceOnUse">'
+            '<stop offset="0%" stop-color="#38BDF8"/>'
+            '<stop offset="50%" stop-color="#818CF8"/>'
+            '<stop offset="100%" stop-color="#A855F7"/>'
+            '</linearGradient>'
+        )
+        + f'<filter id="{filter_id}" x="-30%" y="-30%" width="160%" height="160%">'
+        '<feGaussianBlur stdDeviation="3.5" result="blur"/>'
         '<feComposite in="SourceGraphic" in2="blur" operator="over"/>'
         '</filter>'
+        '<linearGradient id="tubeLight" x1="0" y1="0" x2="1" y2="1">'
+        '<stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>'
+        '<stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>'
+        '</linearGradient>'
         '</defs>'
-        f'<ellipse cx="40" cy="32" rx="34" ry="13" transform="rotate(-15 40 32)" stroke="{orbit_color}" stroke-width="1.5" stroke-dasharray="3 3"/>'
-        f'<circle cx="68" cy="24" r="2.5" fill="{dot_color}" filter="url(#glowOrb)"/>'
-        f'<path d="M28 32L36 40L52 22" stroke="{stroke_grad}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glowOrb)"/>'
+        + f'<ellipse cx="55" cy="38" rx="46" ry="16" transform="rotate(-15 55 38)" stroke="{ring_stroke}" stroke-width="1.6" stroke-dasharray="3 4"/>'
+        + f'<circle cx="89" cy="27" r="3.5" fill="{dot_fill}" filter="url(#{filter_id})"/>'
+        + f'<path d="M38 38L49 49L76 25" stroke="{ring_stroke}" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" opacity="0.3" filter="url(#{filter_id})"/>'
+        + f'<path d="M38 38L49 49L76 25" stroke="url(#{grad_id})" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>'
+        + '<path d="M39 37L49 47L75 24" stroke="url(#tubeLight)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>'
         '</svg>'
         '</div>'
     )
     pills_html = (
-        '<div style="display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px;">'
+        '<div style="display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px;">'
         + "".join(f'<span class="sad-empty-pill">{escape_html(p)}</span>' for p in pills)
         + '</div>'
         if pills
@@ -1244,8 +1280,8 @@ def _render_empty_state(
     return (
         '<div class="sad-empty-state sad-empty-state-compact">'
         f'{friendly_illustration}'
-        f'<h4 class="sad-empty-title" style="font-size: 1rem; margin-bottom: 0.25rem; font-weight: 700;">{escape_html(title)}</h4>'
-        f'<p class="sad-empty-desc" style="font-size: 0.82rem; margin: 0; line-height: 1.35; color: var(--text-muted); max-width: 360px;">{body_html}</p>'
+        f'<h4 class="sad-empty-title" style="font-size: 1.05rem; margin-bottom: 0.25rem; font-weight: 700; color: #FFFFFF;">{escape_html(title)}</h4>'
+        f'<p class="sad-empty-desc" style="font-size: 0.84rem; margin: 0; line-height: 1.4; color: #94A3B8; max-width: 380px;">{body_html}</p>'
         f'{pills_html}'
         f'{hint_html}'
         '</div>'
@@ -1260,23 +1296,23 @@ def render_stepper_html(current_busy: str | None, has_results: bool, has_input: 
     elif has_input:
         s1_cls = "sad-pipe-step pipe-done"
     else:
-        s1_cls = "sad-pipe-step pipe-active"
+        s1_cls = "sad-pipe-step pipe-pending"
 
     # Step 2: 02 Detect
     if has_results:
         s2_cls = "sad-pipe-step pipe-done"
     elif current_busy in ("pasted", "ask", "url"):
-        s2_cls = "sad-pipe-step pipe-active"
+        s2_cls = "sad-pipe-step pipe-step-glow-purple"
     else:
-        s2_cls = "sad-pipe-step pipe-pending"
+        s2_cls = "sad-pipe-step pipe-step-glow-purple"
 
     # Step 3: 03 Verify
     if has_results:
         s3_cls = "sad-pipe-step pipe-done"
     elif current_busy in ("pasted", "ask", "url"):
-        s3_cls = "sad-pipe-step pipe-active"
+        s3_cls = "sad-pipe-step pipe-step-glow-cyan"
     else:
-        s3_cls = "sad-pipe-step pipe-pending"
+        s3_cls = "sad-pipe-step pipe-step-glow-cyan"
 
     # Step 4: 04 Score
     if has_results:
@@ -5157,34 +5193,66 @@ else:  # "Saved results"
     quota_dot_color = "#64748B"
     quota_border = "rgba(100,116,139,0.35)"
 
-# Unified Sticky Top Navbar: Left brand title, Right live architecture status pills
+# Unified Sticky Top Navbar: Left brand title + pills, Right Tavily & Bifrost partner block + Hackathon badge
 st.markdown(
     f"""
     <div class="sad-app-header">
       <div class="sad-header-left">
-        <span class="sad-header-brand">
-          <span class="sad-brand-icon">🛡️</span>
-          <span class="sad-brand-text">Stale-Answer Detector</span>
-        </span>
+        <div class="sad-brand-card">
+          <div class="sad-brand-title-row">
+            <span class="sad-brand-pin-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2Z" fill="url(#pinGrad)" filter="url(#pinGlow)"/>
+                <defs>
+                  <linearGradient id="pinGrad" x1="5" y1="2" x2="19" y2="22" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stop-color="#8B5CF6"/>
+                    <stop offset="100%" stop-color="#EC4899"/>
+                  </linearGradient>
+                  <filter id="pinGlow" x="1" y="0" width="22" height="24">
+                    <feGaussianBlur stdDeviation="1.5" result="blur"/>
+                    <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+                  </filter>
+                </defs>
+              </svg>
+            </span>
+            <span class="sad-brand-text">Stale-Answer <span style="background: linear-gradient(135deg, #C084FC, #EC4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Detector</span></span>
+          </div>
+          <div class="sad-brand-pills-row">
+            <span class="sad-mini-pill pill-quota" style="border-color: {quota_border};">
+              <span class="sad-mini-dot" style="background: {quota_dot_color};"></span>
+              <span>QUOTA: {quota_state.upper()}</span>
+            </span>
+            <span class="sad-mini-pill pill-gemini">
+              <span class="sad-mini-dot" style="background: #3B82F6;"></span>
+              <span>GEMINI API</span>
+            </span>
+          </div>
+        </div>
       </div>
       <div class="sad-header-right">
-        <span class="sad-header-chip chip-quota" style="border-color: {quota_border};">
-          <span class="sad-header-chip-dot" style="background: {quota_dot_color};"></span>
-          <span>Quota: {quota_state}</span>
-        </span>
-        <span class="sad-header-chip chip-tavily">
-          <span class="sad-header-chip-dot" style="background: #06B6D4;"></span>
-          <span>Tavily Search</span>
-        </span>
-        <span class="sad-header-chip chip-bifrost">
-          <span class="sad-header-chip-dot" style="background: #A855F7;"></span>
-          <span>Bifrost Gateway</span>
-        </span>
-        <span class="sad-header-chip chip-gemini">
-          <span class="sad-header-chip-dot" style="background: #3B82F6;"></span>
-          <span>Gemini API</span>
-        </span>
-        {demo_hero_badge}
+        <div class="sad-partner-block">
+          <span class="sad-partner-item">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <rect width="24" height="24" rx="6" fill="#06B6D4" fill-opacity="0.25"/>
+              <path d="M6 8H18M12 8V18" stroke="#06B6D4" stroke-width="2.5" stroke-linecap="round"/>
+            </svg>
+            <span class="sad-partner-name">Tavily</span>
+          </span>
+          <span class="sad-partner-amp">&amp;</span>
+          <span class="sad-partner-item">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <rect width="24" height="24" rx="6" fill="#8B5CF6" fill-opacity="0.25"/>
+              <path d="M7 6H13C15.2 6 17 7.8 17 10C17 11.4 16.3 12.6 15.2 13.2C16.8 13.8 18 15.3 18 17C18 19.2 16.2 21 14 21H7V6Z" stroke="#A855F7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="sad-partner-bifrost-wrap">
+              <span class="sad-partner-name">Bifrost</span>
+              <span class="sad-partner-sub">by Maxim AI</span>
+            </div>
+          </span>
+        </div>
+        <div class="sad-hackathon-badge">
+          <span>Global AI Hackathon ↗</span>
+        </div>
       </div>
     </div>
     """,
@@ -5724,11 +5792,11 @@ def render_benchmark_view(use_bifrost_mode: bool, current_busy: str | None, is_a
 # ---------------------------------------------------------------------------
 tab_audit, tab_compare, tab_lab, tab_learn, tab_history = st.tabs(
     [
-        "🔍 Audit",
-        "⚖️ Compare",
-        "🧪 Agent Lab",
-        "📚 Learn",
-        "🕒 History",
+        "AUDIT",
+        "COMPARE",
+        "AGENT LAB",
+        "LEARN",
+        "HISTORY",
     ]
 )
 
@@ -5773,9 +5841,9 @@ with tab_audit:
     )
 
     # -------------------------------------------------------------------
-    # 4. Section 1: Streamlined Input Studio Card (No dead space)
+    # 4. Section 1: Streamlined Input Studio Card (Collapsible)
     # -------------------------------------------------------------------
-    with st.container():
+    with st.expander("⚡ Input Studio — Paste an answer, ask a question, or audit a URL", expanded=st.session_state.get("show_input_studio", False)):
         st.markdown('<span id="sad-input-studio-anchor" style="display:none;"></span>', unsafe_allow_html=True)
         # Unified Card Header: Left title, Center mode selector, Right view toggle + audits counter
         hdr_c1, hdr_c2, hdr_c3 = st.columns([0.9, 1.8, 2.1], vertical_alignment="center", gap="medium")
@@ -5802,12 +5870,12 @@ with tab_audit:
         with hdr_c3:
             audits_done = int(st.session_state.get("live_audits_performed") or 0)
             audits_left = max(0, get_max_session_audits() - audits_done)
-            v_col1, v_col2 = st.columns([2.0, 0.9], vertical_alignment="center", gap="small")
+            v_col1, v_col2 = st.columns([2.3, 0.7], vertical_alignment="center", gap="small")
             with v_col1:
                 audit_subview = st.segmented_control(
                     "Audit Navigation",
-                    options=["Audit Studio", "Overview & Highlights"],
-                    default=st.session_state.get("audit_subview_choice", "Audit Studio"),
+                    options=["Side-by-side Inspection", "Audit Studio", "Overview & Highlights"],
+                    default=st.session_state.get("audit_subview_choice", "Side-by-side Inspection"),
                     key="audit_subview_choice",
                     label_visibility="collapsed",
                 )
@@ -6395,291 +6463,290 @@ with tab_audit:
                 _render_demo_banner(st.session_state["demo_url_notice"])
             _render_stored_error_with_demo_recovery("url_error", recover_scope="url", default_recover_key="demo_recover_url")
 
-        # -------------------------------------------------------------------
-        # Gather Active Data for Sections 2 - 5
-        # -------------------------------------------------------------------
-        if active_input_mode == "Paste an answer":
-            act_results = st.session_state.get("results")
-            act_text = st.session_state.get("checked_answer") or st.session_state.get("answer_input", "")
-            act_prefix = "pasted"
-            act_ext_model = st.session_state.get("extract_model")
-            act_ext_meta = st.session_state.get("extract_meta")
-            act_corr = st.session_state.get("corrected_answer")
-            act_corr_model = st.session_state.get("corrected_model")
-            act_corr_meta = st.session_state.get("corrected_meta")
-            act_audit_at = st.session_state.get("pasted_audit_at")
-            act_mode_label = "Audit pasted answer"
-            act_card_title = "LLM answer"
-            act_question = None
-            act_url = None
-            act_extra_credits = 0.0
-            act_busy = is_pasted_running
-        elif active_input_mode == "Ask a question":
-            act_results = st.session_state.get("ask_results")
-            act_text = st.session_state.get("ask_answer", "")
-            act_prefix = "ask"
-            act_ext_model = st.session_state.get("ask_extract_model")
-            act_ext_meta = st.session_state.get("ask_extract_meta")
-            act_corr = st.session_state.get("ask_corrected_answer")
-            act_corr_model = st.session_state.get("ask_corrected_model")
-            act_corr_meta = st.session_state.get("ask_corrected_meta")
-            act_audit_at = st.session_state.get("ask_audit_at")
-            act_mode_label = "Ask & Audit"
-            act_card_title = "Q&A Answer"
-            act_question = st.session_state.get("ask_question_asked") or st.session_state.get("ask_question_input", "")
-            act_url = None
-            act_extra_credits = 0.0
-            act_busy = is_ask_running
-        else:  # "Paste a URL"
-            act_results = st.session_state.get("url_results")
-            act_text = st.session_state.get("url_article_text", "")
-            act_prefix = "url"
-            act_ext_model = st.session_state.get("url_extract_model")
-            act_ext_meta = st.session_state.get("url_extract_meta")
-            act_corr = st.session_state.get("url_corrected_answer")
-            act_corr_model = st.session_state.get("url_corrected_model")
-            act_corr_meta = st.session_state.get("url_corrected_meta")
-            act_audit_at = st.session_state.get("url_audit_at")
-            act_mode_label = "Audit a URL"
-            act_card_title = "Extracted article"
-            act_question = None
-            act_url = st.session_state.get("url_audited") or st.session_state.get("url_input", "")
-            act_extra_credits = float(st.session_state.get("url_extract_credits") or 0.0)
-            act_busy = is_url_running
+    # -------------------------------------------------------------------
+    # Gather Active Data for Sections 2 - 5
+    # -------------------------------------------------------------------
+    if active_input_mode == "Paste an answer":
+        act_results = st.session_state.get("results")
+        act_text = st.session_state.get("checked_answer") or st.session_state.get("answer_input", "")
+        act_prefix = "pasted"
+        act_ext_model = st.session_state.get("extract_model")
+        act_ext_meta = st.session_state.get("extract_meta")
+        act_corr = st.session_state.get("corrected_answer")
+        act_corr_model = st.session_state.get("corrected_model")
+        act_corr_meta = st.session_state.get("corrected_meta")
+        act_audit_at = st.session_state.get("pasted_audit_at")
+        act_mode_label = "Audit pasted answer"
+        act_card_title = "LLM answer"
+        act_question = None
+        act_url = None
+        act_extra_credits = 0.0
+        act_busy = is_pasted_running
+    elif active_input_mode == "Ask a question":
+        act_results = st.session_state.get("ask_results")
+        act_text = st.session_state.get("ask_answer", "")
+        act_prefix = "ask"
+        act_ext_model = st.session_state.get("ask_extract_model")
+        act_ext_meta = st.session_state.get("ask_extract_meta")
+        act_corr = st.session_state.get("ask_corrected_answer")
+        act_corr_model = st.session_state.get("ask_corrected_model")
+        act_corr_meta = st.session_state.get("ask_corrected_meta")
+        act_audit_at = st.session_state.get("ask_audit_at")
+        act_mode_label = "Ask & Audit"
+        act_card_title = "Q&A Answer"
+        act_question = st.session_state.get("ask_question_asked") or st.session_state.get("ask_question_input", "")
+        act_url = None
+        act_extra_credits = 0.0
+        act_busy = is_ask_running
+    else:  # "Paste a URL"
+        act_results = st.session_state.get("url_results")
+        act_text = st.session_state.get("url_article_text", "")
+        act_prefix = "url"
+        act_ext_model = st.session_state.get("url_extract_model")
+        act_ext_meta = st.session_state.get("url_extract_meta")
+        act_corr = st.session_state.get("url_corrected_answer")
+        act_corr_model = st.session_state.get("url_corrected_model")
+        act_corr_meta = st.session_state.get("url_corrected_meta")
+        act_audit_at = st.session_state.get("url_audit_at")
+        act_mode_label = "Audit a URL"
+        act_card_title = "Extracted article"
+        act_question = None
+        act_url = st.session_state.get("url_audited") or st.session_state.get("url_input", "")
+        act_extra_credits = float(st.session_state.get("url_extract_credits") or 0.0)
+        act_busy = is_url_running
 
-        # ===================================================================
-        # Section 2: Answer and summary (Equal 2-column results grid)
-        # ===================================================================
-        st.markdown(
-            """
-            <div class="sad-section-divider"></div>
-            <div class="sad-section-num-header">
-              <span class="sad-section-num">2</span>
-              <div>
-                <h3 class="sad-section-title">Answer and summary</h3>
-                <p class="sad-section-sub">Side-by-side inspection: annotated source text with inline fact status and overall freshness rating</p>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    # ===================================================================
+    # Section 2: Answer and summary (Equal 2-column results grid)
+    # ===================================================================
+    st.markdown(
+        """
+        <div class="sad-section-num-header" style="justify-content: center; margin-top: 0.15rem; margin-bottom: 0.1rem;">
+          <span class="sad-section-num" style="background: linear-gradient(135deg, #8B5CF6, #EC4899); border-radius: 8px; width: 26px; height: 26px; font-weight: 800; font-size: 14px; color: #FFF; box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);">2</span>
+          <h3 class="sad-section-title" style="font-size: 1.35rem; font-weight: 800; margin: 0; color: #FFFFFF;">Answer and summary</h3>
+        </div>
+        <div style="text-align: center; color: #94A3B8; font-size: 13px; margin-bottom: 0.75rem; letter-spacing: -0.01em;">
+          Side-by-side inspection: annotated source text with inline fact status and overall freshness rating
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        res_col1, res_col2 = st.columns([1, 1], gap="large")
+    res_col1, res_col2 = st.columns([1, 1], gap="large")
 
-        with res_col1:
-            if act_results and act_text.strip():
-                render_annotated_answer_card(
-                    answer_text=act_text,
-                    verification_results=act_results,
-                    key_prefix=act_prefix,
-                    title=act_card_title,
-                )
-            elif act_busy:
-                st.markdown(
-                    f'<div class="sad-result-card">'
-                    f'<div class="sad-result-header"><div class="sad-result-header-title"><span>{act_card_title}</span></div><span class="sad-result-badge">Auditing...</span></div>'
-                    '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f'<div class="sad-result-card">'
-                    f'<div class="sad-result-header"><div class="sad-result-header-title"><span>{act_card_title}</span></div><span class="sad-status-pill pill-ready">Ready</span></div>'
-                    + _render_empty_state("No answer audited yet", "Paste an LLM answer above or pick an example to inspect inline highlighted facts.", pills=("Prices & specs", "Tax rules", "AI API pricing"), variant="purple")
-                    + '</div>',
-                    unsafe_allow_html=True,
-                )
-
-        with res_col2:
-            if act_results:
-                overall_score = compute_risk_weighted_overall_score(act_results)
-                checked_text_val = act_text or (act_results[0].get("claim", "") if act_results else "")
-                src_origin = f"Saved ({SAVED_RESULTS_DATE})" if st.session_state.get("demo_mode") else "Live"
-                record_audit_to_history(checked_text_val, act_results, source_label=src_origin, mode=act_mode_label, score=overall_score)
-
-                fresh_count = sum(1 for r in act_results if r.get("status") == "fresh")
-                outdated_count = sum(1 for r in act_results if r.get("status") == "outdated")
-                incorrect_count = sum(1 for r in act_results if r.get("status") == "incorrect")
-                partially_correct_count = sum(1 for r in act_results if r.get("status") == "partially_correct")
-                uncertain_count = sum(1 for r in act_results if r.get("status") == "uncertain")
-                unverifiable_count = sum(1 for r in act_results if r.get("status") == "unverifiable")
-                skipped_count = sum(1 for r in act_results if r.get("status") == "skipped")
-                flagged_count = len(act_results) - skipped_count
-
-                verdict_sentence = build_overall_verdict_sentence(act_results)
-
-                models_used = []
-                claim_models = []
-                for r in act_results:
-                    if isinstance(r.get("judge_models"), list) and r.get("judge_models"):
-                        claim_models.extend(str(m) for m in r["judge_models"] if m)
-                    if r.get("model"):
-                        claim_models.append(str(r["model"]))
-                for model_name in [act_ext_model, *claim_models]:
-                    if model_name and model_name not in models_used:
-                        models_used.append(model_name)
-
-                fallback_routes = collect_fallback_routes(act_ext_meta, act_results)
-
-                source_origins = set()
-                for r in act_results:
-                    so = str(r.get("source_origin") or ("saved" if st.session_state.get("demo_mode") else ("cached" if r.get("cache_hit") else "live"))).lower()
-                    source_origins.add(so)
-
-                if "saved" in source_origins or st.session_state.get("demo_mode"):
-                    origin_badge_html = f'💾 Saved ({SAVED_RESULTS_DATE})'
-                elif "cached" in source_origins and "live" not in source_origins:
-                    origin_badge_html = '⚡ Cached (6h TTL)'
-                else:
-                    origin_badge_html = '🟢 Live Verification'
-
-                score_ring_html = render_score_ring_html(
-                    overall_score,
-                    models_used,
-                    fallback_routes=fallback_routes,
-                    verdict_sentence=verdict_sentence,
-                    results=act_results,
-                )
-
-                st.markdown(
-                    f"""
-                    <div class="sad-result-card">
-                      <div class="sad-result-header">
-                        <div class="sad-result-header-title">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                          </svg>
-                          <span>Verification summary</span>
-                        </div>
-                        <span class="sad-result-badge">{origin_badge_html}</span>
-                      </div>
-                      <div class="sad-result-body" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
-                        {score_ring_html}
-                        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 0.85rem; padding-top: 0.65rem; border-top: 1px solid var(--border-main);">
-                          <span class="sad-cat-badge" style="border-color: rgba(22,163,74,0.3); color: #16A34A;">Fresh: <strong>{fresh_count}</strong></span>
-                          <span class="sad-cat-badge" style="border-color: rgba(234,88,12,0.3); color: #EA580C;">Outdated: <strong>{outdated_count}</strong></span>
-                          <span class="sad-cat-badge" style="border-color: rgba(220,38,38,0.3); color: #DC2626;">Incorrect: <strong>{incorrect_count}</strong></span>
-                          <span class="sad-cat-badge" style="border-color: rgba(217,119,6,0.3); color: #D97706;">Partial: <strong>{partially_correct_count}</strong></span>
-                          <span class="sad-cat-badge" style="border-color: rgba(100,116,139,0.3); color: #64748B;">Uncertain: <strong>{uncertain_count}</strong></span>
-                          <span class="sad-cat-badge" style="border-color: rgba(148,163,184,0.3); color: #94A3B8;">Unverifiable: <strong>{unverifiable_count}</strong></span>
-                        </div>
-                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; display: flex; justify-content: space-between; flex-wrap: wrap;">
-                          <span>🔍 Analyzed: <strong>{len(act_results)}</strong> claims</span>
-                          <span>⚡ Verified: <strong>{flagged_count}</strong> live facts</span>
-                          <span>🛡️ Skipped: <strong>{skipped_count}</strong> stable</span>
-                        </div>
-                      </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            elif act_busy:
-                st.markdown(
-                    '<div class="sad-result-card">'
-                    '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification summary</span></div><span class="sad-result-badge">Auditing...</span></div>'
-                    '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    '<div class="sad-result-card">'
-                    '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification summary</span></div><span class="sad-status-pill pill-standby">Standby</span></div>'
-                    + _render_empty_state("Awaiting verification", "Score ring, fact breakdown, consensus stance, and primary sources will appear here.", pills=("Risk-weighted score", "Stance consensus", "6 freshness statuses"), variant="cyan")
-                    + '</div>',
-                    unsafe_allow_html=True,
-                )
-
-        # ===================================================================
-        # Section 3: Claims
-        # ===================================================================
-        if act_results:
+    with res_col1:
+        if act_results and act_text.strip():
+            render_annotated_answer_card(
+                answer_text=act_text,
+                verification_results=act_results,
+                key_prefix=act_prefix,
+                title=act_card_title,
+            )
+        elif act_busy:
             st.markdown(
-                """
-                <div class="sad-section-divider"></div>
-                <div class="sad-section-num-header">
-                  <span class="sad-section-num">3</span>
-                  <div>
-                    <h3 class="sad-section-title">Claims</h3>
-                    <p class="sad-section-sub">Granular claim-by-claim verification: claimed facts vs. live web reality with primary sources</p>
+                f'<div class="sad-result-card sad-result-card-purple">'
+                f'<div class="sad-result-header"><div class="sad-result-header-title"><span>{act_card_title}</span></div><span class="sad-result-badge">Auditing...</span></div>'
+                '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f'<div class="sad-result-card sad-result-card-purple">'
+                f'<div class="sad-result-header"><div class="sad-result-header-title"><span>LLM Answer</span></div><span class="sad-status-pill pill-ready">READY</span></div>'
+                + _render_empty_state("No answer audited yet", "Paste an LLM answer above or pick an example to inspect inline highlighted facts.", pills=("Prices & specs", "Tax rules", "AI API pricing"), variant="purple")
+                + '</div>',
+                unsafe_allow_html=True,
+            )
+
+    with res_col2:
+        if act_results:
+            overall_score = compute_risk_weighted_overall_score(act_results)
+            checked_text_val = act_text or (act_results[0].get("claim", "") if act_results else "")
+            src_origin = f"Saved ({SAVED_RESULTS_DATE})" if st.session_state.get("demo_mode") else "Live"
+            record_audit_to_history(checked_text_val, act_results, source_label=src_origin, mode=act_mode_label, score=overall_score)
+
+            fresh_count = sum(1 for r in act_results if r.get("status") == "fresh")
+            outdated_count = sum(1 for r in act_results if r.get("status") == "outdated")
+            incorrect_count = sum(1 for r in act_results if r.get("status") == "incorrect")
+            partially_correct_count = sum(1 for r in act_results if r.get("status") == "partially_correct")
+            uncertain_count = sum(1 for r in act_results if r.get("status") == "uncertain")
+            unverifiable_count = sum(1 for r in act_results if r.get("status") == "unverifiable")
+            skipped_count = sum(1 for r in act_results if r.get("status") == "skipped")
+            flagged_count = len(act_results) - skipped_count
+
+            verdict_sentence = build_overall_verdict_sentence(act_results)
+
+            models_used = []
+            claim_models = []
+            for r in act_results:
+                if isinstance(r.get("judge_models"), list) and r.get("judge_models"):
+                    claim_models.extend(str(m) for m in r["judge_models"] if m)
+                if r.get("model"):
+                    claim_models.append(str(r["model"]))
+            for model_name in [act_ext_model, *claim_models]:
+                if model_name and model_name not in models_used:
+                    models_used.append(model_name)
+
+            fallback_routes = collect_fallback_routes(act_ext_meta, act_results)
+
+            source_origins = set()
+            for r in act_results:
+                so = str(r.get("source_origin") or ("saved" if st.session_state.get("demo_mode") else ("cached" if r.get("cache_hit") else "live"))).lower()
+                source_origins.add(so)
+
+            if "saved" in source_origins or st.session_state.get("demo_mode"):
+                origin_badge_html = f'💾 Saved ({SAVED_RESULTS_DATE})'
+            elif "cached" in source_origins and "live" not in source_origins:
+                origin_badge_html = '⚡ Cached (6h TTL)'
+            else:
+                origin_badge_html = '🟢 Live Verification'
+
+            score_ring_html = render_score_ring_html(
+                overall_score,
+                models_used,
+                fallback_routes=fallback_routes,
+                verdict_sentence=verdict_sentence,
+                results=act_results,
+            )
+
+            st.markdown(
+                f"""
+                <div class="sad-result-card">
+                  <div class="sad-result-header">
+                    <div class="sad-result-header-title">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                      </svg>
+                      <span>Verification summary</span>
+                    </div>
+                    <span class="sad-result-badge">{origin_badge_html}</span>
+                  </div>
+                  <div class="sad-result-body" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                    {score_ring_html}
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 0.85rem; padding-top: 0.65rem; border-top: 1px solid var(--border-main);">
+                      <span class="sad-cat-badge" style="border-color: rgba(22,163,74,0.3); color: #16A34A;">Fresh: <strong>{fresh_count}</strong></span>
+                      <span class="sad-cat-badge" style="border-color: rgba(234,88,12,0.3); color: #EA580C;">Outdated: <strong>{outdated_count}</strong></span>
+                      <span class="sad-cat-badge" style="border-color: rgba(220,38,38,0.3); color: #DC2626;">Incorrect: <strong>{incorrect_count}</strong></span>
+                      <span class="sad-cat-badge" style="border-color: rgba(217,119,6,0.3); color: #D97706;">Partial: <strong>{partially_correct_count}</strong></span>
+                      <span class="sad-cat-badge" style="border-color: rgba(100,116,139,0.3); color: #64748B;">Uncertain: <strong>{uncertain_count}</strong></span>
+                      <span class="sad-cat-badge" style="border-color: rgba(148,163,184,0.3); color: #94A3B8;">Unverifiable: <strong>{unverifiable_count}</strong></span>
+                    </div>
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; display: flex; justify-content: space-between; flex-wrap: wrap;">
+                      <span>🔍 Analyzed: <strong>{len(act_results)}</strong> claims</span>
+                      <span>⚡ Verified: <strong>{flagged_count}</strong> live facts</span>
+                      <span>🛡️ Skipped: <strong>{skipped_count}</strong> stable</span>
+                    </div>
                   </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            show_queries = st.session_state.get("show_search_queries", False)
-            for row_idx in range(0, len(act_results), 2):
-                c_cols = st.columns(2, gap="medium")
-                with c_cols[0]:
-                    render_claim_card(row_idx + 1, act_results[row_idx], show_query=show_queries, key_prefix=act_prefix)
-                if row_idx + 1 < len(act_results):
-                    with c_cols[1]:
-                        render_claim_card(row_idx + 2, act_results[row_idx + 1], show_query=show_queries, key_prefix=act_prefix)
+        elif act_busy:
+            st.markdown(
+                '<div class="sad-result-card sad-result-card-cyan">'
+                '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification Summary</span></div><span class="sad-result-badge">Auditing...</span></div>'
+                '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="sad-result-card sad-result-card-cyan">'
+                '<div class="sad-result-header"><div class="sad-result-header-title"><span>Verification Summary</span></div><span class="sad-status-pill pill-standby">STANDBY</span></div>'
+                + _render_empty_state("Awaiting verification", "Score ring, fact breakdown, consensus stance, and primary sources will appear here.", pills=("Risk-weighted score", "Stance consensus", "freshness statuses"), variant="cyan")
+                + '</div>',
+                unsafe_allow_html=True,
+            )
 
-            # In-session Claim Watchlist strip
-            render_watchlist_strip()
+    # ===================================================================
+    # Section 3: Claims
+    # ===================================================================
+    if act_results:
+        st.markdown(
+            """
+            <div class="sad-section-divider"></div>
+            <div class="sad-section-num-header">
+              <span class="sad-section-num">3</span>
+              <div>
+                <h3 class="sad-section-title">Claims</h3>
+                <p class="sad-section-sub">Granular claim-by-claim verification: claimed facts vs. live web reality with primary sources</p>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        show_queries = st.session_state.get("show_search_queries", False)
+        for row_idx in range(0, len(act_results), 2):
+            c_cols = st.columns(2, gap="medium")
+            with c_cols[0]:
+                render_claim_card(row_idx + 1, act_results[row_idx], show_query=show_queries, key_prefix=act_prefix)
+            if row_idx + 1 < len(act_results):
+                with c_cols[1]:
+                    render_claim_card(row_idx + 2, act_results[row_idx + 1], show_query=show_queries, key_prefix=act_prefix)
 
-            audit_led = st.session_state.get("last_audit_ledger") or compute_audit_ledger(act_results, act_ext_meta)
-            sess_led = st.session_state.get("session_ledger") or audit_led
-            with st.expander("🤝 How Tavily and Bifrost Contribute (Contribution Ledger)", expanded=False, icon=":material/handshake:"):
-                st.caption("Detailed contribution metrics showing exactly how live Tavily search and Bifrost AI gateway work together.")
-                l_col1, l_col2 = st.columns(2, gap="medium")
-                with l_col1:
-                    st.markdown("#### 🌐 Tavily Web Intelligence")
-                    st.markdown(
-                        f"- **Live searches executed:** `{audit_led['tavily']['searches']}` (Session: `{sess_led['tavily']['searches']}`)  \n"
-                        f"- **Deep extracts performed:** `{audit_led['tavily']['extracts']}` (Session: `{sess_led['tavily']['extracts']}`)  \n"
-                        f"- **Tavily search credits:** `{audit_led['tavily']['credits']:.2f}` (Session: `{sess_led['tavily']['credits']:.2f}`)  \n"
-                        f"- **Unique independent domains:** `{len(audit_led['tavily']['unique_domains'])}` (Session: `{len(sess_led['tavily']['unique_domains'])}`)  \n"
-                        f"- **Primary / official sources:** `{audit_led['tavily']['primary_sources']}` (Session: `{sess_led['tavily']['primary_sources']}`)"
-                    )
-                with l_col2:
-                    st.markdown("#### ⚡ Bifrost AI Gateway")
-                    cost_str = f"${audit_led['bifrost']['cost']:.5f}" if audit_led['bifrost']['cost_set'] else "Pricing unconfigured"
-                    sess_cost_str = f"${sess_led['bifrost']['cost']:.5f}" if sess_led['bifrost']['cost_set'] else "Pricing unconfigured"
-                    models_list = ", ".join(f"`{m}`" for m in audit_led['bifrost']['models']) or "`Default`"
-                    st.markdown(
-                        f"- **LLM calls routed:** `{audit_led['bifrost']['calls']}` (Session: `{sess_led['bifrost']['calls']}`)  \n"
-                        f"- **Models used:** {models_list}  \n"
-                        f"- **Gateway fallbacks triggered:** `{audit_led['bifrost']['fallbacks']}` (Session: `{sess_led['bifrost']['fallbacks']}`)  \n"
-                        f"- **Tokens processed:** `{audit_led['bifrost']['total_tokens']:,}` (In: `{audit_led['bifrost']['tokens_in']:,}` | Out: `{audit_led['bifrost']['tokens_out']:,}`)  \n"
-                        f"- **Gateway latency:** `{audit_led['bifrost']['total_latency_ms']:.0f} ms`  \n"
-                        f"- **Estimated cost:** `{cost_str}` (Session: `{sess_cost_str}`)"
-                    )
+        # In-session Claim Watchlist strip
+        render_watchlist_strip()
 
-            with st.expander("ℹ️ How the Freshness Score is Computed", expanded=False, icon=":material/calculate:"):
+        audit_led = st.session_state.get("last_audit_ledger") or compute_audit_ledger(act_results, act_ext_meta)
+        sess_led = st.session_state.get("session_ledger") or audit_led
+        with st.expander("🤝 How Tavily and Bifrost Contribute (Contribution Ledger)", expanded=False, icon=":material/handshake:"):
+            st.caption("Detailed contribution metrics showing exactly how live Tavily search and Bifrost AI gateway work together.")
+            l_col1, l_col2 = st.columns(2, gap="medium")
+            with l_col1:
+                st.markdown("#### 🌐 Tavily Web Intelligence")
                 st.markdown(
-                    "Every claim's freshness score is calculated deterministically from four objective pillars:\n\n"
-                    "1. **Evidence Agreement (40% weight):** Ratio of independent registered domains supporting the claim vs. contradicting it.\n"
-                    "2. **Source Authority (25% weight):** Primary official sources (`docs.*`, `*.gov`, company newsrooms) receive 100%, reputable news outlets receive 75%, blogs receive 50%, forums receive 20%.\n"
-                    "3. **Evidence Recency (20% weight):** Sources published within 30 days receive 100%, within 6 months 85%, within 1 year 70%, and older/undated sources receive 50%.\n"
-                    "4. **Multi-Model Consensus (15% weight):** Dual-judge consistency across distinct LLM families (penalizes disagreements to Uncertain `40–74`).\n\n"
-                    "**Enforced Score Bands:**\n"
-                    "- **Fresh:** `75 – 100` | **Partially Correct:** `45 – 74` | **Uncertain:** `40 – 74`\n"
-                    "- **Outdated:** `10 – 39` | **Incorrect:** `0 – 15` | **Unverifiable:** `Score N/A`"
+                    f"- **Live searches executed:** `{audit_led['tavily']['searches']}` (Session: `{sess_led['tavily']['searches']}`)  \n"
+                    f"- **Deep extracts performed:** `{audit_led['tavily']['extracts']}` (Session: `{sess_led['tavily']['extracts']}`)  \n"
+                    f"- **Tavily search credits:** `{audit_led['tavily']['credits']:.2f}` (Session: `{sess_led['tavily']['credits']:.2f}`)  \n"
+                    f"- **Unique independent domains:** `{len(audit_led['tavily']['unique_domains'])}` (Session: `{len(sess_led['tavily']['unique_domains'])}`)  \n"
+                    f"- **Primary / official sources:** `{audit_led['tavily']['primary_sources']}` (Session: `{sess_led['tavily']['primary_sources']}`)"
+                )
+            with l_col2:
+                st.markdown("#### ⚡ Bifrost AI Gateway")
+                cost_str = f"${audit_led['bifrost']['cost']:.5f}" if audit_led['bifrost']['cost_set'] else "Pricing unconfigured"
+                sess_cost_str = f"${sess_led['bifrost']['cost']:.5f}" if sess_led['bifrost']['cost_set'] else "Pricing unconfigured"
+                models_list = ", ".join(f"`{m}`" for m in audit_led['bifrost']['models']) or "`Default`"
+                st.markdown(
+                    f"- **LLM calls routed:** `{audit_led['bifrost']['calls']}` (Session: `{sess_led['bifrost']['calls']}`)  \n"
+                    f"- **Models used:** {models_list}  \n"
+                    f"- **Gateway fallbacks triggered:** `{audit_led['bifrost']['fallbacks']}` (Session: `{sess_led['bifrost']['fallbacks']}`)  \n"
+                    f"- **Tokens processed:** `{audit_led['bifrost']['total_tokens']:,}` (In: `{audit_led['bifrost']['tokens_in']:,}` | Out: `{audit_led['bifrost']['tokens_out']:,}`)  \n"
+                    f"- **Gateway latency:** `{audit_led['bifrost']['total_latency_ms']:.0f} ms`  \n"
+                    f"- **Estimated cost:** `{cost_str}` (Session: `{sess_cost_str}`)"
                 )
 
-            # ===============================================================
-            # Section 4: Corrected answer & Section 5: Export
-            # ===============================================================
-            render_corrected_and_export_section(
-                mode=act_mode_label,
-                key_prefix=act_prefix,
-                original_answer=act_text,
-                results=act_results,
-                corrected_answer=act_corr,
-                corrected_model=act_corr_model,
-                corrected_meta=act_corr_meta,
-                question=act_question,
-                source_url=act_url,
-                extract_model=act_ext_model,
-                extract_meta=act_ext_meta,
-                extra_tavily_credits=act_extra_credits,
-                audit_at=act_audit_at,
-                gateway_placeholder=gateway_placeholder,
+        with st.expander("ℹ️ How the Freshness Score is Computed", expanded=False, icon=":material/calculate:"):
+            st.markdown(
+                "Every claim's freshness score is calculated deterministically from four objective pillars:\n\n"
+                "1. **Evidence Agreement (40% weight):** Ratio of independent registered domains supporting the claim vs. contradicting it.\n"
+                "2. **Source Authority (25% weight):** Primary official sources (`docs.*`, `*.gov`, company newsrooms) receive 100%, reputable news outlets receive 75%, blogs receive 50%, forums receive 20%.\n"
+                "3. **Evidence Recency (20% weight):** Sources published within 30 days receive 100%, within 6 months 85%, within 1 year 70%, and older/undated sources receive 50%.\n"
+                "4. **Multi-Model Consensus (15% weight):** Dual-judge consistency across distinct LLM families (penalizes disagreements to Uncertain `40–74`).\n\n"
+                "**Enforced Score Bands:**\n"
+                "- **Fresh:** `75 – 100` | **Partially Correct:** `45 – 74` | **Uncertain:** `40 – 74`\n"
+                "- **Outdated:** `10 – 39` | **Incorrect:** `0 – 15` | **Unverifiable:** `Score N/A`"
             )
+
+        # ===============================================================
+        # Section 4: Corrected answer & Section 5: Export
+        # ===============================================================
+        render_corrected_and_export_section(
+            mode=act_mode_label,
+            key_prefix=act_prefix,
+            original_answer=act_text,
+            results=act_results,
+            corrected_answer=act_corr,
+            corrected_model=act_corr_model,
+            corrected_meta=act_corr_meta,
+            question=act_question,
+            source_url=act_url,
+            extract_model=act_ext_model,
+            extract_meta=act_ext_meta,
+            extra_tavily_credits=act_extra_credits,
+            audit_at=act_audit_at,
+            gateway_placeholder=gateway_placeholder,
+        )
 
 with tab_compare:
     render_showdown_tab(use_bifrost=use_bifrost_mode)

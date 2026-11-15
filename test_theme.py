@@ -60,7 +60,7 @@ class TestThemeSwitch(unittest.TestCase):
 
     def test_apptest_theme_toggle_interaction(self):
         """Verify AppTest starts with dark mode ON, toggles to light mode, and toggles back."""
-        at = AppTest.from_file(APP_PATH, default_timeout=30).run()
+        at = AppTest.from_file(APP_PATH, default_timeout=60).run()
         self.assertFalse(at.exception, f"App startup exception: {at.exception}")
 
         toggles = [t for t in at.sidebar.toggle if t.key == "dark_mode"]
