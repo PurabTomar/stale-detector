@@ -123,8 +123,11 @@ def init_history_if_needed() -> None:
         st.session_state["audit_history"] = init_history
 
 
+DATASET_FILE = Path(__file__).resolve().parent / "benchmark" / "dataset.json"
+
+
 def load_evidence_counts() -> Dict[str, Any]:
-    """Load real counts from bifrost_evidence.json and lab/results/summary.json."""
+    """Load real counts from bifrost_evidence.json, lab/results/summary.json, and benchmark/dataset.json."""
     counts = {
         "bifrost_requests": 490,
         "bifrost_fallbacks": 10,
@@ -132,7 +135,7 @@ def load_evidence_counts() -> Dict[str, Any]:
         "bifrost_date": "Nov 13, 2026",
         "agent_lab_runs": 330,
         "agent_lab_archs": 6,
-        "benchmark_claims": 20,
+        "benchmark_claims": 30,
     }
     if EVIDENCE_FILE.exists():
         try:
@@ -140,8 +143,12 @@ def load_evidence_counts() -> Dict[str, Any]:
             if isinstance(ev_data, dict):
                 counts["bifrost_requests"] = ev_data.get("total_requests", counts["bifrost_requests"])
                 counts["bifrost_fallbacks"] = ev_data.get("total_fallbacks", counts["bifrost_fallbacks"])
-                counts["bifrost_tokens"] = ev_data.get("total_tokens", counts["bifrost_tokens"])
-                counts["bifrost_date"] = ev_data.get("date", counts["bifrost_date"])
+                tok_val = ev_data.get("total_tokens")
+                if isinstance(tok_val, dict):
+                    counts["bifrost_tokens"] = tok_val.get("total_tokens", counts["bifrost_tokens"])
+                elif isinstance(tok_val, (int, float)):
+                    counts["bifrost_tokens"] = int(tok_val)
+                counts["bifrost_date"] = ev_data.get("recorded_date") or ev_data.get("date", counts["bifrost_date"])
         except Exception:
             pass
 
@@ -149,8 +156,18 @@ def load_evidence_counts() -> Dict[str, Any]:
         try:
             lab_data = json.loads(LAB_SUMMARY_FILE.read_text(encoding="utf-8"))
             if isinstance(lab_data, dict):
-                counts["agent_lab_runs"] = lab_data.get("total_runs", counts["agent_lab_runs"])
-                counts["agent_lab_archs"] = len(lab_data.get("agents", {})) or counts["agent_lab_archs"]
+                meta = lab_data.get("benchmark_metadata", {})
+                counts["agent_lab_runs"] = meta.get("total_runs") or lab_data.get("total_runs", counts["agent_lab_runs"])
+                agents_list = meta.get("agents_evaluated") or lab_data.get("leaderboard", [])
+                counts["agent_lab_archs"] = len(agents_list) or counts["agent_lab_archs"]
+        except Exception:
+            pass
+
+    if DATASET_FILE.exists():
+        try:
+            ds_data = json.loads(DATASET_FILE.read_text(encoding="utf-8"))
+            if isinstance(ds_data, list):
+                counts["benchmark_claims"] = len(ds_data)
         except Exception:
             pass
 
@@ -317,7 +334,7 @@ def render_home_tab(
             <div class="sad-evidence-card">
               <div class="sad-evidence-metric">{ev_counts['benchmark_claims']}</div>
               <div class="sad-evidence-label">Ground-Truth Labeled Claims</div>
-              <span class="sad-evidence-source">💾 benchmark/claims_dataset.json</span>
+              <span class="sad-evidence-source">💾 benchmark/dataset.json</span>
             </div>
             <div class="sad-evidence-card">
               <div class="sad-evidence-metric">0</div>
@@ -1064,27 +1081,33 @@ Where:
     )
 
     # Section 5: Privacy and Security Policy
-    st.markdown("### 5. Privacy &amp; Security Policy")
+    st.markdown("### 5. Privacy &amp; Data Handling Policy")
     st.markdown(
         """
-- **What We Send**: Only isolated factual sentences extracted from the input text to search engines.
-- **What We Never Send**: We never transmit user credentials, session tokens, or full unparsed enterprise documents.
-- **Zero Secrets in Evidence**: All recorded traces and benchmarks are sanitized via automated regex scrubbing before being written to disk.
+- **What Is Sent**:
+  - LLM Prompts (including extracted claims and user-pasted text) are transmitted either to your local Bifrost Gateway (`http://localhost:8080`) or directly to Google Gemini API depending on the active routing mode.
+  - Search queries derived from extracted claims are transmitted to the Tavily Search API (`https://api.tavily.com`) to retrieve live verification evidence.
+- **What Is Stored**:
+  - **Local SQLite Cache (`.tavily_cache.db`)**: Web search snippets and URLs are stored locally with a 6-hour TTL to eliminate redundant queries.
+  - **In-Memory Session State**: Active audits and results reside only in browser memory (`st.session_state`) during your active session and are discarded upon closing the tab.
+- **Zero Secrets / Zero Persistent Tracking**:
+  - No user passwords, authentication tokens, or private user documents are ever persisted to disk or sent to third-party tracking services. All recorded benchmark traces are scrubbed with regex redactors.
         """
     )
 
     # Section 6: How to Verify Our Claims (Clickable repo file links)
     st.markdown("### 6. How to Verify Our Claims (Local Repository Pointers)")
+    ev_counts = load_evidence_counts()
     st.markdown(
-        """
+        f"""
 Every claim, benchmark number, and architectural component is grounded in version-controlled repo files:
 
-- 📊 **Ground Truth Benchmark (20 Claims)**: [`benchmark/claims_dataset.json`](file:///c:/Coding%20prb/Python/stale-detector/benchmark/claims_dataset.json)
-- 💾 **Bifrost Gateway Telemetry (490 Requests)**: [`evidence/bifrost_evidence.json`](file:///c:/Coding%20prb/Python/stale-detector/evidence/bifrost_evidence.json)
-- 🔬 **Agent Lab Multi-Agent Results (330 Runs)**: [`lab/results/summary.json`](file:///c:/Coding%20prb/Python/stale-detector/lab/results/summary.json)
-- 🧪 **Offline Verification Test Suite**: [`test_engine.py`](file:///c:/Coding%20prb/Python/stale-detector/test_engine.py)
-- ⚙️ **Core Verification Engine**: [`engine.py`](file:///c:/Coding%20prb/Python/stale-detector/engine.py)
-- 📐 **Freshness Scoring Logic**: [`scoring.py`](file:///c:/Coding%20prb/Python/stale-detector/scoring.py)
+- 📊 **Ground Truth Benchmark ({ev_counts['benchmark_claims']} Claims)**: [`benchmark/dataset.json`](file:///c:/Coding%20prb/Python/stale-detector/benchmark/dataset.json)
+- 💾 **Bifrost Gateway Telemetry ({ev_counts['bifrost_requests']} Requests)**: [`evidence/bifrost_evidence.json`](file:///c:/Coding%20prb/Python/stale-detector/evidence/bifrost_evidence.json)
+- 🔬 **Agent Lab Multi-Agent Results ({ev_counts['agent_lab_runs']} Runs)**: [`lab/results/summary.json`](file:///c:/Coding%20prb/Python/stale-detector/lab/results/summary.json)
+- 🧪 **Offline Verification Test Suite**: [`test_verifier.py`](file:///c:/Coding%20prb/Python/stale-detector/test_verifier.py)
+- ⚙️ **Core Verification Engine**: [`verifier.py`](file:///c:/Coding%20prb/Python/stale-detector/verifier.py)
+- 📐 **Agent Lab Scoring Logic**: [`lab/scoring.py`](file:///c:/Coding%20prb/Python/stale-detector/lab/scoring.py)
         """
     )
 

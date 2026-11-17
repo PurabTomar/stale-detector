@@ -1,0 +1,189 @@
+[
+  {
+    "id": "hinglish_iphone",
+    "label": "iPhone flagship launch (Hinglish)",
+    "icon": ":material/translate:",
+    "answer_text": "Apple ne iPhone 15 Pro Max ko ,199 ke starting price par launch kiya tha. Abhi Apple ka sabse latest flagship phone iPhone 15 Pro Max hi hai.",
+    "extract_model": "gemini/gemini-2.5-flash-lite (cached)",
+    "extract_meta": {
+      "task": "extract",
+      "operation": "Extract claims (Demo cache)",
+      "primary_model": "gemini/gemini-2.5-flash-lite",
+      "model_used": "gemini/gemini-2.5-flash-lite",
+      "provider_used": "google",
+      "fallback_models": [],
+      "fallback_used": false,
+      "latency_ms": 342.1,
+      "prompt_tokens": 210,
+      "completion_tokens": 85,
+      "total_tokens": 295,
+      "simulated_outage": false,
+      "timestamp": "12:00:00"
+    },
+    "results": [
+      {
+        "claim": "Apple ne iPhone 15 Pro Max ko ,199 ke starting price par launch kiya tha",
+        "span": "Apple ne iPhone 15 Pro Max ko ,199 ke starting price par launch kiya tha",
+        "category": "price",
+        "search_query": "Apple iPhone 15 Pro Max launch price official Apple September 2023",
+        "status": "fresh",
+        "score": 95,
+        "confidence": "high",
+        "risk_level": "critical",
+        "current_info": "Apple officially introduced iPhone 15 Pro Max on September 12, 2023 with a starting price of ,199 for the 256GB base tier.",
+        "supporting_quote": "iPhone 15 Pro Max starts at ,199 in the U.S. and was announced on September 12, 2023.",
+        "reason": "Historical launch price accurately stated.",
+        "evidence_stance": "supports",
+        "was_ever_true": "yes",
+        "sources": [
+          {
+            "title": "Apple unveils iPhone 15 Pro and iPhone 15 Pro Max",
+            "url": "https://www.apple.com/newsroom/2023/09/apple-unveils-iphone-15-pro-and-iphone-15-pro-max/",
+            "source_type": "Primary",
+            "published_date": "2023-09-12",
+            "snippet": "iPhone 15 Pro Max starts at ,199 with 256GB storage available beginning Friday, September 22."
+          }
+        ],
+        "source_origin": "saved",
+        "saved_date": "Nov 13, 2026"
+      },
+      {
+        "claim": "Abhi Apple ka sabse latest flagship phone iPhone 15 Pro Max hi hai",
+        "span": "Abhi Apple ka sabse latest flagship phone iPhone 15 Pro Max hi hai",
+        "category": "version",
+        "search_query": "Apple latest flagship iPhone generation official Apple 2026",
+        "status": "outdated",
+        "score": 12,
+        "confidence": "high",
+        "risk_level": "moderate",
+        "current_info": "Apple has released newer generations (iPhone 16 / 17 / 18 Pro Max); the current flagship is the iPhone 18 Pro Max.",
+        "supporting_quote": "Apple introduced iPhone 18 Pro and iPhone 18 Pro Max with Apple Intelligence.",
+        "reason": "Superseded by newer iPhone generations.",
+        "evidence_stance": "contradicts",
+        "was_ever_true": "yes",
+        "change_date": "September 2024",
+        "sources": [
+          {
+            "title": "Apple iPhone Lineup and Flagship Specifications",
+            "url": "https://www.apple.com/iphone/",
+            "source_type": "Primary",
+            "published_date": "2026-09-15",
+            "snippet": "Meet the new iPhone 18 Pro and iPhone 18 Pro Max, our most powerful smartphones."
+          }
+        ],
+        "source_origin": "saved",
+        "saved_date": "Nov 13, 2026"
+      }
+    ],
+    "corrected_answer": "Apple ne iPhone 15 Pro Max ko ,199 ke starting price par launch kiya tha. Halanki, abhi Apple ka sabse latest flagship phone iPhone 18 Pro Max hai.",
+    "corrected_model": "gemini/gemini-2.5-flash-lite (cached)",
+    "corrected_meta": {
+      "task": "rewrite",
+      "operation": "Rewrite corrected answer (Demo cache)",
+      "primary_model": "gemini/gemini-2.5-flash-lite",
+      "model_used": "gemini/gemini-2.5-flash-lite",
+      "provider_used": "google",
+      "fallback_models": [],
+      "fallback_used": false,
+      "latency_ms": 312.4,
+      "prompt_tokens": 320,
+      "completion_tokens": 70,
+      "total_tokens": 390,
+      "simulated_outage": false,
+      "timestamp": "12:00:01"
+    }
+  },
+  {
+    "id": "hindi_gst",
+    "label": "भारत जीएसटी दरें और सोना (Hindi)",
+    "icon": ":material/language:",
+    "answer_text": "भारत में मानक जीएसटी दरें 5%, 12%, 18% और 28% हैं। इसके अतिरिक्त सोने और चांदी पर 3% की विशेष जीएसटी दर लागू होती है।",
+    "extract_model": "gemini/gemini-2.5-flash-lite (cached)",
+    "extract_meta": {
+      "task": "extract",
+      "operation": "Extract claims (Demo cache)",
+      "primary_model": "gemini/gemini-2.5-flash-lite",
+      "model_used": "gemini/gemini-2.5-flash-lite",
+      "provider_used": "google",
+      "fallback_models": [],
+      "fallback_used": false,
+      "latency_ms": 355.0,
+      "prompt_tokens": 230,
+      "completion_tokens": 95,
+      "total_tokens": 325,
+      "simulated_outage": false,
+      "timestamp": "12:00:02"
+    },
+    "results": [
+      {
+        "claim": "भारत में मानक जीएसटी दरें 5%, 12%, 18% और 28% हैं",
+        "span": "भारत में मानक जीएसटी दरें 5%, 12%, 18% और 28% हैं",
+        "category": "regulation",
+        "search_query": "India GST standard tax slabs 5 12 18 28 official cbic gov in",
+        "status": "fresh",
+        "score": 92,
+        "confidence": "high",
+        "risk_level": "critical",
+        "current_info": "The four statutory GST rate tiers in India remain 5%, 12%, 18%, and 28% under the Goods and Services Tax Council regulations.",
+        "supporting_quote": "GST rates in India are divided into four main slabs: 5 percent, 12 percent, 18 percent, and 28 percent.",
+        "reason": "Statutory tax slabs are active and verified by CBIC official records.",
+        "evidence_stance": "supports",
+        "was_ever_true": "yes",
+        "sources": [
+          {
+            "title": "GST Rates in India - Central Board of Indirect Taxes and Customs",
+            "url": "https://cbic-gst.gov.in/gst-goods-services-rates.html",
+            "source_type": "Primary",
+            "published_date": "2026-01-01",
+            "snippet": "The major GST tax rate slabs in India are categorized under 5%, 12%, 18%, and 28%."
+          }
+        ],
+        "source_origin": "saved",
+        "saved_date": "Nov 13, 2026"
+      },
+      {
+        "claim": "सोने और चांदी पर 3% की विशेष जीएसटी दर लागू होती है",
+        "span": "सोने और चांदी पर 3% की विशेष जीएसटी दर लागू होती है",
+        "category": "regulation",
+        "search_query": "GST rate on gold and silver jewellery India official cbic",
+        "status": "fresh",
+        "score": 96,
+        "confidence": "high",
+        "risk_level": "critical",
+        "current_info": "Gold, silver, and precious metals continue to attract a 3% special GST rate in India.",
+        "supporting_quote": "A special GST rate of 3% is applicable on gold, silver, and articles of jewellery.",
+        "reason": "Verified special rate confirmed by CBIC.",
+        "evidence_stance": "supports",
+        "was_ever_true": "yes",
+        "sources": [
+          {
+            "title": "Special GST Rates on Precious Metals - CBIC",
+            "url": "https://cbic-gst.gov.in/precious-metals-gst.html",
+            "source_type": "Primary",
+            "published_date": "2026-01-01",
+            "snippet": "Gold and precious jewellery are levied at a special concessional rate of 3 percent GST."
+          }
+        ],
+        "source_origin": "saved",
+        "saved_date": "Nov 13, 2026"
+      }
+    ],
+    "corrected_answer": "भारत में मानक जीएसटी दरें 5%, 12%, 18% और 28% हैं। इसके अतिरिक्त सोने और चांदी पर 3% की विशेष जीएसटी दर लागू होती है।",
+    "corrected_model": "gemini/gemini-2.5-flash-lite (cached)",
+    "corrected_meta": {
+      "task": "rewrite",
+      "operation": "Rewrite corrected answer (Demo cache)",
+      "primary_model": "gemini/gemini-2.5-flash-lite",
+      "model_used": "gemini/gemini-2.5-flash-lite",
+      "provider_used": "google",
+      "fallback_models": [],
+      "fallback_used": false,
+      "latency_ms": 301.2,
+      "prompt_tokens": 310,
+      "completion_tokens": 60,
+      "total_tokens": 370,
+      "simulated_outage": false,
+      "timestamp": "12:00:03"
+    }
+  }
+]

@@ -24,6 +24,44 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+import settings
+from settings import (
+    MAX_TEXT_CHARS,
+    MAX_CLAIMS_PER_AUDIT,
+    validate_text_input,
+    validate_question_input,
+    validate_url_input,
+)
+from batch_audit import (
+    DEFAULT_BATCH_CLAIMS_PER_ITEM,
+    MAX_BATCH_FILE_SIZE_BYTES,
+    MAX_BATCH_ITEMS,
+    MAX_BATCH_TOTAL_CLAIMS,
+    export_batch_summary_csv,
+    export_batch_summary_json,
+    parse_batch_input,
+    summarize_batch_item,
+)
+from calibration import compute_calibration
+from expiry_heuristics import get_likely_expiry_info
+from settings_panel import (
+    SUPPORTED_CATEGORIES,
+    SUPPORTED_LANGUAGES,
+    estimate_audit_resources,
+)
+from source_credibility import get_source_credibility, render_credibility_bar_html
+from stale_check.checker import (
+    audit_markdown_document,
+    find_line_number,
+    format_json_report,
+    format_markdown_report,
+)
+from trust_badge import (
+    generate_trust_badge_markdown,
+    generate_trust_badge_svg,
+    get_trust_badge_snapshot_notice,
+)
+
 from benchmark import (
     format_results_markdown as format_benchmark_markdown,
     load_cached_results as load_benchmark_cache,
@@ -185,6 +223,22 @@ DEMO_EXAMPLES = [
             "The Prime Minister of India is Rahul Gandhi, while the capital "
             "of Australia is Sydney. Meanwhile, the standard VAT rate in the "
             "United Kingdom remains 17.5%."
+        ),
+    },
+    {
+        "label": "iPhone launch (Hinglish)",
+        "icon": ":material/translate:",
+        "text": (
+            "Apple ne iPhone 15 Pro Max ko $1,199 ke starting price par launch kiya tha. "
+            "Abhi Apple ka sabse latest flagship phone iPhone 15 Pro Max hi hai."
+        ),
+    },
+    {
+        "label": "भारत जीएसटी और सोना (Hindi)",
+        "icon": ":material/language:",
+        "text": (
+            "भारत में मानक जीएसटी दरें 5%, 12%, 18% और 28% हैं। "
+            "इसके अतिरिक्त सोने और चांदी पर 3% की विशेष जीएसटी दर लागू होती है।"
         ),
     },
 ]
@@ -779,6 +833,17 @@ def _sanitize_error_snippet(raw_text: str, max_len: int = 160) -> str:
     return snippet
 
 
+def safe_href_url(url: str | None) -> str:
+    """Return an escaped, protocol-safe URL for HTML href attributes.
+    Only allows http:// and https:// URLs; returns '#' for any other scheme."""
+    if not url or not isinstance(url, str):
+        return "#"
+    clean = url.strip()
+    if not clean.lower().startswith(("http://", "https://")):
+        return "#"
+    return html.escape(clean, quote=True)
+
+
 DEFAULT_MAX_SESSION_AUDITS = 5
 DEFAULT_MAX_CLAIMS_PER_AUDIT = 6
 
@@ -876,6 +941,12 @@ def format_friendly_ui_error(exc: Exception | str, *, action: str = "checking cl
         return (
             "Invalid or missing Tavily API key. Please add TAVILY_API_KEY in "
             "Streamlit Secrets or your .env file."
+        )
+
+    if "tavily" in lower:
+        return (
+            "The web search provider encountered a temporary error. "
+            "Using local verified cache or please try again in a moment."
         )
 
     if use_bifrost and ("llm_virtual_key" in lower or "x-bf-vk" in lower or "virtual key" in lower):
@@ -1306,74 +1377,98 @@ def _render_empty_state(
 
 
 def render_stepper_html(current_busy: str | None, has_results: bool, has_input: bool) -> str:
-    """Render 5-stage progress pipeline tracker: 01 Input > 02 Detect > 03 Verify > 04 Score > 05 Report."""
-    # Step 1: 01 Input
-    if has_results or current_busy:
-        s1_cls = "sad-pipe-step pipe-done"
-    elif has_input:
-        s1_cls = "sad-pipe-step pipe-done"
-    else:
-        s1_cls = "sad-pipe-step pipe-pending"
+    """Render 5-stage progress pipeline tracker: 1 Input > 2 Detect > 3 Verify > 4 Score > 5 Report.
+    
+    States:
+    - pending: muted grey outline and grey number
+    - running: ONE accent colour (indigo) with soft pulse
+    - done: green filled circle with a check mark
+    - error: red outline with an exclamation mark
+    Before any audit starts, ALL five steps are pending.
+    Connectors follow the state of the step before them.
+    Each step is clickable and smooth-scrolls to its section.
+    """
+    has_error = bool(
+        st.session_state.get("pasted_error")
+        or st.session_state.get("ask_error")
+        or st.session_state.get("url_error")
+        or st.session_state.get("batch_error")
+        or st.session_state.get("doc_checker_error")
+    )
 
-    # Step 2: 02 Detect
-    if has_results:
-        s2_cls = "sad-pipe-step pipe-done"
-    elif current_busy in ("pasted", "ask", "url"):
-        s2_cls = "sad-pipe-step pipe-step-glow-purple"
+    if has_error:
+        s1_state = "done"
+        s2_state = "error"
+        s3_state = "pending"
+        s4_state = "pending"
+        s5_state = "pending"
+    elif has_results:
+        s1_state = "done"
+        s2_state = "done"
+        s3_state = "done"
+        s4_state = "done"
+        s5_state = "done"
+    elif current_busy:
+        s1_state = "done"
+        s2_state = "running"
+        s3_state = "pending"
+        s4_state = "pending"
+        s5_state = "pending"
     else:
-        s2_cls = "sad-pipe-step pipe-step-glow-purple"
+        # Before any audit starts ALL five steps are pending (no step highlighted)
+        s1_state = "pending"
+        s2_state = "pending"
+        s3_state = "pending"
+        s4_state = "pending"
+        s5_state = "pending"
 
-    # Step 3: 03 Verify
-    if has_results:
-        s3_cls = "sad-pipe-step pipe-done"
-    elif current_busy in ("pasted", "ask", "url"):
-        s3_cls = "sad-pipe-step pipe-step-glow-cyan"
-    else:
-        s3_cls = "sad-pipe-step pipe-step-glow-cyan"
+    def _render_step(num: str, name: str, state: str, anchor: str) -> str:
+        cls = f"sad-pipe-step pipe-{state}"
+        if state == "done":
+            badge_html = '<span class="sad-pipe-badge">✓</span>'
+        elif state == "error":
+            badge_html = '<span class="sad-pipe-badge">!</span>'
+        else:
+            badge_html = f'<span class="sad-pipe-badge">{num}</span>'
 
-    # Step 4: 04 Score
-    if has_results:
-        s4_cls = "sad-pipe-step pipe-done"
-    else:
-        s4_cls = "sad-pipe-step pipe-pending"
+        scroll_js = (
+            f"const d = window.parent.document || document; "
+            f"const el = d.getElementById('{anchor}'); "
+            f"if (el) el.scrollIntoView({{ behavior: 'smooth', block: 'start' }}); "
+            f"return false;"
+        )
+        return (
+            f'<a href="#{anchor}" class="{cls}" onclick="{scroll_js}" title="Jump to {name}">'
+            f'{badge_html}'
+            f'<span class="sad-pipe-name">{name}</span>'
+            f'</a>'
+        )
 
-    # Step 5: 05 Report
-    if has_results:
-        s5_cls = "sad-pipe-step pipe-done"
-    else:
-        s5_cls = "sad-pipe-step pipe-pending"
+    def _render_connector(prev_state: str) -> str:
+        conn_cls = "sad-pipe-connector pipe-connector-done" if prev_state == "done" else "sad-pipe-connector"
+        return f'<span class="{conn_cls}">→</span>'
 
-    arr1_cls = "pipe-arrow-active" if (has_results or current_busy or has_input) else ""
-    arr2_cls = "pipe-arrow-active" if (has_results or current_busy) else ""
-    arr3_cls = "pipe-arrow-active" if has_results else ""
-    arr4_cls = "pipe-arrow-active" if has_results else ""
+    step1_html = _render_step("1", "Input", s1_state, "sad-input-studio-anchor")
+    conn1_html = _render_connector(s1_state)
+    step2_html = _render_step("2", "Detect", s2_state, "sad-claims-detected-anchor")
+    conn2_html = _render_connector(s2_state)
+    step3_html = _render_step("3", "Verify", s3_state, "sad-claim-cards-anchor")
+    conn3_html = _render_connector(s3_state)
+    step4_html = _render_step("4", "Score", s4_state, "sad-summary-anchor")
+    conn4_html = _render_connector(s4_state)
+    step5_html = _render_step("5", "Report", s5_state, "sad-export-anchor")
 
     return f"""
     <div class="sad-pipeline-tracker" role="progressbar" aria-label="Freshness audit pipeline tracker">
-      <div class="{s1_cls}">
-        <span class="sad-pipe-badge">01</span>
-        <span class="sad-pipe-name">INPUT</span>
-      </div>
-      <span class="sad-pipe-arrow {arr1_cls}">→</span>
-      <div class="{s2_cls}">
-        <span class="sad-pipe-badge">02</span>
-        <span class="sad-pipe-name">DETECT</span>
-      </div>
-      <span class="sad-pipe-arrow {arr2_cls}">→</span>
-      <div class="{s3_cls}">
-        <span class="sad-pipe-badge">03</span>
-        <span class="sad-pipe-name">VERIFY</span>
-      </div>
-      <span class="sad-pipe-arrow {arr3_cls}">→</span>
-      <div class="{s4_cls}">
-        <span class="sad-pipe-badge">04</span>
-        <span class="sad-pipe-name">SCORE</span>
-      </div>
-      <span class="sad-pipe-arrow {arr4_cls}">→</span>
-      <div class="{s5_cls}">
-        <span class="sad-pipe-badge">05</span>
-        <span class="sad-pipe-name">REPORT</span>
-      </div>
+      {step1_html}
+      {conn1_html}
+      {step2_html}
+      {conn2_html}
+      {step3_html}
+      {conn3_html}
+      {step4_html}
+      {conn4_html}
+      {step5_html}
     </div>
     """
 
@@ -1556,10 +1651,20 @@ def init_session_state() -> None:
         "pasted_error": None,
         "ask_error": None,
         "url_error": None,
+        "batch_error": None,
+        "doc_checker_error": None,
         "benchmark_error": None,
         "pasted_rewrite_error": None,
         "ask_rewrite_error": None,
         "url_rewrite_error": None,
+        "batch_summary": None,
+        "batch_items_data": None,
+        "batch_text_input": "",
+        "batch_selected_index": 1,
+        "doc_checker_results": None,
+        "doc_checker_text": "",
+        "active_categories_filter": ["price", "version", "regulation", "company", "statistic", "other"],
+        "settings_language": "Auto-Detect",
         "answer_input": "",
         "results": None,
         "checked_answer": "",
@@ -2283,7 +2388,7 @@ def render_gateway_health_card(health: dict, dashboard_url: str, use_bifrost: bo
         else "Start Bifrost on port 8080 or set USE_BIFROST=false"
     )
 
-    safe_url = html.escape(dashboard_url, quote=True)
+    safe_url = safe_href_url(dashboard_url)
     display_url = escape_html(dashboard_url)
 
     card_html = (
@@ -2931,7 +3036,7 @@ def _format_source_chips_html(
             continue
         domain = escape_html(extract_domain(url))
         title_attr = escape_html(src.get("title") or url)
-        safe_url = html.escape(url, quote=True)
+        safe_url = safe_href_url(url)
         raw_type = str(src.get("source_type") or "").strip()
         src_type = (
             raw_type
@@ -3018,7 +3123,7 @@ def render_claim_card(
             src_url = sources[0].get("url") or ""
             src_title = sources[0].get("title") or (extract_domain(src_url) if src_url else "")
             if src_url:
-                top_src_str = f' (<a href="{html.escape(src_url, quote=True)}" target="_blank" rel="noopener noreferrer">{escape_html(src_title)}</a>)'
+                top_src_str = f' (<a href="{safe_href_url(src_url)}" target="_blank" rel="noopener noreferrer">{escape_html(src_title)}</a>)'
             elif src_title:
                 top_src_str = f' ({escape_html(src_title)})'
         actual_meta_rows.append(
@@ -3050,6 +3155,20 @@ def render_claim_card(
                 actual_meta_rows.append(
                     f'<div><span class="sad-actual-meta-label">Stale since:</span> {escape_html(stale_display)}</div>'
                 )
+
+    # Feature E: Likely Expiry (heuristic)
+    expiry_info = get_likely_expiry_info(
+        category=item.get("category", "other"),
+        volatility_class=item.get("volatility_class"),
+        check_date=item.get("effective_date") or item.get("saved_date"),
+    )
+    actual_meta_rows.append(
+        f'<div style="margin-top: 5px; padding: 4px 8px; background: rgba(99, 102, 241, 0.1); border-left: 3px solid #818CF8; border-radius: 4px; font-size: 0.8rem;">'
+        f'<strong style="color: #A5B4FC;">⏱️ {escape_html(expiry_info["heuristic_tag"])}:</strong> '
+        f'<span style="color: #F8FAFC;">{escape_html(expiry_info["review_label"])}</span>'
+        f'</div>'
+    )
+
     actual_meta_block = (
         '<div class="sad-actual-meta">' + "".join(actual_meta_rows) + "</div>"
         if actual_meta_rows
@@ -3325,7 +3444,7 @@ def render_claim_card(
         ):
             for src in valid_sources:
                 s_url = str(src.get("url", "")).strip()
-                safe_s_url = html.escape(s_url, quote=True)
+                safe_s_url = safe_href_url(s_url)
                 s_domain = escape_html(extract_domain(s_url))
                 s_title = escape_html(str(src.get("title") or "").strip() or extract_domain(s_url))
                 raw_stype = str(src.get("source_type") or "").strip()
@@ -3352,6 +3471,7 @@ def render_claim_card(
                     f'{s_date_html}'
                     f'</div>'
                     f'<div class="sad-snippet-text">{snippet_body}</div>'
+                    f'{render_credibility_bar_html(get_source_credibility(s_type, s_url))}'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -4156,8 +4276,10 @@ def render_corrected_and_export_section(
     st.markdown(
         """
         <div class="sad-section-divider"></div>
-        <div class="sad-section-num-header">
-          <span class="sad-section-num">4</span>
+        <div class="sad-section-header">
+          <svg class="sad-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818CF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
           <div>
             <h3 class="sad-section-title">Corrected answer</h3>
             <p class="sad-section-sub">Automated surgical rewrite: replaces outdated or incorrect claims with verified current facts</p>
@@ -4168,7 +4290,7 @@ def render_corrected_and_export_section(
     )
     hdr_col, action_col = st.columns([2.2, 1], vertical_alignment="center", gap="medium")
     with hdr_col:
-        st.subheader("Generate corrected answer", icon=":material/auto_fix_high:")
+        st.caption("Re-synthesizes response text by replacing outdated or incorrect claims with verified web intelligence.")
     with action_col:
         btn_label = (
             "Generate corrected answer"
@@ -4350,7 +4472,7 @@ def render_corrected_and_export_section(
                     src_u = ch_sources[0].get("url") or ""
                     src_t = ch_sources[0].get("title") or (extract_domain(src_u) if src_u else "")
                     if src_u:
-                        ch_top_src = f' (<a href="{html.escape(src_u, quote=True)}" target="_blank" rel="noopener noreferrer">{escape_html(src_t)}</a>)'
+                        ch_top_src = f' (<a href="{safe_href_url(src_u)}" target="_blank" rel="noopener noreferrer">{escape_html(src_t)}</a>)'
                     elif src_t:
                         ch_top_src = f' ({escape_html(src_t)})'
                 ch_meta_rows.append(
@@ -4487,8 +4609,12 @@ def render_corrected_and_export_section(
     st.markdown(
         """
         <div class="sad-section-divider"></div>
-        <div class="sad-section-num-header">
-          <span class="sad-section-num">5</span>
+        <div class="sad-section-header" id="sad-export-anchor">
+          <svg class="sad-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818CF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
           <div>
             <h3 class="sad-section-title">Export</h3>
             <p class="sad-section-sub">Download audit findings in standard formats or copy shareable plain-text summary</p>
@@ -5093,11 +5219,16 @@ def render_floating_dock_component(quota_state: str) -> None:
         
         window.parent.sadSwitchTab = function(idx, scrollTop) {{
           try {{
-            const tabs = pDoc.querySelectorAll('[data-testid="stTabs"] [data-baseweb="tab"], [role="tablist"] button[role="tab"]');
+            const doc = window.parent.document || document;
+            const tabList = doc.querySelector('[data-testid="stTabs"] [role="tablist"]') || doc.querySelector('[data-testid="stTabs"]');
+            let tabs = tabList ? tabList.querySelectorAll('[data-testid="stTab"], [role="tab"], [data-baseweb="tab"]') : [];
+            if (!tabs.length) {{
+              tabs = doc.querySelectorAll('[data-testid="stTabs"] [data-testid="stTab"], [data-testid="stTabs"] [role="tab"]');
+            }}
             if (tabs && tabs[idx]) {{
               tabs[idx].click();
               if (scrollTop !== false) {{
-                pDoc.querySelector('.main, .stApp')?.scrollTo({{ top: 0, behavior: 'smooth' }});
+                doc.querySelector('.main, .stApp')?.scrollTo({{ top: 0, behavior: 'smooth' }});
                 window.parent.scrollTo({{ top: 0, behavior: 'smooth' }});
               }}
             }}
@@ -5106,7 +5237,8 @@ def render_floating_dock_component(quota_state: str) -> None:
         
         window.parent.sadScrollTop = function() {{
           try {{
-            pDoc.querySelector('.main, .stApp')?.scrollTo({{ top: 0, behavior: 'smooth' }});
+            const doc = window.parent.document || document;
+            doc.querySelector('.main, .stApp')?.scrollTo({{ top: 0, behavior: 'smooth' }});
             window.parent.scrollTo({{ top: 0, behavior: 'smooth' }});
           }} catch (e) {{ window.parent.scrollTo(0, 0); }}
         }};
@@ -5114,22 +5246,24 @@ def render_floating_dock_component(quota_state: str) -> None:
         window.parent.sadNavigateToGuidedDemo = function() {{
           window.parent.sadSwitchTab(0, true);
           setTimeout(() => {{
-            const btns = pDoc.querySelectorAll('button');
+            const doc = window.parent.document || document;
+            const btns = doc.querySelectorAll('button');
             for (const b of btns) {{
               if (b.innerText && b.innerText.includes('Guided Demo')) {{
                 b.click();
                 break;
               }}
             }}
-          }}, 120);
+          }}, 150);
         }};
 
         window.parent.sadNavigateToEvidence = function() {{
           window.parent.sadSwitchTab(3, false);
           setTimeout(() => {{
-            const evEl = pDoc.getElementById('bifrost-evidence') || pDoc.querySelector('[data-testid="stExpander"]');
+            const doc = window.parent.document || document;
+            const evEl = doc.getElementById('bifrost-evidence') || doc.querySelector('[data-testid="stExpander"]');
             if (evEl) evEl.scrollIntoView({{ behavior: 'smooth' }});
-          }}, 150);
+          }}, 180);
         }};
 
         pDoc.addEventListener('focusin', function(e) {{
@@ -5219,7 +5353,11 @@ else:  # "Saved results"
     quota_dot_color = "#64748B"
     quota_border = "rgba(100,116,139,0.35)"
 
-# Unified Sticky Top Navbar: Left brand title + pills, Right Tavily & Bifrost partner block + Hackathon badge
+routing_chip_label = "Bifrost Gateway" if use_bifrost_mode else "Direct Gemini API"
+routing_chip_dot = "#8B5CF6" if use_bifrost_mode else "#3B82F6"
+routing_chip_border = "rgba(139, 92, 246, 0.35)" if use_bifrost_mode else "rgba(59, 130, 246, 0.35)"
+
+# Unified Top Header: CSS Grid with 3 Zones (Left: Brand/Quota/Routing, Centre: Tab slot, Right: Sponsors/Hackathon)
 st.markdown(
     f"""
     <div class="sad-app-header">
@@ -5248,37 +5386,33 @@ st.markdown(
               <span class="sad-mini-dot" style="background: {quota_dot_color};"></span>
               <span>QUOTA: {quota_state.upper()}</span>
             </span>
-            <span class="sad-mini-pill pill-gemini">
-              <span class="sad-mini-dot" style="background: #3B82F6;"></span>
-              <span>GEMINI API</span>
+            <span class="sad-mini-pill pill-routing" style="border-color: {routing_chip_border};">
+              <span class="sad-mini-dot" style="background: {routing_chip_dot};"></span>
+              <span>{routing_chip_label.upper()}</span>
             </span>
           </div>
         </div>
       </div>
+      <div class="sad-header-centre">
+        <!-- Centre zone reserved for floating tab bar -->
+      </div>
       <div class="sad-header-right">
-        <div class="sad-partner-block">
-          <span class="sad-partner-item">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <rect width="24" height="24" rx="6" fill="#06B6D4" fill-opacity="0.25"/>
-              <path d="M6 8H18M12 8V18" stroke="#06B6D4" stroke-width="2.5" stroke-linecap="round"/>
-            </svg>
-            <span class="sad-partner-name">Tavily</span>
-          </span>
-          <span class="sad-partner-amp">&amp;</span>
-          <span class="sad-partner-item">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <rect width="24" height="24" rx="6" fill="#8B5CF6" fill-opacity="0.25"/>
-              <path d="M7 6H13C15.2 6 17 7.8 17 10C17 11.4 16.3 12.6 15.2 13.2C16.8 13.8 18 15.3 18 17C18 19.2 16.2 21 14 21H7V6Z" stroke="#A855F7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <div class="sad-partner-bifrost-wrap">
-              <span class="sad-partner-name">Bifrost</span>
-              <span class="sad-partner-sub">by Maxim AI</span>
-            </div>
-          </span>
+        <div class="sad-sponsor-pill">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="vertical-align: middle;">
+            <rect width="24" height="24" rx="6" fill="#06B6D4" fill-opacity="0.3"/>
+            <path d="M6 8H18M12 8V18" stroke="#06B6D4" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+          <span style="font-weight: 600; color: #F1F5F9;">Tavily</span>
+          <span style="color: #64748B; margin: 0 1px;">+</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="vertical-align: middle;">
+            <rect width="24" height="24" rx="6" fill="#8B5CF6" fill-opacity="0.3"/>
+            <path d="M7 6H13C15.2 6 17 7.8 17 10C17 11.4 16.3 12.6 15.2 13.2C16.8 13.8 18 15.3 18 17C18 19.2 16.2 21 14 21H7V6Z" stroke="#A855F7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span style="font-weight: 600; color: #F1F5F9;">Bifrost</span>
         </div>
-        <div class="sad-hackathon-badge">
+        <a href="https://github.com/PurabTomar/stale-detector" target="_blank" class="sad-hackathon-badge">
           <span>Global AI Hackathon ↗</span>
-        </div>
+        </a>
       </div>
     </div>
     """,
@@ -5667,6 +5801,41 @@ def render_benchmark_view(use_bifrost_mode: bool, current_busy: str | None, is_a
                     },
                 )
 
+        # Feature D: Calibration Chart
+        with st.container(border=True):
+            st.markdown("### 📈 Score Calibration Curve (Empirical Accuracy vs. Predicted Score)")
+            cal_data = compute_calibration(bench_data.get("results"))
+            if cal_data.get("status") == "not_enough_data":
+                st.info(
+                    f"ℹ️ Calibration Curve: {cal_data.get('message', 'Not enough benchmark data.')} "
+                    "(Empirical data only; never faked when uncalculated).",
+                    icon=":material/info:",
+                )
+            else:
+                cal_df = pd.DataFrame([
+                    {
+                        "Score Bin": b["bin"],
+                        "Description": b["description"],
+                        "Sample Count (n)": b["n"],
+                        "Empirical Accuracy (%)": b["accuracy_pct"],
+                    }
+                    for b in cal_data["bins"]
+                ])
+                c_col1, c_col2 = st.columns([1.4, 1], gap="medium")
+                with c_col1:
+                    st.bar_chart(cal_df, x="Score Bin", y="Empirical Accuracy (%)", color="#6366F1", height=220)
+                with c_col2:
+                    st.markdown(
+                        f"""
+                        <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 8px; padding: 12px; font-size: 0.88rem; height: 100%;">
+                            <strong style="color: #818CF8;">Calibration Reading:</strong>
+                            <p style="color: #F8FAFC; margin-top: 6px; line-height: 1.4;">{cal_data['reading']}</p>
+                            <span style="color: #94A3B8; font-size: 0.78rem;">Calculated across {cal_data['total_evaluated']} benchmark claims.</span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
         with st.container(border=True):
             tbl_head_col, tbl_filter_col = st.columns(
                 [1.1, 1.9],
@@ -5855,11 +6024,15 @@ with tab_audit:
         (active_mode_val == "Paste an answer" and st.session_state.get("results"))
         or (active_mode_val == "Ask a question" and st.session_state.get("ask_results"))
         or (active_mode_val == "Paste a URL" and st.session_state.get("url_results"))
+        or (active_mode_val == "Batch" and st.session_state.get("batch_summary"))
+        or (active_mode_val == "Doc Checker" and st.session_state.get("doc_checker_results"))
     )
     has_active_input = bool(
         (active_mode_val == "Paste an answer" and st.session_state.get("answer_input", "").strip())
         or (active_mode_val == "Ask a question" and st.session_state.get("ask_question_input", "").strip())
         or (active_mode_val == "Paste a URL" and st.session_state.get("url_input", "").strip())
+        or (active_mode_val == "Batch" and (st.session_state.get("batch_text_input", "").strip() or st.session_state.get("batch_file_uploader")))
+        or (active_mode_val == "Doc Checker" and (st.session_state.get("doc_checker_text", "").strip() or st.session_state.get("doc_checker_file_uploader")))
     )
     st.markdown(
         render_stepper_html(current_busy, has_active_results, has_active_input),
@@ -5867,79 +6040,59 @@ with tab_audit:
     )
 
     # -------------------------------------------------------------------
-    # 4. Section 1: Streamlined Input Studio Card (Collapsible)
+    # 4. Section 1: Input Studio Card (Always Visible)
     # -------------------------------------------------------------------
-    with st.expander("⚡ Input Studio — Paste an answer, ask a question, or audit a URL", expanded=st.session_state.get("show_input_studio", False)):
+    with st.container(border=True):
         st.markdown('<span id="sad-input-studio-anchor" style="display:none;"></span>', unsafe_allow_html=True)
-        # Unified Card Header: Left title, Center mode selector, Right view toggle + audits counter
-        hdr_c1, hdr_c2, hdr_c3 = st.columns([0.9, 1.8, 2.1], vertical_alignment="center", gap="medium")
+        # Unified Card Header: Left title & subtitle, Right audits counter
+        hdr_c1, hdr_c2 = st.columns([2.8, 1.2], vertical_alignment="center", gap="medium")
         with hdr_c1:
             st.markdown(
                 """
-                <div class="sad-section-num-header" style="margin: 0;">
-                  <span class="sad-section-num">1</span>
+                <div class="sad-section-header" style="margin: 0;">
+                  <svg class="sad-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818CF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
                   <div>
-                    <h3 class="sad-section-title" style="font-size: 1.02rem; margin: 0;">Input</h3>
+                    <h3 class="sad-section-title">Input Studio</h3>
+                    <p class="sad-section-sub">Audit freshness against live web reality</p>
                   </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
         with hdr_c2:
-            active_input_mode = st.segmented_control(
-                "Audit Mode",
-                options=["Paste an answer", "Ask a question", "Paste a URL"],
-                default=st.session_state.get("active_input_mode", "Paste an answer"),
-                key="active_input_mode",
-                label_visibility="collapsed",
-            )
-        with hdr_c3:
             audits_done = int(st.session_state.get("live_audits_performed") or 0)
             audits_left = max(0, get_max_session_audits() - audits_done)
-            v_col1, v_col2 = st.columns([2.3, 0.7], vertical_alignment="center", gap="small")
-            with v_col1:
-                audit_subview = st.segmented_control(
-                    "Audit Navigation",
-                    options=["Side-by-side Inspection", "Audit Studio", "Overview & Highlights"],
-                    default=st.session_state.get("audit_subview_choice", "Side-by-side Inspection"),
-                    key="audit_subview_choice",
-                    label_visibility="collapsed",
-                )
-            with v_col2:
-                st.markdown(
-                    f'<div style="text-align: right;"><span class="sad-studio-quota" style="white-space: nowrap;">Audits left: <strong>{audits_left}</strong></span></div>',
-                    unsafe_allow_html=True,
-                )
-
-        if audit_subview == "Overview & Highlights":
-            render_home_tab(
-                use_bifrost_mode=use_bifrost_mode,
-                gateway_unreachable=gateway_unreachable,
-                quota_state=quota_state,
-                gateway_health=gateway_health,
-                evaluator_text=evaluator_text,
-                highlights_bento_fn=render_highlights_bento_grid,
+            st.markdown(
+                f'<div style="text-align: right;"><span class="sad-studio-quota" style="white-space: nowrap;">Audits left: <strong>{audits_left}</strong></span></div>',
+                unsafe_allow_html=True,
             )
-        else:
+
+        active_input_mode = st.segmented_control(
+            "Audit Mode",
+            options=["Paste an answer", "Ask a question", "Paste a URL", "Batch", "Doc Checker"],
+            default=st.session_state.get("active_input_mode", "Paste an answer"),
+            key="active_input_mode",
+            label_visibility="collapsed",
+        )
+
+        if True:  # Input workspace always active and visible
             is_pasted_running = current_busy == "pasted"
             is_ask_running = current_busy == "ask"
             is_url_running = current_busy == "url"
 
-            st.markdown(
-                '<div style="color: #94A3B8; font-size: 14px; margin-bottom: 12px; margin-top: 4px;">'
-                'Start here — choose an input mode to audit freshness against live web reality'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
             check_clicked = False
             ask_clicked = False
             url_clicked = False
+            batch_clicked = False
+            doc_clicked = False
 
             if active_input_mode == "Paste an answer":
                 char_count = len(st.session_state.get("answer_input", ""))
-                ex_labels = ["iPhone", "GPT", "India", "Company", "World"]
-                chip_cols = st.columns([1, 1, 1, 1, 1, 1.8, 1.4], vertical_alignment="center", gap="small")
+                ex_labels = ["iPhone", "GPT", "India", "Company", "World", "🗣️ Hinglish", "🇮🇳 Hindi"]
+                chip_cols = st.columns([1, 1, 1, 1, 1, 1.25, 1.15], vertical_alignment="center", gap="small")
                 for ex_idx, ex_lbl in enumerate(ex_labels):
                     with chip_cols[ex_idx]:
                         if st.button(
@@ -5951,7 +6104,8 @@ with tab_audit:
                         ):
                             load_demo_example(DEMO_EXAMPLES[ex_idx]["text"])
 
-                with chip_cols[5]:
+                act_col1, act_col2, act_col3 = st.columns([2.0, 1.4, 6.6], vertical_alignment="center", gap="small")
+                with act_col1:
                     st.markdown('<span id="sad-guided-demo-anchor" style="display:none;"></span>', unsafe_allow_html=True)
                     if st.button(
                         "✨ Guided Demo",
@@ -5966,7 +6120,7 @@ with tab_audit:
                         _apply_pasted_demo_sample(step_data["sample"], exact_match=True, sync_widget=True)
                         st.rerun()
 
-                with chip_cols[6]:
+                with act_col2:
                     with st.popover("💡 Tips", icon=":material/lightbulb:"):
                         st.markdown(
                             "**Recommended claims to test:**\n"
@@ -6009,13 +6163,15 @@ with tab_audit:
                 st.text_area(
                     "LLM-generated answer",
                     key="answer_input",
-                    height=85,
+                    max_chars=MAX_TEXT_CHARS,
+                    height=70,
                     label_visibility="collapsed",
                     placeholder=(
                         "Paste an LLM-generated answer here or click one of the example chips above..."
                     ),
                 )
-                st.caption(f"⌨️ Hint: Press **Ctrl + Enter** to audit &bull; {char_count:,} chars")
+                char_warn = "color: #EF4444;" if char_count > MAX_TEXT_CHARS else ""
+                st.caption(f"⌨️ Hint: Press **Ctrl + Enter** to audit &bull; <span style='{char_warn}'>{char_count:,} / {MAX_TEXT_CHARS:,} chars</span>", unsafe_allow_html=True)
 
                 btn_col1, btn_col2 = st.columns([0.8, 0.2], gap="small")
                 with btn_col1:
@@ -6058,6 +6214,7 @@ with tab_audit:
                 st.text_input(
                     "Ask a question",
                     key="ask_question_input",
+                    max_chars=500,
                     label_visibility="collapsed",
                     placeholder="e.g. What is the latest iPhone model, chip, and US starting price?",
                 )
@@ -6082,7 +6239,7 @@ with tab_audit:
                         width="stretch",
                     )
 
-            else:  # "Paste a URL"
+            elif active_input_mode == "Paste a URL":
                 st.caption(
                     "Paste an article or blog URL below. Tavily Extract pulls clean text, audits the first "
                     "8 time-sensitive claims, highlights facts inline, and exports report."
@@ -6102,6 +6259,7 @@ with tab_audit:
                 st.text_input(
                     "Article or blog URL",
                     key="url_input",
+                    max_chars=2048,
                     label_visibility="collapsed",
                     placeholder="https://example.com/blog/python-release-guide",
                 )
@@ -6125,6 +6283,184 @@ with tab_audit:
                         disabled=is_any_busy,
                         width="stretch",
                     )
+
+            elif active_input_mode == "Batch":
+                st.caption(
+                    "Upload a `.txt`, `.md`, or `.csv` file (max 20 items, max 200 KB) or paste multiple answers below "
+                    "separated by a blank line. Runs the verification pipeline across all items with live progress tracking."
+                )
+                b_c1, b_c2 = st.columns([1, 1], gap="medium")
+                with b_c1:
+                    batch_file = st.file_uploader(
+                        "Upload .txt, .md, or .csv",
+                        type=["txt", "md", "csv"],
+                        key="batch_file_uploader",
+                        disabled=is_any_busy,
+                    )
+                with b_c2:
+                    st.text_area(
+                        "Or paste multiple answers separated by a blank line",
+                        key="batch_text_input",
+                        height=110,
+                        disabled=is_any_busy,
+                        placeholder="Answer 1: Apple sells iPhone 15 at $799...\n\nAnswer 2: GPT-4 is the latest OpenAI model...",
+                    )
+
+                btn_col1, btn_col2 = st.columns([0.8, 0.2], gap="small")
+                with btn_col1:
+                    batch_clicked = st.button(
+                        "Run Batch Audit",
+                        key="batch_audit_btn",
+                        type="primary",
+                        icon=":material/playlist_add_check:",
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+                with btn_col2:
+                    def clear_batch_workspace():
+                        st.session_state["batch_summary"] = None
+                        st.session_state["batch_items_data"] = None
+                        st.session_state["batch_error"] = None
+                        st.session_state["batch_text_input"] = ""
+
+                    st.button(
+                        "Clear",
+                        key="batch_clear_btn",
+                        icon=":material/delete_outline:",
+                        on_click=clear_batch_workspace,
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+
+            elif active_input_mode == "Doc Checker":
+                st.caption(
+                    "Audit Markdown and documentation files for stale facts. "
+                    "Extracts factual claims and maps every verified finding directly to its 1-based source line number."
+                )
+                doc_c1, doc_c2 = st.columns([1, 1], gap="medium")
+                with doc_c1:
+                    doc_file = st.file_uploader(
+                        "Upload .md or .txt documentation file",
+                        type=["md", "txt"],
+                        key="doc_checker_file_uploader",
+                        disabled=is_any_busy,
+                    )
+                with doc_c2:
+                    st.text_area(
+                        "Or paste Markdown documentation content",
+                        key="doc_checker_text",
+                        height=110,
+                        disabled=is_any_busy,
+                        placeholder="# Guide\n\nApple released iPhone 15 at $1,199.\n\nIndia GST rate on gold is 3%.\n",
+                    )
+
+                btn_col1, btn_col2 = st.columns([0.8, 0.2], gap="small")
+                with btn_col1:
+                    doc_clicked = st.button(
+                        "Audit Document Lines",
+                        key="doc_checker_audit_btn",
+                        type="primary",
+                        icon=":material/fact_check:",
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+                with btn_col2:
+                    def clear_doc_workspace():
+                        st.session_state["doc_checker_results"] = None
+                        st.session_state["doc_checker_text"] = ""
+                        st.session_state["doc_checker_error"] = None
+
+                    st.button(
+                        "Clear",
+                        key="doc_clear_btn",
+                        icon=":material/delete_outline:",
+                        on_click=clear_doc_workspace,
+                        disabled=is_any_busy,
+                        width="stretch",
+                    )
+
+            # Feature H: Settings & Resource Estimator Panel
+            with st.expander("⚙️ Audit Settings & Resource Estimator", expanded=False):
+                s_c1, s_c2, s_c3 = st.columns([1.2, 1.2, 1.6], gap="medium")
+                with s_c1:
+                    st.slider(
+                        "Strictness Cutoff (Sensitivity)",
+                        min_value=0,
+                        max_value=80,
+                        value=int(st.session_state.get("detection_threshold", 40)),
+                        step=10,
+                        key="settings_detection_threshold",
+                        help="Claims with time-sensitivity below this threshold will be skipped.",
+                    )
+                    st.slider(
+                        "Max Claims per Audit",
+                        min_value=1,
+                        max_value=8,
+                        value=int(st.session_state.get("max_claims_per_audit", 6)),
+                        step=1,
+                        key="settings_max_claims",
+                    )
+                with s_c2:
+                    st.toggle(
+                        "Dual-Judge Consensus",
+                        value=bool(st.session_state.get("dual_judge_mode", False)),
+                        key="settings_dual_judge",
+                        help="Runs two independent judge models via Bifrost over the same evidence.",
+                    )
+                    st.selectbox(
+                        "Language Mode",
+                        options=SUPPORTED_LANGUAGES,
+                        index=0,
+                        key="settings_language",
+                        help="Accepts English, Hindi (Devanagari), and Hinglish with English query generation.",
+                    )
+                with s_c3:
+                    st.multiselect(
+                        "Active Factual Categories",
+                        options=SUPPORTED_CATEGORIES,
+                        default=st.session_state.get("active_categories_filter", SUPPORTED_CATEGORIES),
+                        key="settings_active_categories",
+                    )
+
+                # Live Pre-Run Resource Estimation
+                curr_txt = ""
+                is_url_mode = (active_input_mode == "Paste a URL")
+                if active_input_mode == "Paste an answer":
+                    curr_txt = st.session_state.get("answer_input", "")
+                elif active_input_mode == "Ask a question":
+                    curr_txt = st.session_state.get("ask_question_input", "")
+                elif active_input_mode == "Paste a URL":
+                    curr_txt = st.session_state.get("url_input", "")
+                elif active_input_mode == "Batch":
+                    curr_txt = st.session_state.get("batch_text_input", "")
+                elif active_input_mode == "Doc Checker":
+                    curr_txt = st.session_state.get("doc_checker_text", "")
+
+                est = estimate_audit_resources(
+                    text=curr_txt,
+                    max_claims=int(st.session_state.get("settings_max_claims", 6)),
+                    dual_judge=bool(st.session_state.get("settings_dual_judge", False)),
+                    active_categories=st.session_state.get("settings_active_categories", SUPPORTED_CATEGORIES),
+                    is_url=is_url_mode,
+                    strictness_threshold=int(st.session_state.get("settings_detection_threshold", 40)),
+                )
+
+                st.markdown(
+                    f"""
+                    <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 8px; padding: 10px 14px; margin-top: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 0.85rem;">
+                        <div>
+                            <strong style="color: #818CF8;">Pre-Run Resource Estimate:</strong>
+                            <span style="color: #F8FAFC; margin-left: 8px;">~{est['estimated_claims']} claims</span> |
+                            <span style="color: #38BDF8; margin-left: 8px;">~{est['estimated_tavily_credits']} Tavily credits</span> |
+                            <span style="color: #A855F7; margin-left: 8px;">~{est['estimated_llm_calls']} LLM calls</span>
+                        </div>
+                        <div style="color: #94A3B8; font-size: 0.8rem;">
+                            Session Quota: <strong>{audits_left}</strong> audits remaining
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
         # -------------------------------------------------------------------
         # Execute Handlers for Active Mode
@@ -6157,7 +6493,11 @@ with tab_audit:
                         icon=":material/warning:",
                     )
                 else:
-                    st.session_state["results"] = None
+                    is_valid, err_msg = validate_text_input(answer_text)
+                    if not is_valid:
+                        st.error(err_msg, icon=":material/error:")
+                    else:
+                        st.session_state["results"] = None
                     st.session_state["extract_model"] = None
                     st.session_state["extract_meta"] = None
                     st.session_state["corrected_answer"] = None
@@ -6267,7 +6607,11 @@ with tab_audit:
                 elif not q_text:
                     st.warning("Please type a question to ask and audit.", icon=":material/warning:")
                 else:
-                    st.session_state["ask_question_asked"] = q_text
+                    is_valid, err_msg = validate_question_input(q_text)
+                    if not is_valid:
+                        st.error(err_msg, icon=":material/error:")
+                    else:
+                        st.session_state["ask_question_asked"] = q_text
                     st.session_state["ask_answer"] = ""
                     st.session_state["ask_model"] = None
                     st.session_state["ask_meta"] = None
@@ -6367,7 +6711,7 @@ with tab_audit:
                 _render_demo_banner(st.session_state["demo_ask_notice"])
             _render_stored_error_with_demo_recovery("ask_error", recover_scope="ask", default_recover_key="demo_recover_ask")
 
-        else:  # "Paste a URL"
+        elif active_input_mode == "Paste a URL":
             url_skel_slot = st.empty()
             if url_clicked and not is_any_busy:
                 st.session_state["url_error"] = None
@@ -6381,7 +6725,11 @@ with tab_audit:
                 elif not url_val:
                     st.warning("Please enter an article or blog URL to audit.", icon=":material/warning:")
                 else:
-                    st.session_state["url_audited"] = None
+                    is_valid, err_msg = validate_url_input(url_val)
+                    if not is_valid:
+                        st.error(err_msg, icon=":material/error:")
+                    else:
+                        st.session_state["url_audited"] = None
                     st.session_state["url_article_title"] = ""
                     st.session_state["url_article_text"] = ""
                     st.session_state["url_article_truncated"] = False
@@ -6489,6 +6837,126 @@ with tab_audit:
                 _render_demo_banner(st.session_state["demo_url_notice"])
             _render_stored_error_with_demo_recovery("url_error", recover_scope="url", default_recover_key="demo_recover_url")
 
+        elif active_input_mode == "Batch":
+            if batch_clicked and not is_any_busy:
+                st.session_state["batch_error"] = None
+                b_file = st.session_state.get("batch_file_uploader")
+                file_bytes = b_file.getvalue() if b_file is not None else None
+                fname = b_file.name if b_file is not None else ""
+                raw_txt = st.session_state.get("batch_text_input", "")
+                parsed_items, err = parse_batch_input(raw_text=raw_txt, file_bytes=file_bytes, filename=fname)
+                if err:
+                    st.error(err, icon=":material/error:")
+                elif not parsed_items:
+                    st.warning("Please upload a file or paste at least one answer to batch audit.", icon=":material/warning:")
+                else:
+                    with st.status(f"Auditing batch of {len(parsed_items)} items...", expanded=True) as batch_status:
+                        b_prog = st.progress(0.0)
+                        summary_rows = []
+                        items_data = []
+                        total_claims_seen = 0
+
+                        for b_idx, item_text in enumerate(parsed_items, start=1):
+                            if total_claims_seen >= MAX_BATCH_TOTAL_CLAIMS:
+                                st.info(f"Reached safety cap of {MAX_BATCH_TOTAL_CLAIMS} total batch claims to protect API quota.")
+                                break
+                            if not st.session_state.get("demo_mode") and int(st.session_state.get("live_audits_performed") or 0) >= get_max_session_audits():
+                                st.warning("Live session audit quota limit reached. Pausing remaining batch items.")
+                                break
+
+                            st.write(f"Auditing item {b_idx}/{len(parsed_items)}...")
+                            item_steps_log = []
+                            try:
+                                item_meta = {}
+                                ex_model, ex_record, item_results = run_stale_audit(
+                                    answer_text=item_text,
+                                    status_widget=batch_status,
+                                    steps_log=item_steps_log,
+                                    credits_placeholder=credits_placeholder,
+                                    gateway_placeholder=gateway_placeholder,
+                                    max_claims=int(st.session_state.get("settings_max_claims", DEFAULT_BATCH_CLAIMS_PER_ITEM)),
+                                    audit_meta_out=item_meta,
+                                )
+                                total_claims_seen += len(item_results)
+                                if not st.session_state.get("demo_mode") and item_results:
+                                    st.session_state["live_audits_performed"] = int(st.session_state.get("live_audits_performed") or 0) + 1
+
+                                s_row = summarize_batch_item(
+                                    index=b_idx,
+                                    answer_text=item_text,
+                                    results=item_results,
+                                    extract_model=ex_model,
+                                    source_origin=("cached" if any(r.get("cache_hit") for r in item_results) else "live"),
+                                )
+                                summary_rows.append(s_row)
+                                items_data.append({
+                                    "index": b_idx,
+                                    "answer_text": item_text,
+                                    "extract_model": ex_model,
+                                    "extract_meta": ex_record,
+                                    "results": item_results,
+                                    "summary": s_row,
+                                })
+                            except Exception as exc:
+                                s_row = summarize_batch_item(
+                                    index=b_idx,
+                                    answer_text=item_text,
+                                    results=[],
+                                    overall_score=0,
+                                    source_origin="saved",
+                                )
+                                summary_rows.append(s_row)
+                                items_data.append({
+                                    "index": b_idx,
+                                    "answer_text": item_text,
+                                    "extract_model": "error",
+                                    "extract_meta": None,
+                                    "results": [],
+                                    "summary": s_row,
+                                })
+
+                            b_prog.progress(b_idx / len(parsed_items))
+
+                        batch_status.update(label=f"Batch Audit complete: {len(summary_rows)} item(s) processed", state="complete", expanded=False)
+                        st.session_state["batch_summary"] = summary_rows
+                        st.session_state["batch_items_data"] = items_data
+                        if items_data:
+                            st.session_state["results"] = items_data[0]["results"]
+                            st.session_state["checked_answer"] = items_data[0]["answer_text"]
+                            st.session_state["extract_model"] = items_data[0]["extract_model"]
+                            st.session_state["extract_meta"] = items_data[0]["extract_meta"]
+                            st.session_state["batch_selected_index"] = 1
+                        st.rerun()
+
+        elif active_input_mode == "Doc Checker":
+            if doc_clicked and not is_any_busy:
+                st.session_state["doc_checker_error"] = None
+                d_file = st.session_state.get("doc_checker_file_uploader")
+                file_content = d_file.getvalue().decode("utf-8", errors="replace") if d_file is not None else ""
+                raw_doc_txt = file_content or st.session_state.get("doc_checker_text", "")
+                if not raw_doc_txt.strip():
+                    st.warning("Please upload a Markdown file or paste documentation text to audit.", icon=":material/warning:")
+                else:
+                    with st.status("Auditing document lines and extracting claims...", expanded=True) as doc_status:
+                        d_fname = d_file.name if d_file is not None else "document.md"
+                        try:
+                            doc_res = audit_markdown_document(
+                                doc_text=raw_doc_txt,
+                                max_claims=int(st.session_state.get("settings_max_claims", MAX_CLAIMS_PER_AUDIT)),
+                                filename=d_fname,
+                            )
+                            if not st.session_state.get("demo_mode") and doc_res.get("claims"):
+                                st.session_state["live_audits_performed"] = int(st.session_state.get("live_audits_performed") or 0) + 1
+                            st.session_state["doc_checker_results"] = doc_res
+                            st.session_state["results"] = doc_res.get("claims", [])
+                            st.session_state["checked_answer"] = raw_doc_txt
+                            st.session_state["extract_model"] = doc_res.get("extract_model")
+                            doc_status.update(label=f"Document check complete ({len(doc_res.get('claims', []))} claims found)", state="complete", expanded=False)
+                            st.rerun()
+                        except Exception as exc:
+                            doc_status.update(label="Document check failed", state="error", expanded=False)
+                            st.session_state["doc_checker_error"] = format_friendly_ui_error(exc)
+
     # -------------------------------------------------------------------
     # Gather Active Data for Sections 2 - 5
     # -------------------------------------------------------------------
@@ -6524,6 +6992,38 @@ with tab_audit:
         act_url = None
         act_extra_credits = 0.0
         act_busy = is_ask_running
+    elif active_input_mode == "Batch":
+        act_results = st.session_state.get("results")
+        act_text = st.session_state.get("checked_answer", "")
+        act_prefix = "batch"
+        act_ext_model = st.session_state.get("extract_model")
+        act_ext_meta = st.session_state.get("extract_meta")
+        act_corr = None
+        act_corr_model = None
+        act_corr_meta = None
+        act_audit_at = datetime.now().astimezone()
+        act_mode_label = "Batch Audit"
+        act_card_title = "Selected Batch Item"
+        act_question = None
+        act_url = None
+        act_extra_credits = 0.0
+        act_busy = False
+    elif active_input_mode == "Doc Checker":
+        act_results = st.session_state.get("results")
+        act_text = st.session_state.get("checked_answer", "")
+        act_prefix = "doc"
+        act_ext_model = st.session_state.get("extract_model")
+        act_ext_meta = st.session_state.get("extract_meta")
+        act_corr = None
+        act_corr_model = None
+        act_corr_meta = None
+        act_audit_at = datetime.now().astimezone()
+        act_mode_label = "Doc Checker"
+        act_card_title = "Document Text"
+        act_question = None
+        act_url = None
+        act_extra_credits = 0.0
+        act_busy = False
     else:  # "Paste a URL"
         act_results = st.session_state.get("url_results")
         act_text = st.session_state.get("url_article_text", "")
@@ -6541,159 +7041,304 @@ with tab_audit:
         act_extra_credits = float(st.session_state.get("url_extract_credits") or 0.0)
         act_busy = is_url_running
 
+    # Render Batch Summary Card if in Batch mode with results
+    if active_input_mode == "Batch" and st.session_state.get("batch_summary"):
+        summary_list = st.session_state["batch_summary"]
+        items_list = st.session_state.get("batch_items_data") or []
+        with st.container(border=True):
+            st.markdown("### 📋 Batch Audit Summary Table")
+            st.caption(f"Processed {len(summary_list)} items. Click an item below to inspect in the Audit Studio.")
+            batch_df = pd.DataFrame([
+                {
+                    "Item #": r["index"],
+                    "Snippet": r["snippet"],
+                    "Score": f"{r['overall_score']}/100",
+                    "Breakdown": f"🟢 {r['fresh_count']} Fresh | 🔴 {r['outdated_count']} Outdated | ⚪ {r['unverifiable_count']} Unverified",
+                    "Worst Claim": r["worst_claim"],
+                    "Origin": r["source_label"],
+                }
+                for r in summary_list
+            ])
+            st.dataframe(batch_df, hide_index=True, width="stretch")
+            
+            cur_idx = int(st.session_state.get("batch_selected_index", 1))
+            sel_col1, sel_col2, sel_col3 = st.columns([1.5, 1, 1], vertical_alignment="center", gap="medium")
+            with sel_col1:
+                new_sel = st.selectbox(
+                    "Inspect individual audit from batch:",
+                    options=[r["index"] for r in summary_list],
+                    index=min(cur_idx - 1, len(summary_list) - 1) if summary_list else 0,
+                    format_func=lambda i: f"Item #{i}: {summary_list[i-1]['snippet'][:35]}... ({summary_list[i-1]['overall_score']}/100)",
+                    key="batch_item_selector",
+                )
+                if new_sel != cur_idx and items_list:
+                    st.session_state["batch_selected_index"] = new_sel
+                    match_item = next((it for it in items_list if it["index"] == new_sel), items_list[0])
+                    st.session_state["results"] = match_item["results"]
+                    st.session_state["checked_answer"] = match_item["answer_text"]
+                    st.session_state["extract_model"] = match_item["extract_model"]
+                    st.session_state["extract_meta"] = match_item.get("extract_meta")
+                    st.rerun()
+            with sel_col2:
+                csv_bytes = export_batch_summary_csv(summary_list)
+                st.download_button("📥 Export CSV", data=csv_bytes, file_name="batch_audit_summary.csv", mime="text/csv", width="stretch")
+            with sel_col3:
+                json_bytes = export_batch_summary_json(summary_list, items_list)
+                st.download_button("📥 Export JSON", data=json_bytes, file_name="batch_audit_results.json", mime="application/json", width="stretch")
+
+    # Render Doc Checker Summary Card if in Doc Checker mode with results
+    if active_input_mode == "Doc Checker" and st.session_state.get("doc_checker_results"):
+        doc_res = st.session_state["doc_checker_results"]
+        with st.container(border=True):
+            st.markdown(f"### 📄 Document Line Audit: `{escape_html(doc_res.get('filename', 'document.md'))}`")
+            st.caption(f"Score: **{doc_res.get('overall_score')}/100** • Fresh: **{doc_res.get('fresh_count')}** • Outdated: **{doc_res.get('outdated_count')}** • Claims: **{doc_res.get('total_claims')}**")
+            doc_df = pd.DataFrame([
+                {
+                    "Line": f"L{c.get('line_number', 1)}",
+                    "Status": str(c.get("status", "unknown")).upper(),
+                    "Category": str(c.get("category", "other")).title(),
+                    "Claim Text": c.get("claim", ""),
+                    "Current Fact / Fix": c.get("current_info") or c.get("reason") or "Verified against web sources",
+                }
+                for c in doc_res.get("claims", [])
+            ])
+            st.dataframe(doc_df, hide_index=True, width="stretch")
+
+            d_c1, d_c2 = st.columns([1, 1], gap="medium")
+            with d_c1:
+                st.download_button("📥 Export Markdown Report", data=format_markdown_report(doc_res), file_name="stale_check_report.md", mime="text/markdown", width="stretch")
+            with d_c2:
+                st.download_button("📥 Export JSON Report", data=format_json_report(doc_res), file_name="stale_check_report.json", mime="application/json", width="stretch")
+
     # ===================================================================
-    # Section 2: Answer and summary (Equal 2-column results grid)
     # ===================================================================
-    st.markdown(
-        """
-        <div class="sad-section-num-header" style="justify-content: center; margin-top: 0.05rem; margin-bottom: 0.05rem;">
-          <span class="sad-section-num" style="background: linear-gradient(135deg, #8B5CF6, #EC4899); border-radius: 8px; width: 24px; height: 24px; font-weight: 800; font-size: 13px; color: #FFF; box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);">2</span>
-          <h3 class="sad-section-title" style="font-size: 1.25rem; font-weight: 800; margin: 0; color: #FFFFFF;">Answer and summary</h3>
-        </div>
-        <div style="text-align: center; color: #94A3B8; font-size: 12.5px; margin-bottom: 0.4rem; letter-spacing: -0.01em;">
-          Side-by-side inspection: annotated source text with inline fact status and overall freshness rating
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Section 2: Answer and summary & View Switch
+    # ===================================================================
+    st.markdown('<div class="sad-section-divider"></div>', unsafe_allow_html=True)
+    res_hdr_c1, res_hdr_c2 = st.columns([2.3, 1.7], vertical_alignment="center", gap="medium")
+    with res_hdr_c1:
+        st.markdown(
+            """
+            <div class="sad-section-header" id="sad-summary-anchor" style="margin: 0;">
+              <span id="sad-claims-detected-anchor" style="display:none;"></span>
+              <svg class="sad-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818CF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="3" y1="9" x2="21" y2="9"></line>
+                <line x1="9" y1="21" x2="9" y2="9"></line>
+              </svg>
+              <div>
+                <h3 class="sad-section-title">Answer and summary</h3>
+                <p class="sad-section-sub">Side-by-side inspection: annotated source text with inline fact status and overall freshness rating</p>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with res_hdr_c2:
+        audit_subview = st.segmented_control(
+            "Audit Subview",
+            options=["Side-by-side", "Studio", "Overview"],
+            default=st.session_state.get("audit_subview_choice", "Side-by-side"),
+            key="audit_subview_choice",
+            label_visibility="collapsed",
+        )
 
-    res_col1, res_col2 = st.columns([1, 1], gap="large")
-
-    with res_col1:
-        if act_results and act_text.strip():
-            render_annotated_answer_card(
-                answer_text=act_text,
-                verification_results=act_results,
-                key_prefix=act_prefix,
-                title=act_card_title,
-            )
-        elif act_busy:
-            st.markdown(
-                f'<div class="sad-result-card sad-result-card-purple">'
-                f'<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg><span>{act_card_title}</span></div><span class="sad-result-badge">Auditing...</span></div>'
-                '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f'<div class="sad-result-card sad-result-card-purple">'
-                f'<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg><span>LLM Answer</span></div><span class="sad-status-pill pill-ready"><span class="sad-pulse-dot dot-ready"></span>READY</span></div>'
-                + _render_empty_state("No answer audited yet", "Paste an LLM answer above or pick an example to inspect inline highlighted facts.", pills=("Prices & specs", "Tax rules", "AI API pricing"), variant="purple")
-                + '</div>',
-                unsafe_allow_html=True,
-            )
-
-    with res_col2:
-        if act_results:
-            overall_score = compute_risk_weighted_overall_score(act_results)
-            checked_text_val = act_text or (act_results[0].get("claim", "") if act_results else "")
-            src_origin = f"Saved ({SAVED_RESULTS_DATE})" if st.session_state.get("demo_mode") else "Live"
-            record_audit_to_history(checked_text_val, act_results, source_label=src_origin, mode=act_mode_label, score=overall_score)
-
-            fresh_count = sum(1 for r in act_results if r.get("status") == "fresh")
-            outdated_count = sum(1 for r in act_results if r.get("status") == "outdated")
-            incorrect_count = sum(1 for r in act_results if r.get("status") == "incorrect")
-            partially_correct_count = sum(1 for r in act_results if r.get("status") == "partially_correct")
-            uncertain_count = sum(1 for r in act_results if r.get("status") == "uncertain")
-            unverifiable_count = sum(1 for r in act_results if r.get("status") == "unverifiable")
-            skipped_count = sum(1 for r in act_results if r.get("status") == "skipped")
-            flagged_count = len(act_results) - skipped_count
-
-            verdict_sentence = build_overall_verdict_sentence(act_results)
-
-            models_used = []
-            claim_models = []
-            for r in act_results:
-                if isinstance(r.get("judge_models"), list) and r.get("judge_models"):
-                    claim_models.extend(str(m) for m in r["judge_models"] if m)
-                if r.get("model"):
-                    claim_models.append(str(r["model"]))
-            for model_name in [act_ext_model, *claim_models]:
-                if model_name and model_name not in models_used:
-                    models_used.append(model_name)
-
-            fallback_routes = collect_fallback_routes(act_ext_meta, act_results)
-
-            source_origins = set()
-            for r in act_results:
-                so = str(r.get("source_origin") or ("saved" if st.session_state.get("demo_mode") else ("cached" if r.get("cache_hit") else "live"))).lower()
-                source_origins.add(so)
-
-            if "saved" in source_origins or st.session_state.get("demo_mode"):
-                origin_badge_html = f'💾 Saved ({SAVED_RESULTS_DATE})'
-            elif "cached" in source_origins and "live" not in source_origins:
-                origin_badge_html = '⚡ Cached (6h TTL)'
+    if audit_subview in ("Overview", "Overview & Highlights"):
+        render_home_tab(
+            use_bifrost_mode=use_bifrost_mode,
+            gateway_unreachable=gateway_unreachable,
+            quota_state=quota_state,
+            gateway_health=gateway_health,
+            evaluator_text=evaluator_text,
+            highlights_bento_fn=render_highlights_bento_grid,
+        )
+    else:
+        res_col1, res_col2 = st.columns([1, 1], gap="large")
+    
+        with res_col1:
+            if act_results and act_text.strip():
+                render_annotated_answer_card(
+                    answer_text=act_text,
+                    verification_results=act_results,
+                    key_prefix=act_prefix,
+                    title=act_card_title,
+                )
+            elif act_busy:
+                st.markdown(
+                    f'<div class="sad-result-card sad-result-card-purple">'
+                    f'<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg><span>{act_card_title}</span></div><span class="sad-result-badge">Auditing...</span></div>'
+                    '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
             else:
-                origin_badge_html = '🟢 Live Verification'
-
-            score_ring_html = render_score_ring_html(
-                overall_score,
-                models_used,
-                fallback_routes=fallback_routes,
-                verdict_sentence=verdict_sentence,
-                results=act_results,
-            )
-
-            st.markdown(
-                f"""
-                <div class="sad-result-card sad-result-card-cyan">
-                  <div class="sad-result-header">
-                    <div class="sad-liquid-tab sad-liquid-tab-cyan">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                        <path d="m9 12 2 2 4-4"></path>
-                      </svg>
-                      <span>Verification Summary</span>
+                st.markdown(
+                    f'<div class="sad-result-card sad-result-card-purple">'
+                    f'<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg><span>LLM Answer</span></div><span class="sad-status-pill pill-ready"><span class="sad-pulse-dot dot-ready"></span>READY</span></div>'
+                    + _render_empty_state("No answer audited yet", "Paste an LLM answer above or pick an example to inspect inline highlighted facts.", pills=("Prices & specs", "Tax rules", "AI API pricing"), variant="purple")
+                    + '</div>',
+                    unsafe_allow_html=True,
+                )
+    
+        with res_col2:
+            if act_results:
+                overall_score = compute_risk_weighted_overall_score(act_results)
+                checked_text_val = act_text or (act_results[0].get("claim", "") if act_results else "")
+                src_origin = f"Saved ({SAVED_RESULTS_DATE})" if st.session_state.get("demo_mode") else "Live"
+                record_audit_to_history(checked_text_val, act_results, source_label=src_origin, mode=act_mode_label, score=overall_score)
+    
+                fresh_count = sum(1 for r in act_results if r.get("status") == "fresh")
+                outdated_count = sum(1 for r in act_results if r.get("status") == "outdated")
+                incorrect_count = sum(1 for r in act_results if r.get("status") == "incorrect")
+                partially_correct_count = sum(1 for r in act_results if r.get("status") == "partially_correct")
+                uncertain_count = sum(1 for r in act_results if r.get("status") == "uncertain")
+                unverifiable_count = sum(1 for r in act_results if r.get("status") == "unverifiable")
+                skipped_count = sum(1 for r in act_results if r.get("status") == "skipped")
+                flagged_count = len(act_results) - skipped_count
+    
+                verdict_sentence = build_overall_verdict_sentence(act_results)
+    
+                models_used = []
+                claim_models = []
+                for r in act_results:
+                    if isinstance(r.get("judge_models"), list) and r.get("judge_models"):
+                        claim_models.extend(str(m) for m in r["judge_models"] if m)
+                    if r.get("model"):
+                        claim_models.append(str(r["model"]))
+                for model_name in [act_ext_model, *claim_models]:
+                    if model_name and model_name not in models_used:
+                        models_used.append(model_name)
+    
+                fallback_routes = collect_fallback_routes(act_ext_meta, act_results)
+    
+                source_origins = set()
+                for r in act_results:
+                    so = str(r.get("source_origin") or ("saved" if st.session_state.get("demo_mode") else ("cached" if r.get("cache_hit") else "live"))).lower()
+                    source_origins.add(so)
+    
+                if "saved" in source_origins or st.session_state.get("demo_mode"):
+                    origin_badge_html = f'💾 Saved ({SAVED_RESULTS_DATE})'
+                elif "cached" in source_origins and "live" not in source_origins:
+                    origin_badge_html = '⚡ Cached (6h TTL)'
+                else:
+                    origin_badge_html = '🟢 Live'
+    
+                # Explicit Routing Label
+                if fallback_routes or gateway_unreachable:
+                    routing_badge_html = '<span class="sad-status-pill" style="background: rgba(245,158,11,0.15); color: #F59E0B; border: 1px solid rgba(245,158,11,0.3);">Direct Gemini (Fallback)</span>'
+                elif is_use_bifrost():
+                    routing_badge_html = '<span class="sad-status-pill" style="background: rgba(139,92,246,0.15); color: #A78BFA; border: 1px solid rgba(139,92,246,0.3);">⚡ Bifrost Gateway</span>'
+                else:
+                    routing_badge_html = '<span class="sad-status-pill" style="background: rgba(59,130,246,0.15); color: #60A5FA; border: 1px solid rgba(59,130,246,0.3);">🔮 Direct Gemini</span>'
+    
+                score_ring_html = render_score_ring_html(
+                    overall_score,
+                    models_used,
+                    fallback_routes=fallback_routes,
+                    verdict_sentence=verdict_sentence,
+                    results=act_results,
+                )
+    
+                st.markdown(
+                    f"""
+                    <div class="sad-result-card sad-result-card-cyan">
+                      <div class="sad-result-header">
+                        <div class="sad-liquid-tab sad-liquid-tab-cyan">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                            <path d="m9 12 2 2 4-4"></path>
+                          </svg>
+                          <span>Verification Summary</span>
+                        </div>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                          <span class="sad-result-badge">{origin_badge_html}</span>
+                          {routing_badge_html}
+                        </div>
+                      </div>
+                      <div class="sad-result-body" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                        {score_ring_html}
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 0.85rem; padding-top: 0.65rem; border-top: 1px solid var(--border-main);">
+                          <span class="sad-cat-badge" style="border-color: rgba(22,163,74,0.3); color: #16A34A;">Fresh: <strong>{fresh_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(234,88,12,0.3); color: #EA580C;">Outdated: <strong>{outdated_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(220,38,38,0.3); color: #DC2626;">Incorrect: <strong>{incorrect_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(217,119,6,0.3); color: #D97706;">Partial: <strong>{partially_correct_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(100,116,139,0.3); color: #64748B;">Uncertain: <strong>{uncertain_count}</strong></span>
+                          <span class="sad-cat-badge" style="border-color: rgba(148,163,184,0.3); color: #94A3B8;">Unverifiable: <strong>{unverifiable_count}</strong></span>
+                        </div>
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; display: flex; justify-content: space-between; flex-wrap: wrap;">
+                          <span>🔍 Analyzed: <strong>{len(act_results)}</strong> claims</span>
+                          <span>⚡ Verified: <strong>{flagged_count}</strong> live facts</span>
+                          <span>🛡️ Skipped: <strong>{skipped_count}</strong> stable</span>
+                        </div>
+                      </div>
                     </div>
-                    <span class="sad-result-badge">{origin_badge_html}</span>
-                  </div>
-                  <div class="sad-result-body" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
-                    {score_ring_html}
-                    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 0.85rem; padding-top: 0.65rem; border-top: 1px solid var(--border-main);">
-                      <span class="sad-cat-badge" style="border-color: rgba(22,163,74,0.3); color: #16A34A;">Fresh: <strong>{fresh_count}</strong></span>
-                      <span class="sad-cat-badge" style="border-color: rgba(234,88,12,0.3); color: #EA580C;">Outdated: <strong>{outdated_count}</strong></span>
-                      <span class="sad-cat-badge" style="border-color: rgba(220,38,38,0.3); color: #DC2626;">Incorrect: <strong>{incorrect_count}</strong></span>
-                      <span class="sad-cat-badge" style="border-color: rgba(217,119,6,0.3); color: #D97706;">Partial: <strong>{partially_correct_count}</strong></span>
-                      <span class="sad-cat-badge" style="border-color: rgba(100,116,139,0.3); color: #64748B;">Uncertain: <strong>{uncertain_count}</strong></span>
-                      <span class="sad-cat-badge" style="border-color: rgba(148,163,184,0.3); color: #94A3B8;">Unverifiable: <strong>{unverifiable_count}</strong></span>
-                    </div>
-                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; display: flex; justify-content: space-between; flex-wrap: wrap;">
-                      <span>🔍 Analyzed: <strong>{len(act_results)}</strong> claims</span>
-                      <span>⚡ Verified: <strong>{flagged_count}</strong> live facts</span>
-                      <span>🛡️ Skipped: <strong>{skipped_count}</strong> stable</span>
-                    </div>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        elif act_busy:
-            st.markdown(
-                '<div class="sad-result-card sad-result-card-cyan">'
-                '<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-cyan"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg><span>Verification Summary</span></div><span class="sad-result-badge">Auditing...</span></div>'
-                '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<div class="sad-result-card sad-result-card-cyan">'
-                '<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-cyan"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg><span>Verification Summary</span></div><span class="sad-status-pill pill-standby"><span class="sad-pulse-dot dot-standby"></span>STANDBY</span></div>'
-                + _render_empty_state("Awaiting verification", "Score ring, fact breakdown, consensus stance, and primary sources will appear here.", pills=("Risk-weighted score", "Stance consensus", "freshness statuses"), variant="cyan")
-                + '</div>',
-                unsafe_allow_html=True,
-            )
-
-    # ===================================================================
+                    """,
+                    unsafe_allow_html=True,
+                )
+    
+                # Feature G: Trust Badge & Markdown Generator
+                badge_date_str = (
+                    act_audit_at.strftime("%b %d, %Y")
+                    if hasattr(act_audit_at, "strftime")
+                    else (SAVED_RESULTS_DATE if st.session_state.get("demo_mode") else "Nov 17, 2026")
+                )
+                total_stale = outdated_count + incorrect_count
+                badge_svg = generate_trust_badge_svg(fresh_count=fresh_count, stale_count=total_stale, check_date=badge_date_str)
+                badge_md = generate_trust_badge_markdown(fresh_count=fresh_count, stale_count=total_stale, check_date=badge_date_str)
+    
+                with st.container(border=True):
+                    st.markdown(
+                        f"""
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-weight: 700; font-size: 0.88rem; color: #F8FAFC;">🛡️ Trust Badge &amp; Snapshot</span>
+                            <span style="font-size: 0.75rem; color: #94A3B8;">SVG Artifact</span>
+                        </div>
+                        <div style="text-align: center; margin: 8px 0;">{badge_svg}</div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    tb_c1, tb_c2 = st.columns([1, 1], gap="small")
+                    with tb_c1:
+                        st.download_button(
+                            "Download SVG Badge",
+                            data=badge_svg,
+                            file_name="freshness-trust-badge.svg",
+                            mime="image/svg+xml",
+                            width="stretch",
+                        )
+                    with tb_c2:
+                        with st.popover("Copy Markdown", icon=":material/content_copy:"):
+                            st.code(badge_md, language="markdown")
+                    st.caption(get_trust_badge_snapshot_notice(badge_date_str))
+            elif act_busy:
+                st.markdown(
+                    '<div class="sad-result-card sad-result-card-cyan">'
+                    '<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-cyan"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg><span>Verification Summary</span></div><span class="sad-result-badge">Auditing...</span></div>'
+                    '<div class="sad-skeleton-card" style="height: 320px; border-radius: 12px;"></div>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    '<div class="sad-result-card sad-result-card-cyan">'
+                    '<div class="sad-result-header"><div class="sad-liquid-tab sad-liquid-tab-cyan"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg><span>Verification Summary</span></div><span class="sad-status-pill pill-standby"><span class="sad-pulse-dot dot-standby"></span>STANDBY</span></div>'
+                    + _render_empty_state("Awaiting verification", "Score ring, fact breakdown, consensus stance, and primary sources will appear here.", pills=("Risk-weighted score", "Stance consensus", "freshness statuses"), variant="cyan")
+                    + '</div>',
+                    unsafe_allow_html=True,
+                )
+    
+        # ===================================================================
     # Section 3: Claims
-    # ===================================================================
+    # Section 3: Claims
     if act_results:
         st.markdown(
             """
             <div class="sad-section-divider"></div>
-            <div class="sad-section-num-header">
-              <span class="sad-section-num">3</span>
+            <div class="sad-section-header" id="sad-claim-cards-anchor">
+              <svg class="sad-section-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818CF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
               <div>
                 <h3 class="sad-section-title">Claims</h3>
                 <p class="sad-section-sub">Granular claim-by-claim verification: claimed facts vs. live web reality with primary sources</p>
@@ -6780,7 +7425,7 @@ with tab_compare:
 with tab_lab:
     lab_subview = st.segmented_control(
         "Agent Lab View",
-        options=["Agent Lab (PS02)", "Ground Truth Benchmark (20 Claims)"],
+        options=["Agent Lab (PS02)", "Ground Truth Benchmark (30 Claims)"],
         default="Agent Lab (PS02)",
         key="lab_subview_choice",
         label_visibility="collapsed",
@@ -6819,6 +7464,10 @@ st.markdown(
     '<span>Built for <strong>Global AI Hackathon</strong></span> &bull; '
     '<a href="https://github.com/PurabTomar/stale-detector" target="_blank" rel="noopener noreferrer">'
     'GitHub Repository &#8599;</a>'
+    '<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 6px; letter-spacing: -0.01em;">'
+    '🔒 <strong>No tracking:</strong> Nothing stored beyond this session. Zero telemetry or user analytics collected. '
+    'Prompts are routed to Google Gemini (or local Bifrost gateway); web searches use Tavily with temporary 6-hour local SQLite snippet caching to conserve API credits. Zero credentials or user inputs are logged.'
+    '</div>'
     '</div>',
     unsafe_allow_html=True,
 )

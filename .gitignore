@@ -10,3 +10,11 @@ venv/
 .tavily_cache.db*
 .tavily_cache.db
 *.db
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

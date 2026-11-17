@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 DEMO_CACHE_PATH = Path(__file__).resolve().parent / "demo_cache.json"
+MULTILINGUAL_SAVED_PATH = Path(__file__).resolve().parent / "evidence" / "multilingual_saved_audits.json"
 SAVED_RESULTS_DATE = "Nov 13, 2026"
 
 
@@ -53,6 +54,18 @@ def get_pasted_demo_examples(cache_path: str | Path | None = None) -> list[dict]
     return [_tag_saved_results(copy.deepcopy(item)) for item in items if isinstance(item, dict)]
 
 
+def get_multilingual_saved_examples(path: str | Path | None = None) -> list[dict]:
+    """Return the real saved Hindi & Hinglish audit examples."""
+    p = Path(path) if path is not None else MULTILINGUAL_SAVED_PATH
+    if not p.is_file():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return [_tag_saved_results(copy.deepcopy(x)) for x in data if isinstance(x, dict)]
+    except Exception:
+        return []
+
+
 def find_cached_pasted_audit(
     answer_text: str | None = None,
     *,
@@ -63,27 +76,31 @@ def find_cached_pasted_audit(
     Look up a cached pasted-answer audit for Demo mode.
 
     Returns `(sample_dict, exact_match_bool)`:
-    - If `example_index` or `answer_text` matches one of the 4 preset demos (by exact
+    - If `example_index` or `answer_text` matches one of the preset demos (by exact
       text or overlapping key terms), returns that exact sample.
     - If the judge enters custom text while Demo mode is enabled, falls back to the
       first cached sample audit (`exact_match=False`) so the UI never fails offline.
     """
     samples = get_pasted_demo_examples(cache_path)
-    if not samples:
+    # Include multilingual saved runs
+    all_available = samples + get_multilingual_saved_examples()
+    if not all_available:
         raise FileNotFoundError("Offline demo_cache.json is missing pasted_examples.")
 
-    if example_index is not None and 0 <= example_index < len(samples):
-        return samples[example_index], True
+    if example_index is not None and 0 <= example_index < len(all_available):
+        return all_available[example_index], True
 
     norm_in = _normalize_text(answer_text or "")
     if not norm_in:
         return samples[0], False
 
-    for item in samples:
+    for item in all_available:
         if _normalize_text(item.get("answer_text", "")) == norm_in:
             return item, True
 
     keyword_groups = [
+        ("hinglish_iphone", ("hinglish", "launch kiya", "latest flagship phone iphone 15 pro max hi hai", "starting price par launch")),
+        ("hindi_gst", ("जीएसटी", "सोने", "चांदी", "मानक")),
         ("iphone", ("iphone", "a17", "ios 17", "1,199", "$1,199")),
         ("gpt", ("gpt-4", "turbo", "128k", "million input", "$30")),
         ("gst", ("gst", "slab", "28%", "20 lakh", "goods and services tax")),
@@ -91,7 +108,7 @@ def find_cached_pasted_audit(
     ]
     for sample_id, keywords in keyword_groups:
         if any(kw in norm_in for kw in keywords):
-            for item in samples:
+            for item in all_available:
                 if item.get("id") == sample_id:
                     return item, True
 

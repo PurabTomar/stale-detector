@@ -1002,8 +1002,8 @@ def get_web_ui_html() -> str:
           let sourcesHtml = "";
           if (c.sources && c.sources.length > 0) {{
             sourcesHtml = c.sources.map(s => `
-              <a href="${{s.url}}" target="_blank" rel="noopener" class="sad-source-chip">
-                <span class="src-type-tag">${{s.source_type || 'Source'}}</span>
+              <a href="${{sanitizeUrl(s.url)}}" target="_blank" rel="noopener noreferrer" class="sad-source-chip">
+                <span class="src-type-tag">${{escapeHtml(s.source_type || 'Source')}}</span>
                 <span>${{escapeHtml(s.title || s.url)}}</span>
               </a>
             `).join("");
@@ -1017,7 +1017,7 @@ def get_web_ui_html() -> str:
             let topSrcHtml = "";
             if (c.sources && c.sources.length > 0 && c.sources[0].url) {{
               const topSrcTitle = c.sources[0].title || c.sources[0].url;
-              topSrcHtml = ` (<a href="${{c.sources[0].url}}" target="_blank" rel="noopener" style="color: #EF4444; text-decoration: underline;">${{escapeHtml(topSrcTitle)}}</a>)`;
+              topSrcHtml = ` (<a href="${{sanitizeUrl(c.sources[0].url)}}" target="_blank" rel="noopener noreferrer" style="color: #EF4444; text-decoration: underline;">${{escapeHtml(topSrcTitle)}}</a>)`;
             }}
             actualMetaHtml = `<div style="margin-top: 0.35rem; font-size: 0.8rem; font-weight: 700; color: #EF4444;">Never true / contradicted by: <span style="font-weight: 500; color: var(--text-main);">${{escapeHtml(corrVal)}}</span>${{topSrcHtml}}</div>`;
           }} else {{
@@ -1033,9 +1033,9 @@ def get_web_ui_html() -> str:
             <div class="sad-claim-card" style="animation-delay: ${{idx * 0.08}}s;">
               <div class="sad-claim-header">
                 <div class="sad-claim-badges">
-                  <span class="cat-badge">📂 ${{c.category}}</span>
-                  <span class="pill ${{statusClass}}">${{c.status}}</span>
-                  <span class="risk-pill ${{riskClass}}">Risk: ${{c.risk_level}}</span>
+                  <span class="cat-badge">📂 ${{escapeHtml(c.category)}}</span>
+                  <span class="pill ${{statusClass}}">${{escapeHtml(c.status)}}</span>
+                  <span class="risk-pill ${{riskClass}}">Risk: ${{escapeHtml(c.risk_level)}}</span>
                 </div>
                 <div style="font-size: 0.84rem; font-weight: 700; color: var(--text-main);">
                   Score: ${{scoreLabel}}
@@ -1079,11 +1079,22 @@ def get_web_ui_html() -> str:
         .replace(/'/g, "&#039;");
     }}
 
+    function sanitizeUrl(url) {{
+      if (!url || typeof url !== "string") return "#";
+      const trimmed = url.trim();
+      if (!/^https?:\\/\\//i.test(trimmed)) return "#";
+      return escapeHtml(trimmed);
+    }}
+
     // Check Freshness Action (Calls POST /verify with demo fallback)
     verifyBtn.addEventListener("click", async () => {{
       const text = answerInput.value.trim();
       if (!text) {{
         alert("Please paste or type an answer to check.");
+        return;
+      }}
+      if (text.length > 6000) {{
+        alert("Input text exceeds maximum allowed limit of 6,000 characters (" + text.length.toLocaleString() + " characters). Please shorten the text.");
         return;
       }}
 

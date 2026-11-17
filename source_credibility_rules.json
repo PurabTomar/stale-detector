@@ -1,0 +1,32 @@
+{
+  "rules": {
+    "primary": {
+      "source_type": "Primary",
+      "credibility_score": 95,
+      "tier_label": "Primary Official Domain",
+      "color": "#10B981",
+      "rule_contribution": "+35% confidence boost (direct primary source verification on official entity domain)"
+    },
+    "news": {
+      "source_type": "News",
+      "credibility_score": 80,
+      "tier_label": "Reputable News Editorial",
+      "color": "#06B6D4",
+      "rule_contribution": "+20% confidence boost (established journalistic editorial standards)"
+    },
+    "blog": {
+      "source_type": "Blog",
+      "credibility_score": 50,
+      "tier_label": "Secondary Commentary",
+      "color": "#F59E0B",
+      "rule_contribution": "+5% baseline (informational commentary, secondary corroboration recommended)"
+    },
+    "forum": {
+      "source_type": "Forum",
+      "credibility_score": 30,
+      "tier_label": "User Discussion / Community",
+      "color": "#EF4444",
+      "rule_contribution": "-10% downweight (anecdotal user discussion, unverified)"
+    }
+  }
+}

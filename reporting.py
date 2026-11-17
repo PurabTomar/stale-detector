@@ -60,6 +60,17 @@ def escape_html_text(text: str) -> str:
     return html.escape(str(text or ""), quote=True).replace("$", "&#36;")
 
 
+def safe_href_url(url: str | None) -> str:
+    """Return an escaped, protocol-safe URL for HTML href attributes.
+    Only allows http:// and https:// URLs; returns '#' for any other scheme."""
+    if not url or not isinstance(url, str):
+        return "#"
+    clean = url.strip()
+    if not clean.lower().startswith(("http://", "https://")):
+        return "#"
+    return html.escape(clean, quote=True)
+
+
 def extract_source_domain(url: str) -> str:
     """Return a clean domain name (without 'www.') from a URL."""
     parsed = urlparse((url or "").strip())
@@ -1310,7 +1321,7 @@ def format_report_html(payload: dict) -> str:
             src_items.append(
                 f'<div style="margin: 4px 0; font-size: 13px;">'
                 f'<span style="background: {stance_col}; color: #fff; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">{stance.upper()}</span> '
-                f'<a href="{escape_html_text(u)}" target="_blank" style="color: #4F46E5; text-decoration: none; font-weight: 600;">{t}</a> '
+                f'<a href="{safe_href_url(u)}" target="_blank" style="color: #4F46E5; text-decoration: none; font-weight: 600;">{t}</a> '
                 f'<span style="color: #64748B;">({stype})</span>'
                 f'</div>'
             )

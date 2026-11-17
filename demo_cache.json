@@ -39,10 +39,30 @@
           "reason": "The iPhone 15 Pro Max is three generations behind Apple's 2026 flagship lineup.",
           "why_this_score": "Score 16/100 (outdated band 0-39): Primary Apple product specs and news reports confirm the iPhone 15 Pro Max was superseded starting September 2024.",
           "score_breakdown": {
-            "llm_verdict": {"score": 10, "weight": 0.5, "weighted_points": 5.0, "detail": "Superseded flagship model"},
-            "source_recency": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "Verified against 2026 product pages"},
-            "source_agreement": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 95, "weight": 0.1, "weighted_points": 9.5, "detail": "Official apple.com primary source"},
+            "llm_verdict": {
+              "score": 10,
+              "weight": 0.5,
+              "weighted_points": 5.0,
+              "detail": "Superseded flagship model"
+            },
+            "source_recency": {
+              "score": 95,
+              "weight": 0.2,
+              "weighted_points": 19.0,
+              "detail": "Verified against 2026 product pages"
+            },
+            "source_agreement": {
+              "score": 95,
+              "weight": 0.2,
+              "weighted_points": 19.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 95,
+              "weight": 0.1,
+              "weighted_points": 9.5,
+              "detail": "Official apple.com primary source"
+            },
             "evidence_strength": 95,
             "status_band": "0-39",
             "final_score": 16
@@ -93,10 +113,30 @@
           "reason": "Subsequent iPhone Pro generations upgraded to newer Apple silicon.",
           "why_this_score": "Score 20/100 (outdated band 0-39): Primary Apple technical specifications confirm newer Pro chips.",
           "score_breakdown": {
-            "llm_verdict": {"score": 15, "weight": 0.5, "weighted_points": 7.5, "detail": "Older processor generation"},
-            "source_recency": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "2026 official spec sheets"},
-            "source_agreement": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 95, "weight": 0.1, "weighted_points": 9.5, "detail": "Official apple.com source"},
+            "llm_verdict": {
+              "score": 15,
+              "weight": 0.5,
+              "weighted_points": 7.5,
+              "detail": "Older processor generation"
+            },
+            "source_recency": {
+              "score": 90,
+              "weight": 0.2,
+              "weighted_points": 18.0,
+              "detail": "2026 official spec sheets"
+            },
+            "source_agreement": {
+              "score": 90,
+              "weight": 0.2,
+              "weighted_points": 18.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 95,
+              "weight": 0.1,
+              "weighted_points": 9.5,
+              "detail": "Official apple.com source"
+            },
             "evidence_strength": 92,
             "status_band": "0-39",
             "final_score": 20
@@ -140,10 +180,30 @@
           "reason": "iOS 17 was replaced as the current release two years ago.",
           "why_this_score": "Score 14/100 (outdated band 0-39): Apple Support confirms iOS 26 is the current major release.",
           "score_breakdown": {
-            "llm_verdict": {"score": 10, "weight": 0.5, "weighted_points": 5.0, "detail": "Deprecated OS release"},
-            "source_recency": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "Recent Apple release notes"},
-            "source_agreement": {"score": 100, "weight": 0.2, "weighted_points": 20.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 95, "weight": 0.1, "weighted_points": 9.5, "detail": "support.apple.com primary doc"},
+            "llm_verdict": {
+              "score": 10,
+              "weight": 0.5,
+              "weighted_points": 5.0,
+              "detail": "Deprecated OS release"
+            },
+            "source_recency": {
+              "score": 95,
+              "weight": 0.2,
+              "weighted_points": 19.0,
+              "detail": "Recent Apple release notes"
+            },
+            "source_agreement": {
+              "score": 100,
+              "weight": 0.2,
+              "weighted_points": 20.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 95,
+              "weight": 0.1,
+              "weighted_points": 9.5,
+              "detail": "support.apple.com primary doc"
+            },
             "evidence_strength": 96,
             "status_band": "0-39",
             "final_score": 14
@@ -209,10 +269,30 @@
           "reason": "OpenAI documentation lists GPT-4 Turbo as a legacy generation model.",
           "why_this_score": "Score 18/100 (outdated band 0-39): Primary OpenAI model catalog confirms newer flagship models replaced GPT-4 Turbo.",
           "score_breakdown": {
-            "llm_verdict": {"score": 15, "weight": 0.5, "weighted_points": 7.5, "detail": "Legacy model classification"},
-            "source_recency": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "Updated OpenAI platform docs"},
-            "source_agreement": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "Official openai.com primary source"},
+            "llm_verdict": {
+              "score": 15,
+              "weight": 0.5,
+              "weighted_points": 7.5,
+              "detail": "Legacy model classification"
+            },
+            "source_recency": {
+              "score": 90,
+              "weight": 0.2,
+              "weighted_points": 18.0,
+              "detail": "Updated OpenAI platform docs"
+            },
+            "source_agreement": {
+              "score": 95,
+              "weight": 0.2,
+              "weighted_points": 19.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 100,
+              "weight": 0.1,
+              "weighted_points": 10.0,
+              "detail": "Official openai.com primary source"
+            },
             "evidence_strength": 94,
             "status_band": "0-39",
             "final_score": 18
@@ -256,10 +336,30 @@
           "reason": "Current OpenAI flagship API endpoints cost a fraction of GPT-4 Turbo's $10/$30 tier.",
           "why_this_score": "Score 21/100 (outdated band 0-39): Official OpenAI pricing confirms lower flagship token rates.",
           "score_breakdown": {
-            "llm_verdict": {"score": 18, "weight": 0.5, "weighted_points": 9.0, "detail": "Superseded price tier"},
-            "source_recency": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "Official pricing table"},
-            "source_agreement": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "Official openai.com pricing"},
+            "llm_verdict": {
+              "score": 18,
+              "weight": 0.5,
+              "weighted_points": 9.0,
+              "detail": "Superseded price tier"
+            },
+            "source_recency": {
+              "score": 90,
+              "weight": 0.2,
+              "weighted_points": 18.0,
+              "detail": "Official pricing table"
+            },
+            "source_agreement": {
+              "score": 90,
+              "weight": 0.2,
+              "weighted_points": 18.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 100,
+              "weight": 0.1,
+              "weighted_points": 10.0,
+              "detail": "Official openai.com pricing"
+            },
             "evidence_strength": 92,
             "status_band": "0-39",
             "final_score": 21
@@ -325,10 +425,30 @@
           "reason": "The GST Council's September 2025 slab rationalization replaced the old 5/12/18/28% tiers.",
           "why_this_score": "Score 12/100 (outdated band 0-39): Official GST Council notifications confirm 12% and 28% slabs were retired.",
           "score_breakdown": {
-            "llm_verdict": {"score": 8, "weight": 0.5, "weighted_points": 4.0, "detail": "Superseded tax slabs"},
-            "source_recency": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "Official notification dated Sept 2025"},
-            "source_agreement": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "gstcouncil.gov.in primary source"},
+            "llm_verdict": {
+              "score": 8,
+              "weight": 0.5,
+              "weighted_points": 4.0,
+              "detail": "Superseded tax slabs"
+            },
+            "source_recency": {
+              "score": 90,
+              "weight": 0.2,
+              "weighted_points": 18.0,
+              "detail": "Official notification dated Sept 2025"
+            },
+            "source_agreement": {
+              "score": 95,
+              "weight": 0.2,
+              "weighted_points": 19.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 100,
+              "weight": 0.1,
+              "weighted_points": 10.0,
+              "detail": "gstcouncil.gov.in primary source"
+            },
             "evidence_strength": 93,
             "status_band": "0-39",
             "final_score": 12
@@ -370,10 +490,30 @@
           "reason": "Current CBIC/GST rules still mandate GST registration above ₹20 lakh for service businesses.",
           "why_this_score": "Score 88/100 (fresh band 75-100): Official GST registration guidelines confirm the ₹20 lakh turnover rule remains in effect.",
           "score_breakdown": {
-            "llm_verdict": {"score": 90, "weight": 0.5, "weighted_points": 45.0, "detail": "Matches current regulation"},
-            "source_recency": {"score": 80, "weight": 0.2, "weighted_points": 16.0, "detail": "Current statutory reference"},
-            "source_agreement": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "Official gov.in documentation"},
+            "llm_verdict": {
+              "score": 90,
+              "weight": 0.5,
+              "weighted_points": 45.0,
+              "detail": "Matches current regulation"
+            },
+            "source_recency": {
+              "score": 80,
+              "weight": 0.2,
+              "weighted_points": 16.0,
+              "detail": "Current statutory reference"
+            },
+            "source_agreement": {
+              "score": 90,
+              "weight": 0.2,
+              "weighted_points": 18.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 100,
+              "weight": 0.1,
+              "weighted_points": 10.0,
+              "detail": "Official gov.in documentation"
+            },
             "evidence_strength": 88,
             "status_band": "75-100",
             "final_score": 88
@@ -439,10 +579,30 @@
           "reason": "Yaccarino resigned as X CEO in July 2025.",
           "why_this_score": "Score 15/100 (outdated band 0-39): News reports confirm Linda Yaccarino left X in July 2025.",
           "score_breakdown": {
-            "llm_verdict": {"score": 10, "weight": 0.5, "weighted_points": 5.0, "detail": "Leadership changed"},
-            "source_recency": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "2025 departure reporting"},
-            "source_agreement": {"score": 100, "weight": 0.2, "weighted_points": 20.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 80, "weight": 0.1, "weighted_points": 8.0, "detail": "Major news wire sources"},
+            "llm_verdict": {
+              "score": 10,
+              "weight": 0.5,
+              "weighted_points": 5.0,
+              "detail": "Leadership changed"
+            },
+            "source_recency": {
+              "score": 90,
+              "weight": 0.2,
+              "weighted_points": 18.0,
+              "detail": "2025 departure reporting"
+            },
+            "source_agreement": {
+              "score": 100,
+              "weight": 0.2,
+              "weighted_points": 20.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 80,
+              "weight": 0.1,
+              "weighted_points": 8.0,
+              "detail": "Major news wire sources"
+            },
             "evidence_strength": 92,
             "status_band": "0-39",
             "final_score": 15
@@ -484,10 +644,30 @@
           "reason": "OpenAI leadership pages and recent coverage confirm Sam Altman remains CEO.",
           "why_this_score": "Score 93/100 (fresh band 75-100): Official OpenAI leadership info confirms Sam Altman is CEO.",
           "score_breakdown": {
-            "llm_verdict": {"score": 95, "weight": 0.5, "weighted_points": 47.5, "detail": "Current CEO confirmed"},
-            "source_recency": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "Recent 2026 coverage"},
-            "source_agreement": {"score": 100, "weight": 0.2, "weighted_points": 20.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 95, "weight": 0.1, "weighted_points": 9.5, "detail": "Official openai.com source"},
+            "llm_verdict": {
+              "score": 95,
+              "weight": 0.5,
+              "weighted_points": 47.5,
+              "detail": "Current CEO confirmed"
+            },
+            "source_recency": {
+              "score": 95,
+              "weight": 0.2,
+              "weighted_points": 19.0,
+              "detail": "Recent 2026 coverage"
+            },
+            "source_agreement": {
+              "score": 100,
+              "weight": 0.2,
+              "weighted_points": 20.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 95,
+              "weight": 0.1,
+              "weighted_points": 9.5,
+              "detail": "Official openai.com source"
+            },
             "evidence_strength": 97,
             "status_band": "75-100",
             "final_score": 93
@@ -531,10 +711,30 @@
           "reason": "Citing $86B omits major 2024–2026 primary financing rounds.",
           "why_this_score": "Score 24/100 (outdated band 0-39): OpenAI financing announcements superseded the $86B figure.",
           "score_breakdown": {
-            "llm_verdict": {"score": 20, "weight": 0.5, "weighted_points": 10.0, "detail": "Superseded valuation round"},
-            "source_recency": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "2025-2026 financial filings"},
-            "source_agreement": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "2 of 2 sources agree"},
-            "source_authority": {"score": 85, "weight": 0.1, "weighted_points": 8.5, "detail": "Official announcements & Reuters"},
+            "llm_verdict": {
+              "score": 20,
+              "weight": 0.5,
+              "weighted_points": 10.0,
+              "detail": "Superseded valuation round"
+            },
+            "source_recency": {
+              "score": 90,
+              "weight": 0.2,
+              "weighted_points": 18.0,
+              "detail": "2025-2026 financial filings"
+            },
+            "source_agreement": {
+              "score": 95,
+              "weight": 0.2,
+              "weighted_points": 19.0,
+              "detail": "2 of 2 sources agree"
+            },
+            "source_authority": {
+              "score": 85,
+              "weight": 0.1,
+              "weighted_points": 8.5,
+              "detail": "Official announcements & Reuters"
+            },
             "evidence_strength": 92,
             "status_band": "0-39",
             "final_score": 24
@@ -610,10 +810,30 @@
         "reason": "RBI lowered its policy repo rate to 5.50%.",
         "why_this_score": "Score 15/100 (outdated band 0-39): Reserve Bank of India monetary policy bulletins confirm 5.50%.",
         "score_breakdown": {
-          "llm_verdict": {"score": 10, "weight": 0.5, "weighted_points": 5.0, "detail": "Superseded policy rate"},
-          "source_recency": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "Oct 2026 RBI policy release"},
-          "source_agreement": {"score": 100, "weight": 0.2, "weighted_points": 20.0, "detail": "2 of 2 sources agree"},
-          "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "Official rbi.org.in source"},
+          "llm_verdict": {
+            "score": 10,
+            "weight": 0.5,
+            "weighted_points": 5.0,
+            "detail": "Superseded policy rate"
+          },
+          "source_recency": {
+            "score": 95,
+            "weight": 0.2,
+            "weighted_points": 19.0,
+            "detail": "Oct 2026 RBI policy release"
+          },
+          "source_agreement": {
+            "score": 100,
+            "weight": 0.2,
+            "weighted_points": 20.0,
+            "detail": "2 of 2 sources agree"
+          },
+          "source_authority": {
+            "score": 100,
+            "weight": 0.1,
+            "weighted_points": 10.0,
+            "detail": "Official rbi.org.in source"
+          },
           "evidence_strength": 97,
           "status_band": "0-39",
           "final_score": 15
@@ -654,10 +874,30 @@
         "reason": "Official GST notifications abolished the 12% and 28% slabs.",
         "why_this_score": "Score 12/100 (outdated band 0-39): Primary gstcouncil.gov.in notices confirm the revised slabs.",
         "score_breakdown": {
-          "llm_verdict": {"score": 10, "weight": 0.5, "weighted_points": 5.0, "detail": "Superseded tax slabs"},
-          "source_recency": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "GST 2.0 reform notices"},
-          "source_agreement": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "2 of 2 sources agree"},
-          "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "gstcouncil.gov.in primary source"},
+          "llm_verdict": {
+            "score": 10,
+            "weight": 0.5,
+            "weighted_points": 5.0,
+            "detail": "Superseded tax slabs"
+          },
+          "source_recency": {
+            "score": 90,
+            "weight": 0.2,
+            "weighted_points": 18.0,
+            "detail": "GST 2.0 reform notices"
+          },
+          "source_agreement": {
+            "score": 95,
+            "weight": 0.2,
+            "weighted_points": 19.0,
+            "detail": "2 of 2 sources agree"
+          },
+          "source_authority": {
+            "score": 100,
+            "weight": 0.1,
+            "weighted_points": 10.0,
+            "detail": "gstcouncil.gov.in primary source"
+          },
           "evidence_strength": 93,
           "status_band": "0-39",
           "final_score": 12
@@ -696,10 +936,30 @@
         "reason": "SEC rules keep T+1 settlement active.",
         "why_this_score": "Score 95/100 (fresh band 75-100): SEC primary source confirms T+1 remains the settlement cycle.",
         "score_breakdown": {
-          "llm_verdict": {"score": 95, "weight": 0.5, "weighted_points": 47.5, "detail": "Matches current regulation"},
-          "source_recency": {"score": 85, "weight": 0.2, "weighted_points": 17.0, "detail": "Active SEC rule"},
-          "source_agreement": {"score": 100, "weight": 0.2, "weighted_points": 20.0, "detail": "2 of 2 sources agree"},
-          "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "Official sec.gov source"},
+          "llm_verdict": {
+            "score": 95,
+            "weight": 0.5,
+            "weighted_points": 47.5,
+            "detail": "Matches current regulation"
+          },
+          "source_recency": {
+            "score": 85,
+            "weight": 0.2,
+            "weighted_points": 17.0,
+            "detail": "Active SEC rule"
+          },
+          "source_agreement": {
+            "score": 100,
+            "weight": 0.2,
+            "weighted_points": 20.0,
+            "detail": "2 of 2 sources agree"
+          },
+          "source_authority": {
+            "score": 100,
+            "weight": 0.1,
+            "weighted_points": 10.0,
+            "detail": "Official sec.gov source"
+          },
           "evidence_strength": 95,
           "status_band": "75-100",
           "final_score": 95
@@ -760,10 +1020,30 @@
         "reason": "Four newer minor releases shipped after Python 3.11.",
         "why_this_score": "Score 14/100 (outdated band 0-39): Official python.org downloads confirm 3.15 is current.",
         "score_breakdown": {
-          "llm_verdict": {"score": 10, "weight": 0.5, "weighted_points": 5.0, "detail": "Superseded release"},
-          "source_recency": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "2026 python.org release page"},
-          "source_agreement": {"score": 100, "weight": 0.2, "weighted_points": 20.0, "detail": "2 of 2 sources agree"},
-          "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "Official python.org source"},
+          "llm_verdict": {
+            "score": 10,
+            "weight": 0.5,
+            "weighted_points": 5.0,
+            "detail": "Superseded release"
+          },
+          "source_recency": {
+            "score": 95,
+            "weight": 0.2,
+            "weighted_points": 19.0,
+            "detail": "2026 python.org release page"
+          },
+          "source_agreement": {
+            "score": 100,
+            "weight": 0.2,
+            "weighted_points": 20.0,
+            "detail": "2 of 2 sources agree"
+          },
+          "source_authority": {
+            "score": 100,
+            "weight": 0.1,
+            "weighted_points": 10.0,
+            "detail": "Official python.org source"
+          },
           "evidence_strength": 97,
           "status_band": "0-39",
           "final_score": 14
@@ -804,10 +1084,30 @@
         "reason": "Netflix raised US Standard ad-free monthly pricing to $19.99.",
         "why_this_score": "Score 18/100 (outdated band 0-39): Official Netflix plan help page confirms $19.99.",
         "score_breakdown": {
-          "llm_verdict": {"score": 12, "weight": 0.5, "weighted_points": 6.0, "detail": "Old subscription tier price"},
-          "source_recency": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "Updated Netflix help center"},
-          "source_agreement": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "2 of 2 sources agree"},
-          "source_authority": {"score": 95, "weight": 0.1, "weighted_points": 9.5, "detail": "Official help.netflix.com"},
+          "llm_verdict": {
+            "score": 12,
+            "weight": 0.5,
+            "weighted_points": 6.0,
+            "detail": "Old subscription tier price"
+          },
+          "source_recency": {
+            "score": 90,
+            "weight": 0.2,
+            "weighted_points": 18.0,
+            "detail": "Updated Netflix help center"
+          },
+          "source_agreement": {
+            "score": 95,
+            "weight": 0.2,
+            "weighted_points": 19.0,
+            "detail": "2 of 2 sources agree"
+          },
+          "source_authority": {
+            "score": 95,
+            "weight": 0.1,
+            "weighted_points": 9.5,
+            "detail": "Official help.netflix.com"
+          },
           "evidence_strength": 93,
           "status_band": "0-39",
           "final_score": 18
@@ -846,10 +1146,30 @@
         "reason": "OpenAI pricing continues to list ChatGPT Plus at $20/month.",
         "why_this_score": "Score 94/100 (fresh band 75-100): Official openai.com pricing confirms $20/month.",
         "score_breakdown": {
-          "llm_verdict": {"score": 95, "weight": 0.5, "weighted_points": 47.5, "detail": "Current price confirmed"},
-          "source_recency": {"score": 90, "weight": 0.2, "weighted_points": 18.0, "detail": "2026 pricing page"},
-          "source_agreement": {"score": 100, "weight": 0.2, "weighted_points": 20.0, "detail": "2 of 2 sources agree"},
-          "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "Official openai.com pricing"},
+          "llm_verdict": {
+            "score": 95,
+            "weight": 0.5,
+            "weighted_points": 47.5,
+            "detail": "Current price confirmed"
+          },
+          "source_recency": {
+            "score": 90,
+            "weight": 0.2,
+            "weighted_points": 18.0,
+            "detail": "2026 pricing page"
+          },
+          "source_agreement": {
+            "score": 100,
+            "weight": 0.2,
+            "weighted_points": 20.0,
+            "detail": "2 of 2 sources agree"
+          },
+          "source_authority": {
+            "score": 100,
+            "weight": 0.1,
+            "weighted_points": 10.0,
+            "detail": "Official openai.com pricing"
+          },
           "evidence_strength": 96,
           "status_band": "75-100",
           "final_score": 94
@@ -888,10 +1208,30 @@
         "reason": "Official European Parliament / Commission rules confirm April 28, 2026 enforcement.",
         "why_this_score": "Score 95/100 (fresh band 75-100): Official europa.eu records confirm April 28, 2026 effective date.",
         "score_breakdown": {
-          "llm_verdict": {"score": 95, "weight": 0.5, "weighted_points": 47.5, "detail": "Confirmed effective date"},
-          "source_recency": {"score": 95, "weight": 0.2, "weighted_points": 19.0, "detail": "2026 enforcement release"},
-          "source_agreement": {"score": 100, "weight": 0.2, "weighted_points": 20.0, "detail": "2 of 2 sources agree"},
-          "source_authority": {"score": 100, "weight": 0.1, "weighted_points": 10.0, "detail": "Official europa.eu source"},
+          "llm_verdict": {
+            "score": 95,
+            "weight": 0.5,
+            "weighted_points": 47.5,
+            "detail": "Confirmed effective date"
+          },
+          "source_recency": {
+            "score": 95,
+            "weight": 0.2,
+            "weighted_points": 19.0,
+            "detail": "2026 enforcement release"
+          },
+          "source_agreement": {
+            "score": 100,
+            "weight": 0.2,
+            "weighted_points": 20.0,
+            "detail": "2 of 2 sources agree"
+          },
+          "source_authority": {
+            "score": 100,
+            "weight": 0.1,
+            "weighted_points": 10.0,
+            "detail": "Official europa.eu source"
+          },
           "evidence_strength": 97,
           "status_band": "75-100",
           "final_score": 95

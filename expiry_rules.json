@@ -1,0 +1,78 @@
+{
+  "rules": {
+    "price": {
+      "volatility_class": "price",
+      "typical_cycle": "3 months",
+      "days_until_review": 90,
+      "description": "Hardware retail pricing, subscription tiers, API token prices",
+      "example": "iPhone launch pricing, OpenAI token costs"
+    },
+    "api_version": {
+      "volatility_class": "api_version",
+      "typical_cycle": "6 months",
+      "days_until_review": 180,
+      "description": "SDK versions, model release versions, deprecation schedules",
+      "example": "Python versions, Claude/GPT API updates"
+    },
+    "version": {
+      "volatility_class": "version",
+      "typical_cycle": "6 months",
+      "days_until_review": 180,
+      "description": "Consumer hardware models, operating systems, software editions",
+      "example": "iOS releases, flagship phone generations"
+    },
+    "leadership": {
+      "volatility_class": "leadership",
+      "typical_cycle": "until next election cycle or 12 months",
+      "days_until_review": 365,
+      "description": "Heads of state, political cabinet posts, CEOs, board chairs",
+      "example": "Prime Minister of India, Twitter CEO"
+    },
+    "company": {
+      "volatility_class": "company",
+      "typical_cycle": "6 months",
+      "days_until_review": 180,
+      "description": "Corporate valuations, mergers, acquisitions, leadership changes",
+      "example": "OpenAI valuation, startup funding rounds"
+    },
+    "regulation": {
+      "volatility_class": "regulation",
+      "typical_cycle": "12 months",
+      "days_until_review": 365,
+      "description": "Statutory tax slabs, fiscal thresholds, compliance mandates",
+      "example": "India GST slabs, UK VAT threshold"
+    },
+    "statistic": {
+      "volatility_class": "statistic",
+      "typical_cycle": "12 months",
+      "days_until_review": 365,
+      "description": "Demographic surveys, annual economic GDP figures, census counts",
+      "example": "National population counts, annual export totals"
+    },
+    "company_announcement": {
+      "volatility_class": "company_announcement",
+      "typical_cycle": "3 months",
+      "days_until_review": 90,
+      "description": "Product roadmaps, beta programs, event dates",
+      "example": "Keynote release windows, preview software features"
+    },
+    "stable_fact": {
+      "volatility_class": "stable_fact",
+      "typical_cycle": "none",
+      "days_until_review": null,
+      "description": "Historical dates, geographical landmarks, physical constants",
+      "example": "Independence Day of India, speed of light"
+    },
+    "other": {
+      "volatility_class": "other",
+      "typical_cycle": "6 months",
+      "days_until_review": 180,
+      "description": "General verifiable statements without specific category match",
+      "example": "General industry facts"
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "disclaimer": "Heuristic estimate based on category volatility cycles; not a deterministic prediction of real-world changes."
+  }
+}

@@ -1,0 +1,48 @@
+name: Stale-Check Document Audit (Manual)
+
+# OPTIONAL manual workflow to audit markdown documentation for stale facts.
+# Triggered on-demand via workflow_dispatch.
+# Uses repository secrets: GEMINI_API_KEY, TAVILY_API_KEY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_path:
+        description: "Path to Markdown file to audit (e.g. README.md or docs/guide.md)"
+        required: true
+        default: "README.md"
+      max_claims:
+        description: "Maximum claims to audit from the document"
+        required: true
+        default: "8"
+      format:
+        description: "Output format: 'md' (Markdown table) or 'json'"
+        required: true
+        default: "md"
+
+jobs:
+  audit-document:
+    name: Audit Document Freshness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Stale-Check CLI
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          USE_BIFROST: "false"
+        run: |
+          python -m stale_check "${{ github.event.inputs.file_path }}" --max-claims "${{ github.event.inputs.max_claims }}" --format "${{ github.event.inputs.format }}"

@@ -129,6 +129,28 @@ flowchart TD
 
 ---
 
+## Doc Checker CLI & GitHub Actions Integration
+
+Stale-Answer Detector includes a standalone documentation linter and CI integration packaged under `stale_check/`.
+
+### 1. Command-Line Interface (`stale_check`)
+Audit any Markdown, guide, or documentation file directly from your terminal:
+```bash
+# Audit a markdown document with human-readable Markdown table report
+python -m stale_check README.md
+
+# Specify custom claims ceiling and JSON output
+python -m stale_check docs/api.md --max-claims 8 --format json
+```
+- **Line Number Mapping**: Each detected fact is mapped directly to its 1-based source line number (`L42`).
+- **Quota & Settings Aware**: Reads the same environment variables, respects `MAX_CLAIMS_PER_AUDIT`, and utilizes the 6h local SQLite cache.
+- **CI Exit Codes**: Returns `0` if all factual claims are fresh/accurate, or `1` if outdated or contradicted claims are found.
+
+### 2. GitHub Actions Workflow (`stale-check.yml`)
+An optional manual CI workflow ([`.github/workflows/stale-check.yml`](.github/workflows/stale-check.yml)) is included. Trigger it via **Actions &rarr; Stale-Check Document Audit &rarr; Run workflow** with your target file path. It securely uses your repository secrets (`GEMINI_API_KEY`, `TAVILY_API_KEY`).
+
+---
+
 ## How Bifrost Is Used
 
 [`llm.py`](llm.py) acts as a gateway-aware OpenAI SDK client supporting **Bifrost AI Gateway mode** (`USE_BIFROST=true`, default) as well as **Direct Gemini mode** (`USE_BIFROST=false`) for cloud deployments:
@@ -287,15 +309,15 @@ Optional CLI flags: `--no-cache` (bypass 6h Tavily SQLite cache), `--dual-judge`
 
 | Metric | Value | Notes |
 | :--- | :--- | :--- |
-| **Accuracy** | *Pending live run* | Exact match (`predicted_status == expected_status`) across 20 claims |
+| **Accuracy** | *Pending live run* | Exact match (`predicted_status == expected_status`) across benchmark claims |
 | **Precision (stale)** | *Pending live run* | `TP / (TP + FP)` where `outdated` = positive class |
 | **Recall (stale)** | *Pending live run* | `TP / (TP + FN)` where `outdated` = positive class |
 | **F1 (stale)** | *Pending live run* | Harmonic mean of stale precision & recall |
 | **Avg Latency / Claim** | *Pending live run* | Mean per-claim extract + Tavily + judge duration (ms) |
-| **Total Tokens Used** | *Pending live run* | Sum of prompt + completion tokens across 20 claims |
+| **Total Tokens Used** | *Pending live run* | Sum of prompt + completion tokens across benchmark claims |
 | **Total Tavily Credits** | *Pending live run* | Sum of Tavily Search + Extract credits (`0` on 6h cache hit) |
 
-### Labelled Dataset (`benchmark/dataset.json` — 20 Claims)
+### Labelled Dataset (`benchmark/dataset.json` — 30 Claims)
 
 | # | Mark | Category | Claim | Expected | Predicted | Reference Note |
 | :---: | :---: | :--- | :--- | :--- | :--- | :--- |
