@@ -1442,6 +1442,40 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   }
 }
 
+@media (max-width: 480px) {
+  .sad-score-card {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+    padding: 1rem !important;
+    gap: 0.9rem !important;
+  }
+  .sad-score-meta {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .sad-model-row {
+    justify-content: center !important;
+  }
+  .sad-showdown-grid,
+  .sad-discovery-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .sad-dock {
+    max-width: calc(100vw - 16px) !important;
+    overflow-x: auto !important;
+  }
+  .sad-v-claim-txt {
+    min-width: 0 !important;
+  }
+  .sad-claim-card,
+  .sad-annotated-card,
+  .sad-diff-card {
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+  }
+}
+
 @media (max-width: 390px) {
   .sad-hero-title {
     font-size: 1.35rem !important;
@@ -2854,5 +2888,772 @@ body:has(input:focus, textarea:focus) .sad-dock,
   .sad-pipe-connector {
     margin: 0 1px !important;
     font-size: 0.62rem !important;
+  }
+}
+
+/* ==========================================================================
+   Check Freshness Honest Pipeline Animations (A–G)
+   GPU-composited (transform / opacity / SVG stroke-dashoffset), < 600ms
+   non-loop durations, reserved space (zero CLS), reduced-motion fallback.
+   ========================================================================== */
+
+/* --- A. Action Button Live Status (Loading, Success Pulse, Error Shake) --- */
+@keyframes sadShimmerSweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(110%); }
+}
+
+@keyframes sadSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes sadGreenCheckPulse {
+  0% { opacity: 0; transform: scale(0.94); }
+  55% { opacity: 1; transform: scale(1.025); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes sadErrorShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); }
+  45% { transform: translateX(4px); }
+  70% { transform: translateX(-3px); }
+  88% { transform: translateX(2px); }
+}
+
+@keyframes sadCheckDraw {
+  0% { stroke-dashoffset: 24; opacity: 0.2; }
+  100% { stroke-dashoffset: 0; opacity: 1; }
+}
+
+.sad-live-btn-status {
+  position: relative;
+  overflow: hidden;
+  contain: layout paint;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  min-height: 40px;
+  padding: 0.5rem 1rem;
+  border-radius: 12px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  margin-top: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.sad-btn-loading {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.92) 0%, rgba(124, 58, 237, 0.92) 55%, rgba(99, 102, 241, 0.92) 100%);
+  color: #FFFFFF;
+  border: 1px solid rgba(165, 180, 252, 0.45);
+  box-shadow: 0 6px 20px -4px rgba(99, 102, 241, 0.45);
+}
+
+.sad-btn-loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.24) 50%, transparent 100%);
+  transform: translateX(-110%);
+  animation: sadShimmerSweep 1.35s linear infinite;
+  pointer-events: none;
+}
+
+.sad-btn-spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #FFFFFF;
+  display: inline-block;
+  flex-shrink: 0;
+  animation: sadSpin 0.75s linear infinite;
+}
+
+.sad-btn-status-label {
+  position: relative;
+  z-index: 1;
+}
+
+.sad-btn-status-pct {
+  position: relative;
+  z-index: 1;
+  font-size: 0.76rem;
+  opacity: 0.88;
+  font-variant-numeric: tabular-nums;
+}
+
+.sad-btn-success {
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(52, 211, 153, 0.55);
+  color: #34D399;
+  animation: sadGreenCheckPulse 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sad-inline-check-svg .sad-check-path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 0;
+  animation: sadCheckDraw 360ms ease-out both;
+}
+
+.sad-btn-error {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1.5px solid rgba(248, 113, 113, 0.65);
+  color: #FCA5A5;
+  animation: sadErrorShake 420ms ease-in-out both;
+}
+
+.sad-btn-err-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid #EF4444;
+  color: #FCA5A5;
+  font-size: 0.74rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.sad-btn-stopped {
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: #FCD34D;
+}
+
+.sad-btn-stop-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: #F59E0B;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Reduced-motion static progress bar (hidden by default; shown in prefers-reduced-motion) */
+.sad-reduced-progress {
+  display: none;
+  margin: 0.35rem 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.sad-reduced-progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 0.3rem;
+}
+
+.sad-reduced-progress-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.22);
+  overflow: hidden;
+}
+
+.sad-reduced-progress-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: #6366F1;
+  border-radius: 9999px;
+}
+
+/* --- B. Scan Effect while Detecting --- */
+@keyframes sadScanSweepY {
+  0% { transform: translateY(-20%); opacity: 0.25; }
+  50% { opacity: 0.85; }
+  100% { transform: translateY(340%); opacity: 0.25; }
+}
+
+@keyframes sadBorderGlowPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.sad-scan-box {
+  position: relative;
+  overflow: hidden;
+  contain: layout paint;
+  min-height: 92px;
+  border-radius: 14px;
+  padding: 0.75rem 0.95rem;
+  margin: 0.5rem 0 0.75rem 0;
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(129, 140, 248, 0.55);
+  box-shadow: 0 0 22px rgba(99, 102, 241, 0.22);
+}
+
+.sad-scan-box::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(129, 140, 248, 0.78);
+  pointer-events: none;
+  animation: sadBorderGlowPulse 1.5s ease-in-out infinite;
+}
+
+.sad-scan-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #A5B4FC;
+  margin-bottom: 0.4rem;
+}
+
+.sad-scan-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #818CF8;
+  animation: sadBorderGlowPulse 1.2s ease-in-out infinite;
+}
+
+.sad-scan-text-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  background: rgba(30, 41, 59, 0.45);
+}
+
+.sad-scan-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 28px;
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0) 0%, rgba(129, 140, 248, 0.38) 50%, rgba(56, 189, 248, 0) 100%);
+  transform: translateY(-20%);
+  animation: sadScanSweepY 1.65s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.sad-scan-text {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.48;
+  color: #CBD5E1;
+}
+
+/* Input Studio border glow while detecting */
+.sad-studio-scanning-marker ~ div,
+.sad-studio-scanning-box {
+  border-color: rgba(129, 140, 248, 0.72) !important;
+  box-shadow: 0 0 24px rgba(99, 102, 241, 0.25) !important;
+}
+
+/* --- C. Claim Discovery Pop-In Chips & Time-Sensitivity Bar --- */
+@keyframes sadChipPopIn {
+  0% { opacity: 0; transform: scale(0.92) translateY(6px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes sadBarFillScale {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(var(--sad-bar-scale, 0.5)); }
+}
+
+.sad-discovery-wrap {
+  min-height: 76px;
+  border-radius: 14px;
+  padding: 0.75rem 0.9rem;
+  margin: 0.5rem 0 0.75rem 0;
+  background: rgba(15, 23, 42, 0.52);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.sad-discovery-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #E2E8F0;
+  margin-bottom: 0.55rem;
+}
+
+.sad-disc-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94A3B8;
+}
+
+.sad-discovery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.5rem;
+}
+
+.sad-discovery-chip {
+  background: rgba(30, 41, 59, 0.68);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  padding: 0.45rem 0.65rem;
+  animation: sadChipPopIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sad-disc-top {
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+  font-size: 0.78rem;
+  color: #F1F5F9;
+  margin-bottom: 0.35rem;
+}
+
+.sad-disc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.sad-disc-dot-amber {
+  background: #F59E0B;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.65);
+}
+
+.sad-disc-dot-grey {
+  background: #94A3B8;
+}
+
+.sad-disc-cat {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+
+.sad-disc-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sad-disc-score {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #94A3B8;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.sad-disc-bar-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+}
+
+.sad-disc-bar-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 9999px;
+  transform-origin: left center;
+  transform: scaleX(var(--sad-bar-scale, 0.5));
+  animation: sadBarFillScale 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sad-disc-bar-flagged {
+  background: linear-gradient(90deg, #F59E0B 0%, #FB923C 100%);
+}
+
+.sad-disc-bar-stable {
+  background: #64748B;
+}
+
+/* --- D. Stepper Enhancements (Draw-on check, L-to-R connector fill, error shake) --- */
+.sad-pipe-check-svg .sad-pipe-check-path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 0;
+  animation: sadCheckDraw 360ms ease-out both;
+}
+
+.sad-pipe-step.pipe-error {
+  animation: sadErrorShake 420ms ease-in-out both !important;
+}
+
+@keyframes sadConnectorFill {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+.sad-pipe-connector-track {
+  position: relative;
+  display: inline-block;
+  width: 18px;
+  height: 2px;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.28);
+  overflow: hidden;
+  vertical-align: middle;
+  margin: 0 3px;
+}
+
+.sad-pipe-connector-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: #10B981;
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+.sad-pipe-connector-track.pipe-connector-done .sad-pipe-connector-fill {
+  transform: scaleX(1);
+  animation: sadConnectorFill 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- E. Verify Phase Skeleton Shimmer, Mini Substeps & Live Source Chips --- */
+.sad-verify-board {
+  min-height: 120px;
+  border-radius: 14px;
+  padding: 0.8rem 0.95rem;
+  margin: 0.5rem 0 0.75rem 0;
+  background: rgba(15, 23, 42, 0.56);
+  border: 1px solid rgba(129, 140, 248, 0.3);
+}
+
+.sad-verify-board-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.sad-v-progress-txt {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #E2E8F0;
+}
+
+.sad-sources-read-pill {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #38BDF8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  border-radius: 9999px;
+  padding: 0.16rem 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sad-verify-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sad-verify-skel-card {
+  position: relative;
+  overflow: hidden;
+  contain: layout paint;
+  min-height: 64px;
+  border-radius: 11px;
+  padding: 0.55rem 0.75rem;
+  background: rgba(30, 41, 59, 0.62);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.sad-verify-skel-card.sad-v-running::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(129, 140, 248, 0.12) 50%, transparent 100%);
+  transform: translateX(-110%);
+  animation: sadShimmerSweep 1.45s linear infinite;
+  pointer-events: none;
+}
+
+.sad-verify-skel-card.sad-v-done {
+  border-color: rgba(52, 211, 153, 0.38);
+}
+
+.sad-verify-skel-card.sad-v-error {
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.sad-v-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.35rem;
+}
+
+.sad-v-claim-txt {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #F1F5F9;
+  flex: 1;
+  min-width: 180px;
+}
+
+.sad-mini-substeps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.sad-mini-substep {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.12rem 0.48rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #94A3B8;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.sad-mini-substep.sub-running {
+  color: #FFFFFF;
+  background: rgba(99, 102, 241, 0.35);
+  border-color: #818CF8;
+}
+
+.sad-mini-substep.sub-done {
+  color: #34D399;
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(52, 211, 153, 0.45);
+}
+
+.sad-mini-substep.sub-error {
+  color: #FCA5A5;
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(248, 113, 113, 0.55);
+}
+
+.sad-v-skel-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0.25rem 0;
+}
+
+.sad-skel-bar {
+  display: block;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.sad-skel-w1 { width: 78%; }
+.sad-skel-w2 { width: 52%; }
+
+.sad-v-done-pill {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #34D399;
+}
+
+.sad-v-err-pill {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #FCA5A5;
+}
+
+.sad-live-src-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  margin-top: 0.35rem;
+}
+
+.sad-live-src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #CBD5E1;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 9999px;
+  padding: 0.12rem 0.5rem;
+  animation: sadChipPopIn 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sad-live-src-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #93C5FD;
+}
+
+/* --- F. Result Reveal (60ms Stagger, SVG Ring Draw, Pill Pop, Stale Wipe, Fresh Glow) --- */
+@keyframes sadFadeUpReveal {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sadRingStrokeDraw {
+  0% { stroke-dashoffset: var(--sad-ring-circ, 276.46); }
+  100% { stroke-dashoffset: var(--sad-ring-target, 0); }
+}
+
+@keyframes sadVerdictPillPop {
+  0% { opacity: 0; transform: scale(0.84); }
+  65% { opacity: 1; transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes sadStaleWipe {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+@keyframes sadFreshGlowOnce {
+  0% { opacity: 0; transform: scale(0.98); }
+  45% { opacity: 0.85; transform: scale(1.01); }
+  100% { opacity: 0; transform: scale(1.02); }
+}
+
+.sad-reveal-stagger {
+  animation: sadFadeUpReveal 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--sad-stagger-i, 0) * 60ms);
+}
+
+.sad-ring-svg-wrap {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sad-ring-svg {
+  position: absolute;
+  inset: 0;
+  width: 104px;
+  height: 104px;
+  transform: rotate(-90deg);
+}
+
+.sad-ring-track-circle {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.22);
+  stroke-width: 8;
+}
+
+.sad-ring-progress-circle {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: var(--sad-ring-circ, 276.46);
+  stroke-dashoffset: var(--sad-ring-target, 0);
+  animation: sadRingStrokeDraw 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sad-ring-svg-wrap .sad-ring-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.sad-pill-pop {
+  animation: sadVerdictPillPop 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Annotated stale wipe (Incorrect / Outdated) & Fresh gentle glow */
+.sad-hl-link.sad-hl-outdated,
+.sad-hl-link.sad-hl-incorrect {
+  position: relative;
+  display: inline;
+  isolation: isolate;
+}
+
+.sad-hl-link.sad-hl-outdated::before,
+.sad-hl-link.sad-hl-incorrect::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  z-index: -1;
+  transform-origin: left center;
+  animation: sadStaleWipe 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  pointer-events: none;
+}
+
+.sad-hl-link.sad-hl-outdated::before {
+  background: rgba(249, 115, 22, 0.22);
+}
+
+.sad-hl-link.sad-hl-incorrect::before {
+  background: rgba(239, 68, 68, 0.24);
+}
+
+.sad-claim-card.status-fresh {
+  position: relative;
+}
+
+.sad-claim-card.status-fresh::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1.5px solid rgba(52, 211, 153, 0.65);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  animation: sadFreshGlowOnce 520ms ease-out 120ms both;
+}
+
+/* --- G. Strict prefers-reduced-motion Support --- */
+@media (prefers-reduced-motion: reduce) {
+  .sad-btn-loading::after,
+  .sad-btn-spinner,
+  .sad-scan-beam,
+  .sad-scan-box::before,
+  .sad-scan-dot,
+  .sad-verify-skel-card.sad-v-running::after,
+  .sad-claim-card.status-fresh::after {
+    animation: none !important;
+    display: none !important;
+  }
+
+  .sad-live-btn-status,
+  .sad-inline-check-svg .sad-check-path,
+  .sad-discovery-chip,
+  .sad-disc-bar-fill,
+  .sad-pipe-step,
+  .sad-pipe-check-svg .sad-pipe-check-path,
+  .sad-pipe-connector-fill,
+  .sad-live-src-chip,
+  .sad-reveal-stagger,
+  .sad-ring-progress-circle,
+  .sad-pill-pop,
+  .sad-hl-link.sad-hl-outdated::before,
+  .sad-hl-link.sad-hl-incorrect::before {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .sad-reduced-progress {
+    display: block !important;
   }
 }

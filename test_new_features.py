@@ -21,6 +21,7 @@ from showdown_data import (
     get_saved_showdowns,
 )
 from tab_components import (
+    get_builtin_examples_from_cache,
     init_history_if_needed,
     load_evidence_counts,
     record_audit_to_history,
@@ -126,20 +127,53 @@ class TestShareableSummary(unittest.TestCase):
 class TestModelShowdown(unittest.TestCase):
     """Test Model Showdown datasets and winner logic."""
 
-    def test_saved_showdowns_exist(self):
-        showdowns = get_saved_showdowns()
-        self.assertIn("iphone", showdowns)
-        self.assertIn("gpt4_pricing", showdowns)
-        self.assertIn("india_pm", showdowns)
-        self.assertGreaterEqual(len(showdowns), 3)
+    def test_saved_showdowns_empty_without_real_recorded_file(self):
+        with patch("showdown_data.SHOWDOWN_RESULTS_FILE") as mock_path:
+            mock_path.is_file.return_value = False
+            showdowns = get_saved_showdowns()
+            self.assertEqual(showdowns, {})
+            self.assertIsNone(get_saved_showdown("iphone"))
 
-    def test_single_showdown_fields(self):
-        sd = get_saved_showdown("iphone")
-        self.assertIsNotNone(sd)
-        self.assertIn("question", sd)
-        self.assertIn("models", sd)
-        self.assertIn("winner", sd)
-        self.assertIn("gemini-2.5-flash", sd["models"])
+    def test_saved_showdowns_loads_real_recorded_file(self):
+        import tempfile
+        from pathlib import Path
+
+        recorded = {
+            "recorded_at": "2026-11-18T08:00:00Z",
+            "recorded_date": "Nov 18, 2026",
+            "routing_mode": "Direct Gemini API",
+            "models": ["gemini-3.1-flash-lite", "gemini-3.5-flash"],
+            "showdowns": {
+                "real_q1": {
+                    "id": "real_q1",
+                    "title": "Test recorded showdown",
+                    "question": "Who is the current Prime Minister of India?",
+                    "category": "leadership",
+                    "recorded_at": "2026-11-18T08:00:00Z",
+                    "recorded_date": "Nov 18, 2026",
+                    "routing_mode": "Direct Gemini API",
+                    "models": {
+                        "gemini-3.1-flash-lite": {
+                            "display_name": "gemini-3.1-flash-lite",
+                            "raw_response": "Narendra Modi is the Prime Minister of India.",
+                            "score": 95,
+                            "status_counts": {"fresh": 1, "outdated": 0, "incorrect": 0, "uncertain": 0},
+                            "latency_ms": 412,
+                        }
+                    },
+                    "winner": "gemini-3.1-flash-lite",
+                }
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir) / "showdown_results.json"
+            p.write_text(json.dumps(recorded), encoding="utf-8")
+            with patch("showdown_data.SHOWDOWN_RESULTS_FILE", p):
+                sd = get_saved_showdown("real_q1")
+                self.assertIsNotNone(sd)
+                self.assertEqual(sd["question"], "Who is the current Prime Minister of India?")
+                self.assertIn("gemini-3.1-flash-lite", sd["models"])
+                self.assertEqual(sd["winner"], "gemini-3.1-flash-lite")
 
     def test_evaluate_showdown_winner_picks_highest_freshness(self):
         models = {
@@ -158,6 +192,8 @@ class TestModelShowdown(unittest.TestCase):
         self.assertEqual(eval_res["winner"], "model_fresh")
         self.assertEqual(eval_res["winner_score"], 95)
         self.assertIn("+70 points", eval_res["reason"])
+        self.assertNotIn("**", eval_res["reason"])
+        self.assertNotIn("**", eval_res["reason_html"])
 
     def test_small_sample_size_disclaimer_present(self):
         self.assertIn("Small sample size disclaimer", SAMPLE_SIZE_DISCLAIMER)
@@ -170,15 +206,17 @@ class TestSessionHistory(unittest.TestCase):
     def setUp(self):
         self.mock_session_state = {}
 
-    def test_init_history_seeding(self):
+    def test_init_history_starts_empty_and_examples_are_separate(self):
         with patch("streamlit.session_state", self.mock_session_state):
             init_history_if_needed()
             self.assertIn("audit_history", self.mock_session_state)
-            self.assertGreater(len(self.mock_session_state["audit_history"]), 0)
-            first_entry = self.mock_session_state["audit_history"][0]
-            self.assertIn("score", first_entry)
-            self.assertIn("status_counts", first_entry)
-            self.assertIn("Saved", first_entry["source_label"])
+            self.assertEqual(self.mock_session_state["audit_history"], [])
+
+        examples = get_builtin_examples_from_cache()
+        self.assertGreater(len(examples), 0)
+        for ex in examples:
+            self.assertTrue(str(ex.get("input_text") or "").strip(), "Example input_text must not be empty")
+            self.assertIn("Saved", ex.get("source_label", ""))
 
     def test_record_audit_to_history(self):
         with patch("streamlit.session_state", self.mock_session_state):

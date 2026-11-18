@@ -221,13 +221,16 @@ class TestExplainableScoring(unittest.TestCase):
         self.assertIn(result["confidence"], ("high", "medium", "low"))
         self.assertIn("score_breakdown", result)
         self.assertIn("why_this_score", result)
-        self.assertEqual(len(result["sources"]), 3)
+        self.assertEqual(len(result["sources"]), 2)
+        self.assertEqual(result["sources"][0]["domain"], "openai.com")
+        self.assertEqual(result["sources"][0]["page_count"], 2)
+        self.assertEqual(result["sources"][0]["extra_pages"], 1)
         self.assertEqual(result["model"], "gpt-4o-mini")
         self.assertEqual(result["extracted_url"], "https://openai.com/api/pricing")
         self.assertAlmostEqual(result["tavily_credits_used"], 4.2)
 
     def test_verify_claim_error_paths_include_explainable_fields(self):
-        # 1. Tavily failure returns 'unverifiable' (score=None) + low confidence + risk_level.
+        # 1. Tavily failure returns 'verification_failed' (score=None) + low confidence + risk_level.
         failing_tavily = MagicMock()
         failing_tavily.search.side_effect = RuntimeError("Network timeout")
         res_tavily_err = verifier.verify_claim(
@@ -235,7 +238,7 @@ class TestExplainableScoring(unittest.TestCase):
             tavily_client=failing_tavily,
             use_cache=False,
         )
-        self.assertEqual(res_tavily_err["status"], "unverifiable")
+        self.assertEqual(res_tavily_err["status"], "verification_failed")
         self.assertIsNone(res_tavily_err["score"])
         self.assertEqual(res_tavily_err["confidence"], "low")
         self.assertEqual(res_tavily_err["risk_level"], "critical")
@@ -247,7 +250,7 @@ class TestExplainableScoring(unittest.TestCase):
         self.assertIn("stale_since", res_tavily_err)
         self.assertEqual(res_tavily_err["tavily_credits_used"], 0.0)
 
-        # 2. Invalid JSON from LLM still scores source signals and attaches top 3 URLs.
+        # 2. Invalid JSON from LLM returns 'verification_failed' with score=None and attaches deduped sources.
         ok_tavily = MagicMock()
         ok_tavily.search.return_value = {
             "results": [
@@ -260,9 +263,8 @@ class TestExplainableScoring(unittest.TestCase):
                 tavily_client=ok_tavily,
                 use_cache=False,
             )
-        self.assertEqual(res_llm_err["status"], "uncertain")
-        self.assertGreaterEqual(res_llm_err["score"], 40)
-        self.assertLessEqual(res_llm_err["score"], 74)
+        self.assertEqual(res_llm_err["status"], "verification_failed")
+        self.assertIsNone(res_llm_err["score"])
         self.assertEqual(res_llm_err["confidence"], "low")
         self.assertEqual(res_llm_err["risk_level"], "critical")
         self.assertEqual(len(res_llm_err["sources"]), 1)
@@ -345,12 +347,12 @@ class TestExplainableScoring(unittest.TestCase):
             tavily_client=bad_key_client,
             use_cache=False,
         )
-        self.assertEqual(res_bad_key["status"], "unverifiable")
+        self.assertEqual(res_bad_key["status"], "verification_failed")
         self.assertIsNone(res_bad_key["score"])
         self.assertIn("TAVILY_API_KEY", res_bad_key["error"])
         self.assertNotIn("Traceback", res_bad_key["error"])
 
-        # 2. Exhausted Tavily limit returns friendly quota/limit message + unverifiable status
+        # 2. Exhausted Tavily limit returns friendly quota/limit message + verification_failed status
         limit_client = MagicMock()
         limit_client.search.side_effect = UsageLimitExceededError("Monthly credit limit exceeded")
         with patch("verifier.time.sleep"):
@@ -359,7 +361,7 @@ class TestExplainableScoring(unittest.TestCase):
                 tavily_client=limit_client,
                 use_cache=False,
             )
-        self.assertEqual(res_limit["status"], "unverifiable")
+        self.assertEqual(res_limit["status"], "verification_failed")
         self.assertIsNone(res_limit["score"])
         self.assertIn("429", res_limit["error"])
         self.assertIn("limit", res_limit["error"].lower())

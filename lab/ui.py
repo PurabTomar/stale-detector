@@ -1094,7 +1094,10 @@ def _render_bifrost_visibility_panel(runs: list[dict[str, Any]]) -> None:
         with bv3:
             _render_kpi_card("Token Mismatches", f"{vis['token_mismatches_count']:,}", vis['status'])
         with bv4:
-            _render_kpi_card("Telemetry Health", "100%", "Full trace observability")
+            tot_runs_vis = int(vis.get("total_runs") or 0)
+            tagged_vis = int(vis.get("tagged_runs") or 0)
+            cov_str = f"{(tagged_vis / tot_runs_vis) * 100:.0f}%" if tot_runs_vis > 0 else "—"
+            _render_kpi_card("Trace Coverage", cov_str, f"{tagged_vis}/{tot_runs_vis} runs tagged")
 
         st.info(
             f"**Audit & Integrity Notice:** {vis['audit_note']}\n\n"

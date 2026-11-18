@@ -28,8 +28,58 @@ VALID_CATEGORIES = (
     "regulation",
     "company",
     "statistic",
+    "leadership",
+    "geography",
+    "records",
     "other",
 )
+
+# Human-readable labels for categories (Requirement 7).
+CATEGORY_DISPLAY_LABELS = {
+    "price": "price",
+    "version": "version",
+    "regulation": "regulation",
+    "company": "company",
+    "statistic": "statistic",
+    "leadership": "leadership / office holder",
+    "geography": "capital / geography",
+    "records": "records / latest",
+    "other": "other",
+}
+
+_CATEGORY_ALIASES = {
+    "leadership / office holder": "leadership",
+    "leadership/office holder": "leadership",
+    "office holder": "leadership",
+    "office_holder": "leadership",
+    "office-holder": "leadership",
+    "executive": "leadership",
+    "politics": "leadership",
+    "capital / geography": "geography",
+    "capital/geography": "geography",
+    "capital": "geography",
+    "location": "geography",
+    "records / latest": "records",
+    "records/latest": "records",
+    "record": "records",
+    "latest": "records",
+}
+
+
+def normalize_category(raw_category: str | None) -> str:
+    """Normalize a category string or alias into one of VALID_CATEGORIES."""
+    cleaned = " ".join(str(raw_category or "other").strip().lower().split())
+    if cleaned in VALID_CATEGORIES:
+        return cleaned
+    if cleaned in _CATEGORY_ALIASES:
+        return _CATEGORY_ALIASES[cleaned]
+    return "other"
+
+
+def format_category_label(category: str | None) -> str:
+    """Return the user-facing display label for a normalized category."""
+    norm = normalize_category(category)
+    return CATEGORY_DISPLAY_LABELS.get(norm, norm)
 
 # Volatility classes for Freshness Detection (PS06 Requirement 1).
 VALID_VOLATILITY_CLASSES = (
@@ -74,12 +124,17 @@ Each element in the JSON array must be an object with these exact keys:
 - "span": The exact verbatim substring copied character-for-character from the input
   text that states this claim (preserve exact casing, numbers, punctuation, version
   dots, and currency symbols so it can be located with a string match).
-- "category": Must be one of: "price", "version", "regulation", "company", "statistic", "other".
+- "category": Must be one of: "price", "version", "regulation", "company", "statistic",
+  "leadership" (leadership / office holder: prime minister, president, CEO, chief minister,
+  cabinet minister, governor, chairman), "geography" (capital / geography: capital cities,
+  borders, geographic locations), "records" (records / latest: world records, current
+  champions, latest award/event winners), or "other".
   Product-name, hardware/software model, release, and availability claims (such as
   "iPhone 18 Pro is available", "Python 3.15", or "GPT-5") MUST use "version"
-  (or "price" if stating a price, or "company" if about leadership/ownership/corporate
-  lineup) — NEVER label named product claims as "other". Office holder or company leadership
-  claims should use "company" or "other".
+  (or "price" if stating a price) — NEVER label named product claims as "other".
+  Office holder or executive leadership claims (prime minister, president, CEO, chief minister)
+  MUST use "leadership". Capital city and geographic claims MUST use "geography". World record
+  and "latest/current champion or winner" claims MUST use "records".
 - "search_query": A concise, targeted web search query in ENGLISH to check the current truth of this claim.
   * HINDI & HINGLISH: The search query MUST ALWAYS BE IN ENGLISH (e.g. for "आईफोन 15 की कीमत ₹79,900 है",
     use "iPhone 15 price in India official Apple"), because live web search engines index factual data in English.
@@ -165,11 +220,29 @@ _KNOWN_COMPANY_TERMS = (
     "xai",
 )
 
+_OFFICE_HOLDER_RE = re.compile(
+    r"\b(?:prime\s+minister|chief\s+minister|president|ceo|chief\s+executive|cfo|cto|coo|"
+    r"chairman|chairperson|chancellor|governor|mayor|cabinet\s+minister|minister\s+of|"
+    r"head\s+of\s+state|speaker\s+of|secretary\s+of\s+state|managing\s+director)\b",
+    re.IGNORECASE,
+)
+
+_GEOGRAPHY_RE = re.compile(
+    r"\b(?:capital\s+of|capital\s+city|is\s+the\s+capital|largest\s+(?:country|city|ocean|continent)|"
+    r"smallest\s+country|located\s+in|borders\s+with|shares\s+a\s+border|continent\s+of)\b",
+    re.IGNORECASE,
+)
+
+_RECORDS_LATEST_RE = re.compile(
+    r"\b(?:world\s+record|record\s+holder|holds\s+the\s+record|fastest|tallest\s+building|"
+    r"current\s+champion|reigning\s+champion|latest\s+(?:winner|champion|record)|"
+    r"most\s+recent\s+(?:winner|champion|oscar|nobel|world\s+cup)|won\s+the\s+(?:world\s+cup|championship|title))\b",
+    re.IGNORECASE,
+)
+
 _CORPORATE_ACTION_RE = re.compile(
-    r"\b(?:ceo|chief\s+executive|cfo|cto|coo|chairman|president|prime\s+minister|minister|"
-    r"chancellor|governor|mayor|founder|co-founder|"
-    r"acquired|acquisition|merged|merger|subsidiary|headquarter(?:ed|s)?|ipo|valuation|"
-    r"board\s+of\s+directors|stepped\s+down|appointed)\b",
+    r"\b(?:founder|co-founder|acquired|acquisition|merged|merger|subsidiary|"
+    r"headquarter(?:ed|s)?|ipo|valuation|board\s+of\s+directors|stepped\s+down|appointed)\b",
     re.IGNORECASE,
 )
 
@@ -196,13 +269,18 @@ def _infer_product_or_company_category(
     span_text: str | None = None,
 ) -> str:
     """
-    Reclassify named product/model/company claims away from 'other' when the
-    extractor LLM mislabels them as 'other'.
+    Deterministically classify leadership/office-holder, geography/capital, records/latest,
+    and named product/model/company claims away from 'other'.
     """
     combined = " ".join(f"{claim_text} {span_text or ''}".split()).strip()
     if not combined:
         return "other"
     lower = combined.lower()
+
+    if _OFFICE_HOLDER_RE.search(combined):
+        return "leadership"
+    if _GEOGRAPHY_RE.search(combined):
+        return "geography"
 
     has_product_term = any(
         re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", lower)
@@ -216,12 +294,14 @@ def _infer_product_or_company_category(
     has_model_ver = bool(_MODEL_VERSION_RE.search(combined))
     has_release_ctx = bool(_RELEASE_CONTEXT_RE.search(combined))
 
-    if has_corp_action:
-        return "company"
     if has_product_term:
         return "version"
     if has_model_ver and (has_release_ctx or has_company_term):
         return "version"
+    if _RECORDS_LATEST_RE.search(combined):
+        return "records"
+    if has_corp_action:
+        return "company"
     if has_company_term:
         return "company"
     return "other"
@@ -252,12 +332,20 @@ def assess_claim_volatility(
     if clean_cat == "regulation" or re.search(r"\b(tax|vat|gst|law|act|regulation|mandate|compliance|slab|threshold)\b", combined):
         return 75, "regulation", "Government regulations, compliance rules, and statutory tax slabs are updated periodically."
 
-    # 4. Leadership / executive volatility
-    if clean_cat in ("company", "leadership") or re.search(r"\b(ceo|cto|cfo|president|prime minister|minister|founder|chief executive|chairman)\b", combined):
-        return 80, "leadership", "Executive leadership, cabinet ministers, and heads of state change over electoral or corporate cycles."
+    # 4. Leadership / office holder volatility
+    if clean_cat == "leadership" or _OFFICE_HOLDER_RE.search(combined):
+        return 80, "leadership", "Executive leadership, chief ministers, cabinet ministers, and heads of state change over electoral or corporate cycles."
 
-    # 5. Company announcements
-    if bool(_CORPORATE_ACTION_RE.search(combined)) or re.search(r"\b(acquired|merger|announced|launched|partnership|expansion)\b", combined):
+    # 5. Records / latest volatility
+    if clean_cat == "records" or _RECORDS_LATEST_RE.search(combined):
+        return 75, "statistic", "World records, champions, and latest event winners can change with new competitions or milestones."
+
+    # 6. Geography / capital
+    if clean_cat == "geography" or _GEOGRAPHY_RE.search(combined):
+        return 45, "stable_fact", "Capital city and geographic claims rarely change, though factual errors still require verification."
+
+    # 7. Company announcements
+    if clean_cat == "company" or bool(_CORPORATE_ACTION_RE.search(combined)) or re.search(r"\b(acquired|merger|announced|launched|partnership|expansion)\b", combined):
         return 70, "company_announcement", "Corporate announcements and corporate milestones are time-bounded events."
 
     # 6. Statistics / metrics
@@ -468,7 +556,7 @@ def _normalize_claims(
             continue
 
         raw_category = str(item.get("category", "other")).strip().lower()
-        category = raw_category if raw_category in VALID_CATEGORIES else "other"
+        category = normalize_category(raw_category)
         raw_span = str(item.get("span") or "").strip()
 
         matched_span: str | None = None
@@ -490,6 +578,8 @@ def _normalize_claims(
         claim_text = _preserve_exact_claim_wording(claim_text, matched_span)
         if category == "other":
             category = _infer_product_or_company_category(claim_text, matched_span)
+        elif category == "company" and _OFFICE_HOLDER_RE.search(f"{claim_text} {matched_span or ''}"):
+            category = "leadership"
 
         norm_claim_key = (" ".join(claim_text.lower().split()).rstrip(".!?"), category)
         if norm_claim_key in seen_claim_keys:
@@ -622,6 +712,7 @@ def extract_claims(answer_text: str) -> tuple[list[dict[str, str]], str]:
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
+            "usage_returned": False,
             "simulated_outage": False,
             "timestamp": time.strftime("%H:%M:%S"),
         }
@@ -641,4 +732,5 @@ def extract_claims(answer_text: str) -> tuple[list[dict[str, str]], str]:
         c.setdefault("time_sensitivity", calc_ts)
         c.setdefault("volatility_class", calc_vol)
         c.setdefault("reason", calc_reason)
+        c["detect_latency_ms"] = elapsed_ms
     return claims, model_used

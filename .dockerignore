@@ -1,0 +1,34 @@
+# Git & VCS
+.git
+.gitignore
+.github
+
+# Secrets & local environment files (NEVER bake into images)
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Local caches, databases, and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+env/
+.tavily_cache.db
+*.db
+*.db-journal
+*.sqlite*
+
+# Logs, temporary files, and editor metadata
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.agents/
+docs/screenshots/

@@ -35,7 +35,7 @@ jobs:
         env:
           CI: "true"
         run: |
-          python -c "import extractor, verifier, llm, reporting, benchmark, demo_data, api, app, settings; print('All modules imported cleanly.')"
+          python -c "import extractor, verifier, llm, reporting, benchmark, demo_data, api, app, settings, stale_guard, audit_animations; print('All modules imported cleanly.')"
 
       - name: Run unit tests (all network calls mocked, no secrets required)
         env:

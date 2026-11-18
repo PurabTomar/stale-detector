@@ -33,3 +33,6 @@ linkColor = "#818CF8"
 
 [server]
 enableStaticServing = true
+
+[browser]
+gatherUsageStats = false

@@ -137,6 +137,17 @@ def compute_audit_ledger(
             all_metas = candidate_metas
 
     for meta in all_metas:
+        if not isinstance(meta, dict):
+            continue
+        tin = int(meta.get("prompt_tokens") or meta.get("tokens_in") or 0)
+        tout = int(meta.get("completion_tokens") or meta.get("tokens_out") or 0)
+        tot = int(meta.get("total_tokens") or (tin + tout))
+        # Requirement 1: token and call counters include only calls that really returned usage.
+        if meta.get("error"):
+            continue
+        if tot <= 0 and not bool(meta.get("usage_returned")):
+            continue
+
         bifrost_calls += 1
         raw_m = str(meta.get("model_used") or meta.get("model") or "")
         clean_m = _clean_model_name(raw_m)
@@ -146,8 +157,6 @@ def compute_audit_ledger(
         if bool(meta.get("fallback_used")):
             fallbacks += 1
 
-        tin = int(meta.get("prompt_tokens") or meta.get("tokens_in") or 0)
-        tout = int(meta.get("completion_tokens") or meta.get("tokens_out") or 0)
         tokens_in += tin
         tokens_out += tout
         latency_ms += float(meta.get("latency_ms") or 0.0)

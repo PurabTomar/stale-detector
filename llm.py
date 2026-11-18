@@ -952,6 +952,7 @@ def _extract_response_metadata(
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": total_tokens,
+        "usage_returned": bool(usage is not None and (prompt_tokens > 0 or completion_tokens > 0 or total_tokens > 0)),
         "gateway_tokens": gateway_tokens,
         "simulated_outage": simulated_outage,
         "routing_mode": routing_mode or ("bifrost" if is_use_bifrost() else "direct_gemini"),
@@ -1070,8 +1071,8 @@ def call_llm_with_meta(
     last_error: Exception | None = None
     t0 = time.perf_counter()
 
-    # Step 1: Primary request (with 1 safety-net retry ONLY if gateway/endpoint unreachable).
-    for attempt in range(2):
+    # Step 1: Primary request (with 3-try exponential backoff on connection/unreachable errors).
+    for attempt in range(3):
         try:
             response, headers = _invoke_chat_completion(
                 client=client,
@@ -1109,7 +1110,7 @@ def call_llm_with_meta(
             last_error = exc
             status_code = _extract_status_code(exc)
             # If a direct endpoint with explicit fallback models returns a recoverable
-            # HTTP status (e.g. 503 overloaded), cascade immediately to fallback_models.
+            # HTTP status (e.g. 429/503 overloaded), cascade immediately to fallback_models.
             if (
                 not use_native_fallbacks
                 and fallback_models
@@ -1117,19 +1118,24 @@ def call_llm_with_meta(
                 and not _is_transport_unreachable(exc)
             ):
                 break
-            # Keep app-level retry ONLY when the endpoint itself is unreachable.
-            if attempt == 0 and _is_gateway_unreachable(exc):
-                time.sleep(1)
+            # Retry with exponential backoff (3 tries total: sleep 1s, then 2s) on connection/unreachable errors.
+            if attempt < 2 and _is_gateway_unreachable(exc):
+                time.sleep(2 ** attempt)
                 continue
             break
 
-    # Step 2: Explicit app-level failover when simulating an outage or calling Direct Gemini/OpenAI.
+    # Step 2: Explicit app-level failover when simulating an outage, calling Direct Gemini/OpenAI,
+    # or after connection retries on primary are exhausted.
     should_try_explicit_fallback = False
-    if last_error is not None and fallback_models and not _is_transport_unreachable(last_error):
+    if last_error is not None and fallback_models:
         status_code = _extract_status_code(last_error)
         if outage:
             should_try_explicit_fallback = True
-        elif not use_native_fallbacks and status_code in FALLBACK_STATUS_CODES:
+        elif not use_native_fallbacks and (
+            status_code in FALLBACK_STATUS_CODES or _is_transport_unreachable(last_error)
+        ):
+            should_try_explicit_fallback = True
+        elif _is_transport_unreachable(last_error):
             should_try_explicit_fallback = True
 
     if should_try_explicit_fallback:

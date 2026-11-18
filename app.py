@@ -17,12 +17,24 @@ import json
 from pathlib import Path
 import re
 import sys
+import threading
 import time
 from urllib.parse import urlparse
 
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+
+from audit_animations import (
+    AuditUIState,
+    apply_pipeline_event,
+    create_initial_ui_state,
+    render_action_status_pill_html,
+    render_claim_discovery_chips_html,
+    render_scan_effect_html,
+    render_stepper_check_svg,
+    render_verify_live_board_html,
+)
 
 import settings
 from settings import (
@@ -80,8 +92,10 @@ from demo_data import (
 )
 from extractor import (
     extract_claims,
+    format_category_label,
     get_last_gateway_metrics as get_extract_metrics,
     locate_span_in_text,
+    normalize_category,
 )
 from llm import (
     GEMINI_OPENAI_BASE_URL,
@@ -103,9 +117,12 @@ from reporting import (
     format_report_json,
     format_report_markdown,
     format_shareable_summary,
+    render_cited_corrected_answer_html,
 )
 from tab_components import (
+    get_real_model_and_routing_info,
     init_history_if_needed,
+    load_evidence_counts,
     record_audit_to_history,
     render_api_playground_tab,
     render_history_tab,
@@ -115,6 +132,8 @@ from tab_components import (
     render_watchlist_strip,
 )
 from verifier import (
+    _extract_independent_domain,
+    build_citation_map,
     classify_source_type,
     clear_tavily_cache,
     compute_risk_weighted_overall_score,
@@ -126,6 +145,7 @@ from verifier import (
     run_llm_only_verification,
     run_why_bifrost_simulation,
     truncate_snippet_words,
+    verify_claim,
     verify_claims,
 )
 from ledger import (
@@ -281,6 +301,12 @@ STATUS_META = {
         "color": "#6B7280",
         "badge_color": "gray",
     },
+    "verification_failed": {
+        "label": "Verification failed",
+        "pill_class": "pill-incorrect",
+        "color": "#DC2626",
+        "badge_color": "red",
+    },
     "skipped": {
         "label": "Stable (skipped)",
         "pill_class": "pill-skipped",
@@ -313,6 +339,26 @@ CATEGORY_ICONS = {
         'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
         '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/>'
         '<path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M8 10h.01"/><path d="M16 10h.01"/></svg>'
+    ),
+    "leadership": (
+        '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
+        '<path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+    ),
+    "geography": (
+        '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>'
+        '<path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
+    ),
+    "records": (
+        '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>'
+        '<path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>'
+        '<path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>'
+        '<path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>'
     ),
     "statistic": (
         '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" '
@@ -771,6 +817,16 @@ def extract_domain(url: str) -> str:
     return domain
 
 
+def classify_error_quota_status(exc: Exception | str) -> str | None:
+    """Return 'Limited' on HTTP 429/rate-limit/quota errors, 'Offline' on connection/unreachable errors."""
+    text = str(exc or "").lower()
+    if any(tok in text for tok in ("429", "rate limit", "rate-limit", "quota", "resource_exhausted", "too many requests", "usage limit")):
+        return "Limited"
+    if any(tok in text for tok in ("could not connect", "connection", "unreachable", "timed out", "timeout", "network", "offline", "winerror 10061", "503", "502", "504", "is down")):
+        return "Offline"
+    return None
+
+
 def get_overall_tier(
     score: int | None,
     results: list[dict] | None = None,
@@ -779,14 +835,27 @@ def get_overall_tier(
     Map a risk-weighted overall freshness score (0-100 or None) to
     (label, ring_color, description).
 
-    Thresholds:
-    - Fresh: 80-100
-    - Mixed: 40-79
-    - Stale / Incorrect: 0-39
-    - Unverifiable: None (no scorable claims had reliable evidence)
+    When one or more claims have status 'verification_failed', returns
+    'Could not verify N of M claims' instead of 'Mixed'.
     """
-    incorrect_count = sum(1 for r in results if r.get("status") == "incorrect") if results else 0
-    outdated_count = sum(1 for r in results if r.get("status") == "outdated") if results else 0
+    res_list = results or []
+    failed_count = sum(
+        1 for r in res_list if isinstance(r, dict) and r.get("status") == "verification_failed"
+    )
+    if failed_count > 0:
+        total_claims = len(res_list)
+        label = f"Could not verify {failed_count} of {total_claims} claims"
+        if failed_count == total_claims:
+            desc = "Verification failed for all claims after retries and fallback. Retry individual claims or load Demo / Saved results."
+        else:
+            desc = (
+                f"{failed_count} of {total_claims} claims could not be verified and are excluded "
+                "from the overall score and status counts."
+            )
+        return (label, "#DC2626", desc)
+
+    incorrect_count = sum(1 for r in res_list if isinstance(r, dict) and r.get("status") == "incorrect")
+    outdated_count = sum(1 for r in res_list if isinstance(r, dict) and r.get("status") == "outdated")
 
     if score is None:
         return (
@@ -985,7 +1054,7 @@ def format_friendly_ui_error(exc: Exception | str, *, action: str = "checking cl
             "Streamlit Secrets or .env (and your provider keys in Bifrost)."
         )
 
-    # 4. Bifrost gateway down / unreachable (only in local/gateway mode)
+    # 4. Bifrost gateway / network unreachable (gateway mode)
     if use_bifrost and (
         ("bifrost" in lower and any(tok in lower for tok in ("down", "unreachable", "offline", "refused", "timeout", "timed out")))
         or any(
@@ -994,6 +1063,10 @@ def format_friendly_ui_error(exc: Exception | str, *, action: str = "checking cl
                 "connection refused",
                 "connecterror",
                 "unreachable",
+                "network",
+                "offline",
+                "getaddrinfo",
+                "name resolution",
                 "winerror 10061",
                 "apiconnectionerror",
                 "failed to establish a new connection",
@@ -1004,15 +1077,34 @@ def format_friendly_ui_error(exc: Exception | str, *, action: str = "checking cl
         )
     ):
         return (
-            "Bifrost gateway is down or unreachable. Start Bifrost locally on port 8080, "
-            "or set USE_BIFROST=false in .env to call Gemini directly."
+            "Bifrost gateway is down or unreachable (or network offline). Check your internet connection "
+            "and local Bifrost server (port 8080), set USE_BIFROST=false for Direct Gemini, "
+            "or use Demo / Saved results."
         )
 
-    # 5. Direct connection / timeout errors
-    if any(tok in lower for tok in ("apiconnectionerror", "connecterror", "timed out", "timeout", "connection error", "connection refused")):
+    # 5. Direct connection / timeout / offline errors
+    if any(
+        tok in lower
+        for tok in (
+            "apiconnectionerror",
+            "connecterror",
+            "timed out",
+            "timeout",
+            "connection error",
+            "connection refused",
+            "unreachable",
+            "network",
+            "offline",
+            "getaddrinfo",
+            "name resolution",
+            "502",
+            "503",
+            "504",
+        )
+    ):
         return (
-            f"Could not reach the API service while {action}. Check your internet connection "
-            "and endpoint settings, then try again."
+            f"Network offline or API service unreachable while {action}. Check your internet connection "
+            "and endpoint settings, then click Retry (or load Demo / Saved results)."
         )
 
     # 5b. URL validation / Tavily Extract webpage failures (must run before LLM 404 check)
@@ -1376,56 +1468,110 @@ def _render_empty_state(
     )
 
 
-def render_stepper_html(current_busy: str | None, has_results: bool, has_input: bool) -> str:
+def render_stepper_html(
+    current_busy: str | None,
+    has_results: bool,
+    has_input: bool,
+    results: list[dict] | None = None,
+    ui_state: AuditUIState | None = None,
+) -> str:
     """Render 5-stage progress pipeline tracker: 1 Input > 2 Detect > 3 Verify > 4 Score > 5 Report.
-    
+
     States:
     - pending: muted grey outline and grey number
     - running: ONE accent colour (indigo) with soft pulse
-    - done: green filled circle with a check mark
-    - error: red outline with an exclamation mark
-    Before any audit starts, ALL five steps are pending.
-    Connectors follow the state of the step before them.
-    Each step is clickable and smooth-scrolls to its section.
+    - done: green filled circle with an SVG draw-on check mark
+    - error: red outline with an exclamation mark + small shake (later steps STAY pending)
+    Connectors fill left to right via transform: scaleX(...) when the prior step is done.
     """
-    has_error = bool(
-        st.session_state.get("pasted_error")
-        or st.session_state.get("ask_error")
-        or st.session_state.get("url_error")
-        or st.session_state.get("batch_error")
-        or st.session_state.get("doc_checker_error")
-    )
+    active_ui_state = ui_state
+    if active_ui_state is None and current_busy:
+        candidate = st.session_state.get("audit_ui_state")
+        if isinstance(candidate, AuditUIState) and candidate.phase == "running":
+            active_ui_state = candidate
 
-    if has_error:
-        s1_state = "done"
-        s2_state = "error"
-        s3_state = "pending"
-        s4_state = "pending"
-        s5_state = "pending"
-    elif has_results:
-        s1_state = "done"
-        s2_state = "done"
-        s3_state = "done"
-        s4_state = "done"
-        s5_state = "done"
-    elif current_busy:
-        s1_state = "done"
-        s2_state = "running"
-        s3_state = "pending"
-        s4_state = "pending"
-        s5_state = "pending"
+    if isinstance(active_ui_state, AuditUIState) and active_ui_state.phase in {"running", "error", "done", "stopped"}:
+        s1_state = active_ui_state.stepper.get("input", "pending")
+        s2_state = active_ui_state.stepper.get("detect", "pending")
+        s3_state = active_ui_state.stepper.get("verify", "pending")
+        s4_state = active_ui_state.stepper.get("score", "pending")
+        s5_state = active_ui_state.stepper.get("report", "pending")
     else:
-        # Before any audit starts ALL five steps are pending (no step highlighted)
-        s1_state = "pending"
-        s2_state = "pending"
-        s3_state = "pending"
-        s4_state = "pending"
-        s5_state = "pending"
+        has_extract_error = bool(
+            st.session_state.get("pasted_error")
+            or st.session_state.get("ask_error")
+            or st.session_state.get("url_error")
+            or st.session_state.get("batch_error")
+            or st.session_state.get("doc_checker_error")
+        )
+        active_results = results
+        if active_results is None:
+            active_results = (
+                st.session_state.get("results")
+                or st.session_state.get("ask_results")
+                or st.session_state.get("url_results")
+                or []
+            )
+        has_verify_failure = any(
+            isinstance(r, dict) and r.get("status") == "verification_failed"
+            for r in (active_results or [])
+        )
+        explicit_error_step = str(st.session_state.get("pipeline_error_step") or "").strip().lower()
+
+        if has_extract_error or explicit_error_step == "detect":
+            s1_state = "done"
+            s2_state = "error"
+            s3_state = "pending"
+            s4_state = "pending"
+            s5_state = "pending"
+        elif has_verify_failure or explicit_error_step == "verify":
+            s1_state = "done"
+            s2_state = "done"
+            s3_state = "error"
+            s4_state = "pending"
+            s5_state = "pending"
+        elif explicit_error_step == "score":
+            s1_state = "done"
+            s2_state = "done"
+            s3_state = "done"
+            s4_state = "error"
+            s5_state = "pending"
+        elif explicit_error_step == "report":
+            s1_state = "done"
+            s2_state = "done"
+            s3_state = "done"
+            s4_state = "done"
+            s5_state = "error"
+        elif st.session_state.get("audit_stopped") and has_results:
+            s1_state = "done"
+            s2_state = "done"
+            s3_state = "done"
+            s4_state = "pending"
+            s5_state = "pending"
+        elif has_results:
+            s1_state = "done"
+            s2_state = "done"
+            s3_state = "done"
+            s4_state = "done"
+            s5_state = "done"
+        elif current_busy:
+            s1_state = "done"
+            s2_state = "running"
+            s3_state = "pending"
+            s4_state = "pending"
+            s5_state = "pending"
+        else:
+            # Before any audit starts ALL five steps are pending (no step highlighted)
+            s1_state = "pending"
+            s2_state = "pending"
+            s3_state = "pending"
+            s4_state = "pending"
+            s5_state = "pending"
 
     def _render_step(num: str, name: str, state: str, anchor: str) -> str:
         cls = f"sad-pipe-step pipe-{state}"
         if state == "done":
-            badge_html = '<span class="sad-pipe-badge">✓</span>'
+            badge_html = f'<span class="sad-pipe-badge">{render_stepper_check_svg()}</span>'
         elif state == "error":
             badge_html = '<span class="sad-pipe-badge">!</span>'
         else:
@@ -1445,8 +1591,12 @@ def render_stepper_html(current_busy: str | None, has_results: bool, has_input: 
         )
 
     def _render_connector(prev_state: str) -> str:
-        conn_cls = "sad-pipe-connector pipe-connector-done" if prev_state == "done" else "sad-pipe-connector"
-        return f'<span class="{conn_cls}">→</span>'
+        conn_cls = (
+            "sad-pipe-connector-track pipe-connector-done"
+            if prev_state == "done"
+            else "sad-pipe-connector-track"
+        )
+        return f'<span class="{conn_cls}" aria-hidden="true"><span class="sad-pipe-connector-fill"></span></span>'
 
     step1_html = _render_step("1", "Input", s1_state, "sad-input-studio-anchor")
     conn1_html = _render_connector(s1_state)
@@ -1481,12 +1631,27 @@ def _set_tab_error(
     recover_key: str,
     query_or_url: str = "",
 ) -> None:
-    """Persist a sanitized friendly error so recovery actions work across Streamlit reruns."""
+    """Persist a sanitized friendly error, update Quota chip (Offline/Limited), and record Failed audit in History."""
+    friendly_msg = format_friendly_ui_error(exc, action=action)
     st.session_state[error_state_key] = {
-        "message": format_friendly_ui_error(exc, action=action),
+        "message": friendly_msg,
         "recover_key": recover_key,
         "query_or_url": str(query_or_url or ""),
     }
+    st.session_state["pipeline_error_step"] = "detect"
+    err_quota = classify_error_quota_status(exc) or classify_error_quota_status(friendly_msg)
+    if err_quota:
+        st.session_state["quota_status"] = err_quota
+    if str(query_or_url or "").strip():
+        record_audit_to_history(
+            str(query_or_url).strip(),
+            [],
+            source_label="Live",
+            mode=error_state_key.replace("_error", "").capitalize(),
+            score=None,
+            audit_status="Failed",
+            error_reason=friendly_msg,
+        )
 
 
 def _render_stored_error_with_demo_recovery(
@@ -1572,6 +1737,31 @@ def load_demo_example(example_text: str) -> None:
     st.session_state["demo_pasted_rewrite"] = None
 
 
+def request_stop_audit() -> None:
+    """Cancel an in-flight audit cleanly and keep any completed partial results."""
+    cancel_ev = st.session_state.get("audit_cancel_event")
+    if isinstance(cancel_ev, threading.Event):
+        cancel_ev.set()
+    partial = list(st.session_state.get("partial_audit_results") or [])
+    total_planned = int(st.session_state.get("partial_audit_total") or len(partial))
+    if partial and not st.session_state.get("results"):
+        st.session_state["results"] = partial
+    st.session_state["audit_stopped"] = True
+    st.session_state["audit_stopped_info"] = {
+        "completed": len(partial),
+        "total": max(total_planned, len(partial)),
+    }
+    ui_state = st.session_state.get("audit_ui_state")
+    if isinstance(ui_state, AuditUIState):
+        apply_pipeline_event(
+            ui_state,
+            "stopped",
+            {"completed": len(partial), "total": max(total_planned, len(partial))},
+        )
+    st.session_state["busy_action"] = None
+    st.session_state["_busy_armed"] = False
+
+
 def clear_workspace() -> None:
     """Clear the text area and previous verification results in Tab 1."""
     st.session_state["answer_input"] = ""
@@ -1588,6 +1778,11 @@ def clear_workspace() -> None:
     st.session_state["demo_pasted_rewrite"] = None
     st.session_state["pasted_error"] = None
     st.session_state["pasted_rewrite_error"] = None
+    st.session_state["audit_stopped"] = False
+    st.session_state["audit_stopped_info"] = None
+    st.session_state["partial_audit_results"] = []
+    st.session_state["partial_audit_total"] = 0
+    st.session_state["audit_ui_state"] = create_initial_ui_state()
 
 
 def clear_ask_workspace() -> None:
@@ -1641,6 +1836,12 @@ def init_session_state() -> None:
     defaults = {
         "busy_action": None,
         "_busy_armed": False,
+        "audit_ui_state": create_initial_ui_state(),
+        "audit_cancel_event": None,
+        "audit_stopped": False,
+        "audit_stopped_info": None,
+        "partial_audit_results": [],
+        "partial_audit_total": 0,
         "demo_mode": False,
         "demo_pasted_notice": "",
         "demo_pasted_rewrite": None,
@@ -2307,8 +2508,15 @@ def build_request_telemetry(
 
 
 def append_gateway_request(record: dict | None) -> None:
-    """Append a normalized request record to session telemetry history."""
-    if not record:
+    """Append a normalized request record to session telemetry history ONLY if it returned usage."""
+    if not isinstance(record, dict):
+        return
+    if record.get("error"):
+        return
+    tot = int(record.get("total_tokens") or 0)
+    pin = int(record.get("prompt_tokens") or 0)
+    pout = int(record.get("completion_tokens") or 0)
+    if (tot + pin + pout) <= 0 and not bool(record.get("usage_returned")):
         return
     history = list(st.session_state.get("gateway_requests") or [])
     history.append(record)
@@ -2645,8 +2853,12 @@ def render_sidebar_credits(placeholder, credits_used: float) -> None:
 
 
 def render_architecture_telemetry_expander(use_bifrost: bool) -> None:
-    """Render the dual-technology integration showcase for Hackathon Problem Statement 06 & 02."""
-    with st.expander("🛠️ System Architecture: Meaningful Bifrost + Tavily Integration (PS06 + PS02)", expanded=False, icon=":material/hub:"):
+    """Render the dual-technology integration showcase using real active routing and evidence config."""
+    route_info = get_real_model_and_routing_info(use_bifrost=use_bifrost)
+    cfg_models_html = ", ".join(f"<code>{escape_html(m)}</code>" for m in route_info["configured_models"]) or "<code>default configured model</code>"
+    ev_models_html = ", ".join(f"<code>{escape_html(m)}</code>" for m in route_info["evidence_models"]) or "<code>evidence/bifrost_evidence.json</code>"
+    active_llm_lbl = "Bifrost Gateway" if use_bifrost else "Direct Gemini API"
+    with st.expander("🛠️ System Architecture: Tavily + Bifrost Integration (PS06 + PS02)", expanded=False, icon=":material/hub:"):
         c1, c2 = st.columns(2, gap="medium")
         with c1:
             st.markdown(
@@ -2658,10 +2870,10 @@ def render_architecture_telemetry_expander(use_bifrost: bool) -> None:
                     </div>
                     <ul style="font-size: 0.88rem; color: var(--text-muted, #64748B); line-height: 1.6; padding-left: 20px; margin: 0;">
                         <li><strong>Live Search API:</strong> Targeted search queries formulated dynamically for each extracted factual claim.</li>
-                        <li><strong>Credibility Categorization:</strong> Classifies sources into <code>Primary/Docs</code>, <code>News</code>, <code>Blog</code>, or <code>Forum</code> to weight evidence reliability.</li>
-                        <li><strong>Tavily Extract API:</strong> Full-page content extraction for arbitrary article URLs in the "Audit a URL" tab.</li>
-                        <li><strong>Freshness Timelines:</strong> Extracts published and modified dates to compute exact "stale since" durations.</li>
-                        <li><strong>Smart SQLite Cache:</strong> 6-hour TTL disk cache avoids redundant upstream queries, saving API credits.</li>
+                        <li><strong>Credibility Categorization:</strong> Classifies each unique registered domain as <code>PRIMARY</code>, <code>NEWS</code>, <code>BLOG</code>, or <code>FORUM</code>.</li>
+                        <li><strong>Tavily Extract API:</strong> Extracts page text for target URLs and top verification sources.</li>
+                        <li><strong>Freshness Timelines:</strong> Uses published dates returned by Tavily to estimate stale durations.</li>
+                        <li><strong>Server SQLite Cache:</strong> 6-hour TTL cache (<code>tavily_cache.db</code>) reduces duplicate upstream queries.</li>
                     </ul>
                 </div>
                 """,
@@ -2669,18 +2881,18 @@ def render_architecture_telemetry_expander(use_bifrost: bool) -> None:
             )
         with c2:
             st.markdown(
-                """
+                f"""
                 <div style="background: var(--bg-card, #FFFFFF); border: 1px solid var(--border-main, #E5E7EF); border-radius: 12px; padding: 18px; height: 100%;">
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                         <span style="font-size: 1.5rem;">⚡</span>
-                        <h4 style="margin: 0; color: var(--text-main, #0F172A);">Bifrost by Maxim AI LLM Gateway</h4>
+                        <h4 style="margin: 0; color: var(--text-main, #0F172A);">LLM Routing ({escape_html(active_llm_lbl)})</h4>
                     </div>
                     <ul style="font-size: 0.88rem; color: var(--text-muted, #64748B); line-height: 1.6; padding-left: 20px; margin: 0;">
-                        <li><strong>Universal Gateway Routing:</strong> Routes claims across Gemini 2.5 Flash, Flash-Lite, and Pro with unified API abstraction.</li>
-                        <li><strong>Circuit-Breaker Failover:</strong> Instant automatic failover on 429 rate limits or 503 provider outages to backup models without user error.</li>
-                        <li><strong>Dual-Judge Consensus:</strong> Orchestrates multi-model parallel verification comparing independent judges to prevent bias.</li>
-                        <li><strong>Distributed Tracing:</strong> Attaches <code>x-bifrost-run-id</code> to track end-to-end latency, tokens, and step execution.</li>
-                        <li><strong>Chaos Resilience Testing:</strong> Powers Agent Lab failure testing by simulating primary model outages and verifying failover behavior.</li>
+                        <li><strong>Active Configured Models:</strong> {cfg_models_html} via <code>{escape_html(route_info['route_label'])}</code>.</li>
+                        <li><strong>Recorded Bifrost Evidence Models:</strong> {ev_models_html} (from <code>evidence/bifrost_evidence.json</code>).</li>
+                        <li><strong>Retry &amp; Fallback:</strong> 3-try exponential backoff on connection errors followed by configured fallback models.</li>
+                        <li><strong>Dual-Judge Option:</strong> Supports independent evaluation across two configured judge models.</li>
+                        <li><strong>Gateway Tracing (Bifrost mode):</strong> Attaches <code>x-bf-run-id</code> headers when <code>USE_BIFROST=true</code>.</li>
                     </ul>
                 </div>
                 """,
@@ -2689,9 +2901,9 @@ def render_architecture_telemetry_expander(use_bifrost: bool) -> None:
 
         st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
         st.markdown(
-            """
+            f"""
             <div style="background: var(--bg-secondary, #F1F5F9); border: 1px solid var(--border-main, #E5E7EF); border-radius: 10px; padding: 12px 18px; font-size: 0.85rem; color: var(--text-main, #0F172A); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-                <div><strong>Architecture Pipeline:</strong> 1. Extract Claims (Bifrost) &rarr; 2. Live Web Verification (Tavily) &rarr; 3. Dual-Judge Evaluation (Bifrost) &rarr; 4. Risk-Weighted Scoring &rarr; 5. Agent Lab Benchmarking</div>
+                <div><strong>Active Pipeline:</strong> 1. Extract Claims ({escape_html(active_llm_lbl)}) &rarr; 2. Live Web Search (Tavily) &rarr; 3. Judge ({escape_html(active_llm_lbl)}) &rarr; 4. Risk-Weighted Score &rarr; 5. Report</div>
                 <div style="color: var(--text-muted, #64748B);">PS06 (Fact Verification) + PS02 (Agent Benchmarking)</div>
             </div>
             """,
@@ -2700,7 +2912,8 @@ def render_architecture_telemetry_expander(use_bifrost: bool) -> None:
 
 
 def render_architecture_tab(use_bifrost: bool) -> None:
-    """Render the full interactive Architecture Tab with live counters and inline SVG flow diagram."""
+    """Render the interactive Architecture & Evidence view with route-aware counters and real config models."""
+    route_info = get_real_model_and_routing_info(use_bifrost=use_bifrost)
     sess_led = st.session_state.get("session_ledger") or create_empty_ledger()
     tav_led = sess_led.get("tavily", {})
     bf_led = sess_led.get("bifrost", {})
@@ -2711,31 +2924,44 @@ def render_architecture_tab(use_bifrost: bool) -> None:
     fallbacks_cnt = bf_led.get("fallbacks", 0)
     tokens_cnt = bf_led.get("total_tokens", 0)
     results_list = st.session_state.get("results") or []
-    claims_cnt = len(results_list)
+    claims_cnt = sum(1 for r in results_list if isinstance(r, dict) and r.get("status") != "verification_failed")
 
-    st.subheader("System Architecture: Meaningful Tavily + Bifrost Integration", icon=":material/hub:")
+    calls_metric_label = route_info["calls_label"]
+    fallbacks_metric_label = "Gateway fallbacks" if use_bifrost else "Model fallbacks"
+    judge_box_title = route_info["judge_step_label"]
+    active_route_label = route_info["route_label"]
+    cfg_models_html = ", ".join(f"<code>{escape_html(m)}</code>" for m in route_info["configured_models"]) or "<code>default configured model</code>"
+    ev_models_html = ", ".join(f"<code>{escape_html(m)}</code>" for m in route_info["evidence_models"]) or "<code>evidence/bifrost_evidence.json</code>"
+
+    st.subheader("System Architecture & Evidence", icon=":material/hub:")
     st.caption(
-        "Dual-engine architecture integrating Tavily Real-Time Web Intelligence and Bifrost by Maxim AI LLM Gateway "
-        "to solve Stale-Answer Detection (PS06) and AI Agent Benchmarking (PS02)."
+        f"Active LLM route: {active_route_label} • Web retrieval: Tavily Search & Extract API. "
+        "Counters reflect only calls from this session that returned usage."
     )
 
-    # Live Counter KPIs
+    # Live Counter KPIs (labeled strictly by the real active route)
     k1, k2, k3, k4 = st.columns(4, gap="small")
     with k1:
         st.metric("Tavily Searches", f"{searches_cnt:,}", f"{credits_cnt:.1f} credits consumed", border=True, help="Live web search queries formulated per claim")
     with k2:
-        st.metric("Bifrost Calls", f"{calls_cnt:,}", f"{len(bf_led.get('models', []))} models routed", border=True, help="Universal LLM gateway requests across Gemini and OpenAI")
+        st.metric(
+            calls_metric_label,
+            f"{calls_cnt:,}",
+            f"{len(bf_led.get('models', []))} models answered",
+            border=True,
+            help=f"Session LLM requests that returned usage via {active_route_label}",
+        )
     with k3:
-        st.metric("Gateway Fallbacks", f"{fallbacks_cnt:,}", "Automatic failovers", border=True, help="Circuit-breaker failovers executed on 429/503 errors")
+        st.metric(fallbacks_metric_label, f"{fallbacks_cnt:,}", "Failover switches", border=True, help="Fallback model invocations executed after primary errors")
     with k4:
-        st.metric("Tokens Processed", f"{tokens_cnt:,}", f"{claims_cnt} claims verified", border=True, help="End-to-end token consumption recorded via Bifrost telemetry")
+        st.metric("Tokens Returned", f"{tokens_cnt:,}", f"{claims_cnt} claims verified", border=True, help="Sum of prompt + completion tokens returned by the LLM API in this session")
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-    # Inline SVG Flow Diagram with LIVE counters embedded
+    # Inline SVG Flow Diagram with route-aware LIVE counters embedded
     tav_counter_text = f"{searches_cnt} searches • {credits_cnt:.1f} cr"
-    bf_counter_text = f"{calls_cnt} calls • {fallbacks_cnt} fallbacks"
-    claims_counter_text = f"{claims_cnt} claims" if claims_cnt > 0 else "Live Extraction"
+    llm_counter_text = f"{calls_cnt} calls • {fallbacks_cnt} fallbacks"
+    claims_counter_text = f"{claims_cnt} claims" if claims_cnt > 0 else "Claim Extraction"
     tokens_counter_text = f"{tokens_cnt:,} tokens" if tokens_cnt > 0 else "4 Score Pillars"
 
     svg_diagram = f"""
@@ -2793,20 +3019,20 @@ def render_architecture_tab(use_bifrost: bool) -> None:
 
             <!-- Box 3: Tavily -->
             <rect x="350" y="20" width="155" height="110" rx="10" fill="url(#g-tavily)" stroke="#A7F3D0" stroke-width="1.5" />
-            <text x="427" y="50" font-size="13" font-weight="700" fill="#065F46" text-anchor="middle">3. Tavily Intelligence</text>
-            <text x="427" y="70" font-size="11" fill="#047857" text-anchor="middle">Live Web Search &amp; Stance</text>
+            <text x="427" y="50" font-size="13" font-weight="700" fill="#065F46" text-anchor="middle">3. Tavily Search</text>
+            <text x="427" y="70" font-size="11" fill="#047857" text-anchor="middle">Live Web Evidence</text>
             <rect x="360" y="88" width="135" height="24" rx="6" fill="#FFFFFF" stroke="#A7F3D0" />
             <text x="427" y="104" font-size="10.5" font-weight="700" fill="#065F46" text-anchor="middle">{tav_counter_text}</text>
 
             <!-- Connection 3 -> 4 -->
             <line x1="505" y1="75" x2="530" y2="75" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)" />
 
-            <!-- Box 4: Judge via Bifrost -->
+            <!-- Box 4: Route-Aware Judge -->
             <rect x="535" y="20" width="155" height="110" rx="10" fill="url(#g-bifrost)" stroke="#FDE68A" stroke-width="1.5" />
-            <text x="612" y="50" font-size="13" font-weight="700" fill="#92400E" text-anchor="middle">4. Judge via Bifrost</text>
-            <text x="612" y="70" font-size="11" fill="#B45309" text-anchor="middle">Dual-Model Consensus</text>
+            <text x="612" y="50" font-size="12.5" font-weight="700" fill="#92400E" text-anchor="middle">{escape_html(judge_box_title)}</text>
+            <text x="612" y="70" font-size="11" fill="#B45309" text-anchor="middle">{escape_html(active_route_label)}</text>
             <rect x="545" y="88" width="135" height="24" rx="6" fill="#FFFFFF" stroke="#FDE68A" />
-            <text x="612" y="104" font-size="10.5" font-weight="700" fill="#92400E" text-anchor="middle">{bf_counter_text}</text>
+            <text x="612" y="104" font-size="10.5" font-weight="700" fill="#92400E" text-anchor="middle">{llm_counter_text}</text>
 
             <!-- Connection 4 -> 5 -->
             <line x1="690" y1="75" x2="715" y2="75" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)" />
@@ -2814,7 +3040,7 @@ def render_architecture_tab(use_bifrost: bool) -> None:
             <!-- Box 5: Score -->
             <rect x="720" y="20" width="135" height="110" rx="10" fill="url(#g-score)" stroke="#DDD6FE" stroke-width="1.5" />
             <text x="787" y="50" font-size="13" font-weight="700" fill="#5B21B6" text-anchor="middle">5. Freshness Score</text>
-            <text x="787" y="70" font-size="11" fill="#6D28D9" text-anchor="middle">4 Deterministic Pillars</text>
+            <text x="787" y="70" font-size="11" fill="#6D28D9" text-anchor="middle">4 Weighted Signals</text>
             <rect x="730" y="88" width="115" height="24" rx="6" fill="#FFFFFF" stroke="#DDD6FE" />
             <text x="787" y="104" font-size="10.5" font-weight="600" fill="#5B21B6" text-anchor="middle">{tokens_counter_text}</text>
 
@@ -2826,13 +3052,13 @@ def render_architecture_tab(use_bifrost: bool) -> None:
             <text x="925" y="50" font-size="13" font-weight="700" fill="#166534" text-anchor="middle">6. Report</text>
             <text x="925" y="70" font-size="11" fill="#15803D" text-anchor="middle">Rewrite</text>
             <rect x="888" y="88" width="74" height="24" rx="6" fill="#FFFFFF" stroke="#86EFAC" />
-            <text x="925" y="104" font-size="10.5" font-weight="700" fill="#166534" text-anchor="middle">Verified</text>
+            <text x="925" y="104" font-size="10.5" font-weight="700" fill="#166534" text-anchor="middle">Export</text>
         </svg>
     </div>
     """
     st.markdown(svg_diagram, unsafe_allow_html=True)
 
-    # Detailed Dual-Technology Integration Cards
+    # Detailed Dual-Technology Integration Cards (backed by real config & evidence file)
     c1, c2 = st.columns(2, gap="medium")
     with c1:
         st.markdown(
@@ -2843,15 +3069,14 @@ def render_architecture_tab(use_bifrost: bool) -> None:
                     <h3 style="margin: 0; color: #065F46; font-size: 1.15rem;">What Tavily Does</h3>
                 </div>
                 <p style="font-size: 0.88rem; color: var(--text-muted, #64748B); line-height: 1.5; margin-bottom: 14px;">
-                    Tavily delivers ground-truth real-time web intelligence specifically tuned for AI factual verification:
+                    Tavily retrieves live web evidence for factual verification:
                 </p>
                 <ul style="font-size: 0.88rem; color: var(--text-main, #0F172A); line-height: 1.7; padding-left: 20px; margin: 0;">
-                    <li><strong>Targeted Search API:</strong> Dynamically formulates precise queries for each time-sensitive claim with automatic recency filters.</li>
-                    <li><strong>Domain Independence Analysis:</strong> Groups and counts evidence by registered root domain to prevent mirror or duplicate URL skew.</li>
-                    <li><strong>Credibility Categorization:</strong> Automatically classifies sources into <code>Primary Docs</code>, <code>Reputable News</code>, <code>Blog</code>, or <code>Forum</code> to weight evidence strength.</li>
-                    <li><strong>Tavily Extract API:</strong> Deeply parses entire webpage DOMs for arbitrary input URLs in the "Audit a URL" tab.</li>
-                    <li><strong>Freshness Timelines:</strong> Accurately parses publication and last-modified dates to compute exact "stale since" durations.</li>
-                    <li><strong>Disk Cache:</strong> Thread-safe SQLite cache with 6-hour TTL eliminates redundant queries and saves API credits.</li>
+                    <li><strong>Targeted Search API:</strong> Runs category-aware search queries for each extracted factual claim.</li>
+                    <li><strong>Registered Domain Deduplication:</strong> Collapses duplicate URLs per registered domain with <code>+N pages</code> counts so agreement counts match displayed chips.</li>
+                    <li><strong>Single Source Label:</strong> Classifies each domain as <code>PRIMARY</code>, <code>NEWS</code>, <code>BLOG</code>, or <code>FORUM</code>.</li>
+                    <li><strong>Tavily Extract API:</strong> Extracts page text for URL audits and top verification sources.</li>
+                    <li><strong>6-Hour Server Cache:</strong> Stores search queries and snippets in local SQLite (<code>tavily_cache.db</code>) for 6 hours.</li>
                 </ul>
             </div>
             """,
@@ -2859,21 +3084,21 @@ def render_architecture_tab(use_bifrost: bool) -> None:
         )
     with c2:
         st.markdown(
-            """
+            f"""
             <div style="background: var(--bg-card, #FFFFFF); border: 1px solid var(--border-main, #E5E7EF); border-radius: 12px; padding: 20px; height: 100%;">
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
                     <span style="font-size: 1.6rem;">⚡</span>
-                    <h3 style="margin: 0; color: #92400E; font-size: 1.15rem;">What Bifrost Does</h3>
+                    <h3 style="margin: 0; color: #92400E; font-size: 1.15rem;">Active LLM Routing &amp; Bifrost</h3>
                 </div>
                 <p style="font-size: 0.88rem; color: var(--text-muted, #64748B); line-height: 1.5; margin-bottom: 14px;">
-                    Bifrost by Maxim AI acts as the high-resilience AI Gateway and telemetry orchestrator:
+                    Current session routing mode: <strong>{escape_html(active_route_label)}</strong> (<code>USE_BIFROST={'true' if use_bifrost else 'false'}</code>).
                 </p>
                 <ul style="font-size: 0.88rem; color: var(--text-main, #0F172A); line-height: 1.7; padding-left: 20px; margin: 0;">
-                    <li><strong>Universal Gateway Routing:</strong> Routes requests seamlessly across Gemini 2.5 Flash, Flash-Lite, and OpenAI models through an unified endpoint.</li>
-                    <li><strong>Circuit-Breaker Failover:</strong> Instantly catches HTTP 429 rate limits or 503 provider outages and switches to secondary backup models with zero user crashes.</li>
-                    <li><strong>Dual-Judge Consensus:</strong> Orchestrates parallel evaluations comparing two distinct model families to eliminate model bias and hallucination.</li>
-                    <li><strong>Distributed Tracing (<code>x-bf-run-id</code>):</strong> Attaches execution correlation headers to cross-verify token consumption, latency, and step traces.</li>
-                    <li><strong>Chaos Resilience Testing:</strong> Powers Agent Lab failure testing by simulating primary model outages and verifying failover behavior.</li>
+                    <li><strong>Active Configured Models:</strong> {cfg_models_html}.</li>
+                    <li><strong>Recorded Bifrost Evidence Models ({escape_html(route_info['evidence_date'] or 'saved')}):</strong> {ev_models_html} (from <code>evidence/bifrost_evidence.json</code>).</li>
+                    <li><strong>Retries &amp; Fallbacks:</strong> Retries connection errors up to 3 times with backoff before switching to configured fallback models.</li>
+                    <li><strong>Honest Failure Handling:</strong> Failed claims show <code>Verification failed</code> (<code>—</code>) and are excluded from overall scores and usage counts.</li>
+                    <li><strong>Gateway Tracing (when Bifrost is enabled):</strong> Tags calls with <code>x-bf-run-id</code> and reads token/latency headers.</li>
                 </ul>
             </div>
             """,
@@ -2881,7 +3106,7 @@ def render_architecture_tab(use_bifrost: bool) -> None:
         )
 
     st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
-    st.markdown("### 🛡️ Audited Bifrost Gateway Evidence")
+    st.markdown("### 🛡️ Recorded Bifrost Gateway Evidence")
     render_bifrost_evidence_panel(key_prefix="arch_evidence")
 
 
@@ -2930,9 +3155,13 @@ def _build_compact_model_row_html(
 
 
 def build_overall_verdict_sentence(results: list[dict]) -> str:
-    """Build a natural-language summary sentence of verified claim findings (e.g. '1 incorrect claim found')."""
+    """Build a natural-language summary sentence of verified claim findings."""
     if not results:
         return "No factual claims verified."
+    failed = sum(1 for r in results if r.get("status") == "verification_failed")
+    if failed > 0:
+        return f"Could not verify {failed} of {len(results)} claims."
+
     incorrect = sum(1 for r in results if r.get("status") == "incorrect")
     outdated = sum(1 for r in results if r.get("status") == "outdated")
     partially_correct = sum(1 for r in results if r.get("status") == "partially_correct")
@@ -2975,10 +3204,14 @@ def render_score_ring_html(
 ) -> str:
     """Build the pure HTML/CSS circular score ring, verdict sentence, and compact model/fallback row."""
     tier_label, ring_color, tier_desc = get_overall_tier(overall_score, results=results)
+    has_failed = any(
+        isinstance(r, dict) and r.get("status") == "verification_failed"
+        for r in (results or [])
+    )
     if overall_score is None:
         ring_fill = 0
-        ring_num_text = "N/A"
-        ring_denom_text = "no score"
+        ring_num_text = "—" if has_failed else "N/A"
+        ring_denom_text = "not scored" if has_failed else "no score"
     else:
         clamped = max(0, min(100, overall_score))
         ring_fill = clamped
@@ -2992,17 +3225,33 @@ def render_score_ring_html(
         if verdict_sentence
         else ""
     )
+    heading_text = (
+        escape_html(tier_label)
+        if has_failed
+        else f"Overall freshness: {escape_html(tier_label)}"
+    )
+    ring_tier_short = "Failed" if (has_failed and overall_score is None) else ("Partial" if has_failed else tier_label)
+
+    circumference = 276.46  # 2 * pi * 44
+    stroke_target = round(circumference * (1.0 - (ring_fill / 100.0)), 2)
+    target_attr = f' data-target-score="{ring_fill}"' if overall_score is not None else ""
 
     return (
-        f'<div class="sad-score-card">'
-        f'<div class="sad-ring-wrap" style="background: conic-gradient({ring_color} {ring_fill}%, var(--border-main, #E5E7EF) 0);">'
+        f'<div class="sad-score-card sad-reveal-stagger" style="--sad-stagger-i: 0;">'
+        f'<div class="sad-ring-svg-wrap">'
+        f'<svg class="sad-ring-svg" viewBox="0 0 104 104" aria-hidden="true">'
+        f'<circle class="sad-ring-track-circle" cx="52" cy="52" r="44"></circle>'
+        f'<circle class="sad-ring-progress-circle" cx="52" cy="52" r="44" '
+        f'stroke="{ring_color}" '
+        f'style="--sad-ring-circ: {circumference}; --sad-ring-target: {stroke_target};"></circle>'
+        f'</svg>'
         f'<div class="sad-ring-inner">'
-        f'<span class="sad-ring-num">{ring_num_text}</span>'
+        f'<span class="sad-ring-num"{target_attr}>{ring_num_text}</span>'
         f'<span class="sad-ring-denom">{ring_denom_text}</span>'
-        f'<span class="sad-ring-tier" style="color: {ring_color};">{tier_label}</span>'
+        f'<span class="sad-ring-tier sad-pill-pop" style="color: {ring_color};">{escape_html(ring_tier_short)}</span>'
         f'</div></div>'
         f'<div class="sad-score-meta">'
-        f'<h3>Overall freshness: {tier_label}</h3>'
+        f'<h3>{heading_text}</h3>'
         f'{verdict_html}'
         f'<p>{escape_html(tier_desc)}</p>'
         f'{compact_row_html}'
@@ -3026,43 +3275,121 @@ def _format_source_chips_html(
     sources: list[dict] | None,
     entity_domains: list[str] | None = None,
 ) -> str:
-    """Render clickable source chips labeled Primary/News/Blog/Forum with optional published dates."""
-    chips_parts: list[str] = []
+    """Render clickable source chips deduplicated by registered domain with '+N pages'
+    and exactly ONE label (PRIMARY, NEWS, BLOG, or FORUM, never two labels).
+    """
+    type_priority = {"Primary": 4, "News": 3, "Blog": 2, "Forum": 1}
+    domain_order: list[str] = []
+    domain_entries: dict[str, dict] = {}
+
     for src in sources or []:
         if not isinstance(src, dict):
             continue
         url = str(src.get("url", "")).strip()
         if not url:
             continue
-        domain = escape_html(extract_domain(url))
-        title_attr = escape_html(src.get("title") or url)
-        safe_url = safe_href_url(url)
+        reg_domain = str(src.get("domain") or "").strip() or _extract_independent_domain(url) or extract_domain(url)
         raw_type = str(src.get("source_type") or "").strip()
         src_type = (
             raw_type
             if raw_type in {"Primary", "News", "Blog", "Forum"}
             else classify_source_type(url, entity_domains=entity_domains)
         )
+        if src_type not in type_priority:
+            src_type = "News"
+        src_pages = max(1, int(src.get("page_count") or 1))
+        if reg_domain not in domain_entries:
+            domain_order.append(reg_domain)
+            domain_entries[reg_domain] = {
+                "url": url,
+                "domain": reg_domain,
+                "title": src.get("title") or url,
+                "source_type": src_type,
+                "stance": str(src.get("stance") or "").strip().lower(),
+                "published_date": str(src.get("published_date") or "").strip(),
+                "quote": str(src.get("quote") or "").strip(),
+                "page_count": src_pages,
+                "seen_urls": {url},
+            }
+        else:
+            existing = domain_entries[reg_domain]
+            if url not in existing["seen_urls"]:
+                existing["seen_urls"].add(url)
+                existing["page_count"] += src_pages
+            else:
+                existing["page_count"] = max(existing["page_count"], src_pages)
+            if type_priority.get(src_type, 0) > type_priority.get(existing["source_type"], 0):
+                existing["source_type"] = src_type
+                existing["url"] = url
+                existing["title"] = src.get("title") or existing["title"]
+
+    chips_parts: list[str] = []
+    for dom in domain_order:
+        entry = domain_entries[dom]
+        domain_esc = escape_html(entry["domain"])
+        title_attr = escape_html(entry["title"])
+        safe_url = safe_href_url(entry["url"])
+        src_type = entry["source_type"]
         type_cls = f"sad-src-{src_type.lower()}"
-        stance_raw = str(src.get("stance") or "").strip().lower()
+        type_label_upper = src_type.upper()  # Strictly ONE label: PRIMARY, NEWS, BLOG, or FORUM
+        stance_raw = entry["stance"]
         stance_span = ""
         if stance_raw in {"support", "contradict", "neutral"}:
             stance_span = f'<span class="sad-src-stance {stance_raw}">{stance_raw.capitalize()}</span>'
-        pub_date = str(src.get("published_date") or "").strip()
+        pub_date = entry["published_date"]
         date_span = f'<span class="sad-src-date">&bull; {escape_html(pub_date)}</span>' if pub_date else ""
-        quote_hint = str(src.get("quote") or "").strip()
+        extra_pages = max(0, int(entry["page_count"]) - 1)
+        pages_span = (
+            f' <span class="sad-src-pages">+{extra_pages} page{"s" if extra_pages != 1 else ""}</span>'
+            if extra_pages > 0
+            else ""
+        )
+        quote_hint = entry["quote"]
         if quote_hint:
             title_attr = f"{title_attr} &#10;&ldquo;{escape_html(quote_hint)}&rdquo;"
-        primary_badge = '<span class="sad-primary-badge">PRIMARY</span>' if src_type == "Primary" else ""
         chips_parts.append(
             f'<a class="sad-source-chip" href="{safe_url}" target="_blank" '
             f'rel="noopener noreferrer" title="{title_attr}">'
-            f'{primary_badge}<span class="sad-src-type {type_cls}">{escape_html(src_type)}</span>{stance_span}'
-            f'{domain}{date_span} &#8599;</a>'
+            f'<span class="sad-src-type {type_cls}">{escape_html(type_label_upper)}</span>{stance_span}'
+            f'{domain_esc}{pages_span}{date_span} &#8599;</a>'
         )
     if not chips_parts:
         return '<div class="sad-card-footer">No source links available.</div>'
     return '<div class="sad-chips-row">' + "".join(chips_parts) + "</div>"
+
+
+def format_step_timeline_html(item: dict) -> str:
+    """Format per-step latency strip strictly from measured perf_counter values.
+
+    Never invents default numbers; displays 'not run' for any step without a measured duration.
+    """
+    detect_val = item.get("detect_latency_ms")
+    search_val = item.get("search_latency_ms")
+    judge_val = item.get("judge_latency_ms")
+    if judge_val is None and item.get("status") != "verification_failed":
+        gw_lat = (item.get("gateway_metrics") or {}).get("latency_ms")
+        if isinstance(gw_lat, (int, float)) and gw_lat > 0:
+            judge_val = gw_lat
+    score_val = item.get("score_latency_ms")
+
+    def _fmt_timing(val: object) -> str:
+        if isinstance(val, (int, float)) and val >= 0:
+            if 0 < val < 1.0:
+                return f"({val:.1f}ms)"
+            return f"({val:.0f}ms)"
+        return "(not run)"
+
+    return (
+        f'<div class="sad-timeline-strip">'
+        f'<span class="sad-timeline-step">🔍 Detected <span class="timing">{_fmt_timing(detect_val)}</span></span>'
+        f'<span class="sad-timeline-arrow">&rarr;</span>'
+        f'<span class="sad-timeline-step">🌐 Searched <span class="timing">{_fmt_timing(search_val)}</span></span>'
+        f'<span class="sad-timeline-arrow">&rarr;</span>'
+        f'<span class="sad-timeline-step">⚡ Judged <span class="timing">{_fmt_timing(judge_val)}</span></span>'
+        f'<span class="sad-timeline-arrow">&rarr;</span>'
+        f'<span class="sad-timeline-step">📊 Scored <span class="timing">{_fmt_timing(score_val)}</span></span>'
+        f'</div>'
+    )
 
 
 def render_claim_card(
@@ -3075,10 +3402,15 @@ def render_claim_card(
     status = str(item.get("status", "uncertain")).strip().lower()
     meta = STATUS_META.get(status, STATUS_META["uncertain"])
     raw_score = item.get("score")
-    is_unverifiable = status == "unverifiable" or raw_score is None
+    is_failed = status == "verification_failed"
+    is_unverifiable = status == "unverifiable" or is_failed or raw_score is None
     score: int | None = None if is_unverifiable else max(0, min(100, int(raw_score)))
     bar_width = 0 if score is None else score
-    score_display = "N/A" if score is None else f"{score}/100"
+    score_display = "—" if is_failed else ("N/A" if score is None else f"{score}/100")
+
+    category = normalize_category(item.get("category", "other"))
+    category_display = format_category_label(category)
+    cat_icon = CATEGORY_ICONS.get(category, CATEGORY_ICONS["other"])
 
     if status == "skipped":
         c_text = item.get("claim", "")
@@ -3092,7 +3424,7 @@ def render_claim_card(
             f'<div class="sad-claim-badges">'
             f'<span class="sad-pill pill-skipped">Stable, not time-sensitive (skipped)</span>'
             f'<span class="sad-meta-pill" style="border-color: #64748B; color: #64748B;">🛡️ Skipped (Stable)</span>'
-            f'<span class="sad-cat-badge">{cat_icon}{escape_html(category)}</span>'
+            f'<span class="sad-cat-badge">{cat_icon}{escape_html(category_display)}</span>'
             f'<span class="sad-meta-pill">Sensitivity: {ts_val}/100</span>'
             f'<span class="sad-meta-pill">Class: {escape_html(vol_class)}</span>'
             f'</div>'
@@ -3107,8 +3439,6 @@ def render_claim_card(
         st.markdown(card_html, unsafe_allow_html=True)
         return
 
-    category = str(item.get("category", "other")).lower()
-    cat_icon = CATEGORY_ICONS.get(category, CATEGORY_ICONS["other"])
     entity_doms = item.get("entity_domains") if isinstance(item.get("entity_domains"), list) else None
 
     claimed_html = escape_html(item.get("claim", ""))
@@ -3324,27 +3654,13 @@ def render_claim_card(
         "partially_correct": "⚡ Partially accurate: core entity matches but specific figures or dates differ.",
         "uncertain": "❓ Uncertain claim: conflicting evidence or insufficient consensus across sources.",
         "unverifiable": "🔍 Unverifiable: no reliable live web records found to corroborate or refute.",
+        "verification_failed": "❌ Verification failed: LLM or Tavily search failed after retries and fallback. Excluded from overall score.",
     }
     top_expl = top_explanations.get(status, "Claim verification completed against live sources.")
     pill_suffix = meta["pill_class"].replace("pill-", "")
     top_expl_html = f'<div class="sad-claim-top-explanation {pill_suffix}">{escape_html(top_expl)}</div>'
 
-    gw_lat = float((item.get("gateway_metrics") or {}).get("latency_ms") or 0.0)
-    search_lat = float(item.get("search_latency_ms") or 210.0)
-    judge_lat = gw_lat if gw_lat > 0 else 340.0
-    detect_lat = float(item.get("detect_latency_ms") or 45.0)
-    score_lat = float(item.get("score_latency_ms") or 12.0)
-    timeline_html = (
-        f'<div class="sad-timeline-strip">'
-        f'<span class="sad-timeline-step">🔍 Detected <span class="timing">({detect_lat:.0f}ms)</span></span>'
-        f'<span class="sad-timeline-arrow">&rarr;</span>'
-        f'<span class="sad-timeline-step">🌐 Searched <span class="timing">({search_lat:.0f}ms)</span></span>'
-        f'<span class="sad-timeline-arrow">&rarr;</span>'
-        f'<span class="sad-timeline-step">⚡ Judged <span class="timing">({judge_lat:.0f}ms)</span></span>'
-        f'<span class="sad-timeline-arrow">&rarr;</span>'
-        f'<span class="sad-timeline-step">📊 Scored <span class="timing">({score_lat:.0f}ms)</span></span>'
-        f'</div>'
-    )
+    timeline_html = format_step_timeline_html(item)
 
     conf_bars = ""
     if confidence == "high":
@@ -3364,14 +3680,15 @@ def render_claim_card(
     else:
         source_badge_html = '<span class="sad-meta-pill" style="border-color: #16A34A; color: #16A34A; background: rgba(22,163,74,0.08);">🟢 Live</span>'
 
+    stagger_idx = min(max(int(index), 1), 12)
     card_html = (
-        f'<div id="{escape_html(card_id)}" class="sad-claim-card status-{status}" style="border-top: 3px solid {meta_color};">'
+        f'<div id="{escape_html(card_id)}" class="sad-claim-card status-{status} sad-reveal-stagger" style="border-top: 3px solid {meta_color}; --sad-stagger-i: {stagger_idx};">'
         f'{top_expl_html}'
         f'<div class="sad-claim-header">'
         f'<div class="sad-claim-badges">'
-        f'<span class="sad-pill {meta["pill_class"]}">{meta["label"]}</span>'
+        f'<span class="sad-pill {meta["pill_class"]} sad-pill-pop">{meta["label"]}</span>'
         f'{source_badge_html}'
-        f'<span class="sad-cat-badge">{cat_icon}{escape_html(category)}</span>'
+        f'<span class="sad-cat-badge">{cat_icon}{escape_html(category_display)}</span>'
         f'<span class="sad-meta-pill">{escape_html(confidence.title())} confidence{conf_bars}</span>'
         f'<span class="sad-meta-pill {risk_cls}">{escape_html(risk_level.title())} risk</span>'
         f'{agreement_badge_html}'
@@ -3407,29 +3724,94 @@ def render_claim_card(
     )
     st.markdown(card_html, unsafe_allow_html=True)
 
-    # Claim Watchlist Toggle Button (in-session monitoring)
+    # Retry button for failed claims + Claim Watchlist Toggle Button
     claim_text_val = str(item.get("claim", "")).strip()
-    if claim_text_val:
+    if is_failed or claim_text_val:
         cur_watchlist = st.session_state.setdefault("watchlist", [])
         is_claim_watched = any(w.get("claim") == claim_text_val for w in cur_watchlist)
         w_lbl = "⭐ In Watchlist" if is_claim_watched else "⭐ Watch claim"
-        w_c1, w_c2 = st.columns([0.8, 0.2])
-        with w_c2:
-            if st.button(
-                w_lbl,
-                key=f"watch_claim_{key_prefix}_{index}",
-                help="Pin to session watchlist for delta tracking across re-audits",
-            ):
-                if is_claim_watched:
-                    st.session_state["watchlist"] = [w for w in cur_watchlist if w.get("claim") != claim_text_val]
-                else:
-                    cur_watchlist.append({
-                        "claim": claim_text_val,
-                        "original_status": status,
-                        "current_status": status,
-                        "score": score,
-                    })
-                st.rerun()
+        if is_failed:
+            w_c1, w_c2, w_c3 = st.columns([0.3, 0.5, 0.2])
+            with w_c1:
+                if st.button(
+                    "🔄 Retry this claim",
+                    key=f"retry_claim_{key_prefix}_{index}",
+                    type="primary",
+                    help="Retry live verification for this failed claim",
+                ):
+                    with st.spinner("Retrying claim verification..."):
+                        retry_input = {
+                            "claim": claim_text_val,
+                            "span": item.get("span"),
+                            "category": category,
+                            "search_query": item.get("search_query") or claim_text_val,
+                            "detect_latency_ms": item.get("detect_latency_ms"),
+                        }
+                        retried = verify_claim(
+                            retry_input,
+                            dual_judge=bool(st.session_state.get("dual_judge_mode", False)),
+                        )
+                        state_key_map = {
+                            "ask": "ask_results",
+                            "url": "url_results",
+                        }
+                        target_state_key = state_key_map.get(key_prefix, "results")
+                        curr_list = list(st.session_state.get(target_state_key) or [])
+                        if 0 <= (index - 1) < len(curr_list):
+                            curr_list[index - 1] = retried
+                            st.session_state[target_state_key] = curr_list
+                        if retried.get("status") == "verification_failed":
+                            err_q = classify_error_quota_status(retried.get("error") or retried.get("reason") or "")
+                            if err_q:
+                                st.session_state["quota_status"] = err_q
+                        else:
+                            for j_tel in (retried.get("judge_telemetry") or []):
+                                if isinstance(j_tel, dict):
+                                    rec = dict(j_tel)
+                                    rec.setdefault("operation", "Verify claim (retry)")
+                                    append_gateway_request(rec)
+                            if not (retried.get("judge_telemetry") or []) and isinstance(retried.get("gateway_metrics"), dict):
+                                rec = dict(retried.get("gateway_metrics") or {})
+                                rec.setdefault("operation", "Verify claim (retry)")
+                                append_gateway_request(rec)
+                            st.session_state["quota_status"] = "Live"
+                            if not any(isinstance(r, dict) and r.get("status") == "verification_failed" for r in curr_list):
+                                st.session_state["pipeline_error_step"] = None
+                        st.rerun()
+            with w_c3:
+                if claim_text_val and st.button(
+                    w_lbl,
+                    key=f"watch_claim_{key_prefix}_{index}",
+                    help="Pin to session watchlist for delta tracking across re-audits",
+                ):
+                    if is_claim_watched:
+                        st.session_state["watchlist"] = [w for w in cur_watchlist if w.get("claim") != claim_text_val]
+                    else:
+                        cur_watchlist.append({
+                            "claim": claim_text_val,
+                            "original_status": status,
+                            "current_status": status,
+                            "score": score,
+                        })
+                    st.rerun()
+        elif claim_text_val:
+            w_c1, w_c2 = st.columns([0.8, 0.2])
+            with w_c2:
+                if st.button(
+                    w_lbl,
+                    key=f"watch_claim_{key_prefix}_{index}",
+                    help="Pin to session watchlist for delta tracking across re-audits",
+                ):
+                    if is_claim_watched:
+                        st.session_state["watchlist"] = [w for w in cur_watchlist if w.get("claim") != claim_text_val]
+                    else:
+                        cur_watchlist.append({
+                            "claim": claim_text_val,
+                            "original_status": status,
+                            "current_status": status,
+                            "score": score,
+                        })
+                    st.rerun()
 
     # Short evidence snippets (<= 25 words per source) inside an expander under the claim.
     valid_sources = [
@@ -3625,12 +4007,58 @@ def run_stale_audit(
     gateway_placeholder,
     max_claims: int | None = None,
     audit_meta_out: dict | None = None,
+    stepper_placeholder=None,
+    action_status_slot=None,
+    scan_slot=None,
+    discovery_slot=None,
+    verify_board_slot=None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[str | None, dict | None, list[dict]]:
     """
     Reuse the shared extractor + parallel verifier pipeline on `answer_text`, streaming live
-    progress (including an st.progress bar), sidebar Tavily credits, and the Bifrost Gateway panel.
+    progress driven strictly by real pipeline events (Detect -> Claim Discovery -> Verify
+    Search/Extract/Judge -> Score -> Complete/Error/Stopped).
     """
+    st.session_state["pipeline_error_step"] = None
+    st.session_state["audit_stopped"] = False
+    st.session_state["audit_stopped_info"] = None
+    st.session_state["partial_audit_results"] = []
+    st.session_state["partial_audit_total"] = 0
+
+    active_cancel = cancel_event or threading.Event()
+    st.session_state["audit_cancel_event"] = active_cancel
+
+    ui_state = create_initial_ui_state()
+    st.session_state["audit_ui_state"] = ui_state
     audit_t0 = time.perf_counter()
+
+    def _refresh_live_ui(include_scan: bool = False, include_verify: bool = False) -> None:
+        if stepper_placeholder is not None:
+            stepper_placeholder.markdown(
+                render_stepper_html(
+                    st.session_state.get("busy_action"),
+                    has_results=bool(ui_state.reveal_ready),
+                    has_input=True,
+                    ui_state=ui_state,
+                ),
+                unsafe_allow_html=True,
+            )
+        if action_status_slot is not None:
+            pill_html = render_action_status_pill_html(ui_state)
+            if pill_html:
+                action_status_slot.markdown(pill_html, unsafe_allow_html=True)
+            else:
+                action_status_slot.empty()
+        if include_scan and scan_slot is not None:
+            scan_html = render_scan_effect_html(answer_text, ui_state.scan_active)
+            if scan_html:
+                scan_slot.markdown(scan_html, unsafe_allow_html=True)
+            else:
+                scan_slot.empty()
+        if include_verify and verify_board_slot is not None:
+            board_html = render_verify_live_board_html(ui_state)
+            if board_html:
+                verify_board_slot.markdown(board_html, unsafe_allow_html=True)
 
     def _finalize_audit_timing() -> None:
         elapsed_ms = round((time.perf_counter() - audit_t0) * 1000.0, 1)
@@ -3641,7 +4069,10 @@ def run_stale_audit(
         )
         render_gateway_panel(gateway_placeholder, st.session_state["gateway_requests"])
 
-    st.write("Extracting claims...")
+    # --- Phase 1: Real Detect Start ---
+    apply_pipeline_event(ui_state, "detect_start")
+    _refresh_live_ui(include_scan=True)
+    st.write("Detecting claims...")
     claims, extract_model = extract_claims(answer_text)
     total_extracted = len(claims)
     effective_max_claims = max_claims if max_claims is not None else get_max_claims_per_audit()
@@ -3675,6 +4106,8 @@ def run_stale_audit(
     st.write(f":material/check: {extract_msg}")
 
     if not claims:
+        apply_pipeline_event(ui_state, "complete", {"results": []})
+        _refresh_live_ui(include_scan=True)
         _finalize_audit_timing()
         status_widget.update(
             label="Done",
@@ -3686,6 +4119,15 @@ def run_stale_audit(
     # PS06 Requirement 1: Freshness Detection vs Live Verification partitioning
     threshold = int(st.session_state.get("detection_threshold", 40))
     flagged_claims, skipped_claims = partition_claims_by_threshold(claims, threshold=threshold)
+    st.session_state["partial_audit_total"] = len(flagged_claims)
+
+    # --- Phase 2: Claim Discovery Reveal ---
+    apply_pipeline_event(ui_state, "detect_done", {"claims": claims, "threshold": threshold})
+    _refresh_live_ui(include_scan=True)
+    if discovery_slot is not None:
+        disc_html = render_claim_discovery_chips_html(claims, threshold=threshold, category_icons=CATEGORY_ICONS)
+        if disc_html:
+            discovery_slot.markdown(disc_html, unsafe_allow_html=True)
 
     detection_msg = (
         f"Detection: {len(claims)} claim(s) found, {len(flagged_claims)} flagged for live verification "
@@ -3701,8 +4143,19 @@ def run_stale_audit(
         audit_meta_out["claims_flagged"] = len(flagged_claims)
         audit_meta_out["claims_skipped"] = len(skipped_claims)
 
+    if active_cancel.is_set():
+        apply_pipeline_event(ui_state, "stopped", {"completed": 0, "total": len(flagged_claims)})
+        _refresh_live_ui()
+        _finalize_audit_timing()
+        st.session_state["audit_stopped"] = True
+        st.session_state["audit_stopped_info"] = {"completed": 0, "total": len(flagged_claims)}
+        status_widget.update(label="Stopped", state="complete", expanded=False)
+        return extract_model, extract_record, []
+
     if not flagged_claims:
         verified_results = [create_skipped_claim_result(c) for c in claims]
+        apply_pipeline_event(ui_state, "complete", {"results": verified_results})
+        _refresh_live_ui()
         _finalize_audit_timing()
         steps_log.append("Done (all claims verified as stable)")
         status_widget.update(
@@ -3721,6 +4174,8 @@ def run_stale_audit(
         return extract_model, extract_record, verified_results
 
     total = len(flagged_claims)
+    apply_pipeline_event(ui_state, "verify_start", {"flagged_claims": flagged_claims})
+    _refresh_live_ui(include_verify=True)
     status_widget.update(
         label="Searching live sources",
         state="running",
@@ -3733,9 +4188,32 @@ def run_stale_audit(
     )
 
     progress_calls = [0]
+    partial_verified_live: list[dict] = []
+
+    def on_verify_event(claim_idx: int, substep: str, payload: dict) -> None:
+        if substep == "done":
+            apply_pipeline_event(
+                ui_state,
+                "claim_done",
+                {"claim_index": claim_idx, "result": payload.get("result")},
+            )
+        else:
+            apply_pipeline_event(
+                ui_state,
+                "claim_substep",
+                {
+                    "claim_index": claim_idx,
+                    "substep": substep,
+                    "sources": payload.get("sources"),
+                },
+            )
+        status_widget.update(label=ui_state.button_label, state="running")
+        _refresh_live_ui(include_verify=True)
 
     def on_progress(idx: int, total_count: int, result: dict) -> None:
         progress_calls[0] += 1
+        partial_verified_live.append(result)
+        st.session_state["partial_audit_results"] = list(partial_verified_live)
 
         claim_credits = float(result.get("tavily_credits_used", 0.0) or 0.0)
         if claim_credits > 0:
@@ -3755,22 +4233,24 @@ def run_stale_audit(
             prog_label = (
                 f"Verified {idx}/{total_count} claims"
                 if idx < total_count
-                else f"Verified {total_count}/{total_count} claims — finalizing..."
+                else f"Verified {total_count}/{total_count} claims — scoring..."
             )
             progress_bar.progress(frac, text=prog_label)
 
         if idx < total_count:
             status_widget.update(
-                label="Searching live sources",
+                label=ui_state.button_label,
                 state="running",
             )
             live_step.write(f"Searching live sources ({idx + 1}/{total_count})...")
         else:
-            status_widget.update(label="Judging", state="running")
-            live_step.write("Judging...")
+            apply_pipeline_event(ui_state, "score_start")
+            status_widget.update(label="Scoring", state="running")
+            live_step.write("Scoring freshness...")
+            _refresh_live_ui(include_verify=True)
 
         res_score = result.get("score")
-        res_score_str = "N/A" if res_score is None else f"{res_score}/100"
+        res_score_str = "—" if res_score is None else f"{res_score}/100"
         step_text = (
             f"Claim {idx}/{total_count}: {result.get('status', 'uncertain').upper()} "
             f"({res_score_str})"
@@ -3781,6 +4261,10 @@ def run_stale_audit(
     verify_kwargs: dict = {"progress_callback": on_progress}
     if dual_enabled and _callable_accepts_kwarg(verify_claims, "dual_judge"):
         verify_kwargs["dual_judge"] = True
+    if _callable_accepts_kwarg(verify_claims, "event_callback"):
+        verify_kwargs["event_callback"] = on_verify_event
+    if _callable_accepts_kwarg(verify_claims, "cancel_event"):
+        verify_kwargs["cancel_event"] = active_cancel
 
     flagged_results = verify_claims(flagged_claims, **verify_kwargs)
     if progress_calls[0] == 0:
@@ -3807,7 +4291,8 @@ def run_stale_audit(
                 st.session_state["gateway_requests"],
             )
 
-    # Recombine flagged and skipped claims in original order (PS06 Requirement 1)
+    # Recombine flagged and skipped claims in original order (handles partial results cleanly if stopped)
+    was_stopped = active_cancel.is_set()
     results_map = {}
     for orig_idx, c in enumerate(claims):
         ts = c.get("time_sensitivity", 50)
@@ -3824,21 +4309,51 @@ def run_stale_audit(
     verified_results = []
     for orig_idx in range(len(claims)):
         if results_map[orig_idx] is None:
-            verified_results.append(next(flag_iter))
+            nxt = next(flag_iter, None)
+            if nxt is not None:
+                verified_results.append(nxt)
         else:
             verified_results.append(results_map[orig_idx])
 
     if progress_bar is not None:
-        progress_bar.progress(1.0, text=f"Completed {total}/{total} live checks")
+        if was_stopped:
+            progress_bar.progress(
+                min(1.0, len(flagged_results) / max(total, 1)),
+                text=f"Stopped — showing {len(flagged_results)}/{total} completed live checks",
+            )
+        else:
+            progress_bar.progress(1.0, text=f"Completed {total}/{total} live checks")
 
     _finalize_audit_timing()
-    live_step.write(":material/check: Judging freshness complete")
-    steps_log.append("Done")
-    status_widget.update(
-        label="Done",
-        state="complete",
-        expanded=st.session_state["keep_status_expanded"],
-    )
+    if was_stopped:
+        st.session_state["audit_stopped"] = True
+        st.session_state["audit_stopped_info"] = {
+            "completed": len(flagged_results),
+            "total": total,
+        }
+        apply_pipeline_event(
+            ui_state,
+            "stopped",
+            {"completed": len(flagged_results), "total": total},
+        )
+        _refresh_live_ui(include_verify=True)
+        live_step.write(f"Stopped — preserved {len(flagged_results)} of {total} verified claim(s)")
+        steps_log.append(f"Stopped ({len(flagged_results)}/{total} verified)")
+        status_widget.update(
+            label="Stopped (partial results)",
+            state="complete",
+            expanded=st.session_state["keep_status_expanded"],
+        )
+    else:
+        apply_pipeline_event(ui_state, "complete", {"results": verified_results})
+        _refresh_live_ui()
+        live_step.write(":material/check: Judging freshness complete")
+        steps_log.append("Done")
+        status_widget.update(
+            label="Done",
+            state="complete",
+            expanded=st.session_state["keep_status_expanded"],
+        )
 
     # PS06 Requirement 5: Contribution Ledger recording
     audit_ledger = compute_audit_ledger(
@@ -3854,13 +4369,26 @@ def run_stale_audit(
         if isinstance(r, dict):
             r.setdefault("source_origin", "cached" if r.get("cache_hit") else "live")
 
+    failed_claims = [
+        r for r in verified_results
+        if isinstance(r, dict) and r.get("status") == "verification_failed"
+    ]
+    if failed_claims:
+        st.session_state["pipeline_error_step"] = "verify"
+        for fc in failed_claims:
+            err_q = classify_error_quota_status(fc.get("error") or fc.get("reason") or "")
+            if err_q:
+                st.session_state["quota_status"] = err_q
+                break
+
     if not st.session_state.get("demo_mode"):
         audits_count = int(st.session_state.get("live_audits_performed") or 0) + 1
         st.session_state["live_audits_performed"] = audits_count
-        if audits_count >= get_max_session_audits():
-            st.session_state["quota_status"] = "Limited"
-        else:
-            st.session_state["quota_status"] = "Live"
+        if not failed_claims:
+            if audits_count >= get_max_session_audits():
+                st.session_state["quota_status"] = "Limited"
+            else:
+                st.session_state["quota_status"] = "Live"
 
     return extract_model, extract_record, verified_results
 
@@ -3915,8 +4443,21 @@ def render_audit_results(
 
     overall_score = compute_risk_weighted_overall_score(results)
     checked_text_val = annotated_text or (results[0].get("claim", "") if results else "")
-    src_origin = f"Saved ({SAVED_RESULTS_DATE})" if st.session_state.get("demo_mode") else "Live"
-    record_audit_to_history(checked_text_val, results, source_label=src_origin, mode=key_prefix.capitalize(), score=overall_score)
+    failed_count = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "verification_failed")
+    if not st.session_state.get("demo_mode"):
+        audit_hist_status = (
+            "Failed"
+            if failed_count == len(results)
+            else ("Partial" if failed_count > 0 else "Completed")
+        )
+        record_audit_to_history(
+            checked_text_val,
+            results,
+            source_label="Live",
+            mode=key_prefix.capitalize(),
+            score=None if failed_count > 0 else overall_score,
+            audit_status=audit_hist_status,
+        )
     fresh_count = sum(1 for r in results if r.get("status") == "fresh")
     outdated_count = sum(1 for r in results if r.get("status") == "outdated")
     incorrect_count = sum(1 for r in results if r.get("status") == "incorrect")
@@ -3949,6 +4490,15 @@ def render_audit_results(
             if route not in fallback_routes:
                 fallback_routes.append(route)
 
+    if st.session_state.get("audit_stopped") and key_prefix == "pasted":
+        stop_info = st.session_state.get("audit_stopped_info") or {}
+        st_done = int(stop_info.get("completed") or len(results))
+        st_tot = int(stop_info.get("total") or len(results))
+        st.info(
+            f"Audit stopped by user — showing partial results ({st_done} of {max(st_tot, st_done)} claim(s) verified).",
+            icon=":material/stop_circle:",
+        )
+
     st.markdown(
         render_score_ring_html(
             overall_score,
@@ -3959,6 +4509,38 @@ def render_audit_results(
         ),
         unsafe_allow_html=True,
     )
+    if overall_score is not None:
+        components.html(
+            """
+            <script>
+            (function() {
+              try {
+                const win = window.parent || window;
+                if (win.matchMedia && win.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+                const doc = win.document || document;
+                const nums = doc.querySelectorAll('.sad-ring-num[data-target-score]');
+                nums.forEach(function(el) {
+                  if (el.dataset.counted === '1') return;
+                  const target = parseInt(el.getAttribute('data-target-score'), 10);
+                  if (isNaN(target) || target <= 0) return;
+                  el.dataset.counted = '1';
+                  const start = performance.now();
+                  const dur = 480;
+                  function tick(now) {
+                    const t = Math.min(1, (now - start) / dur);
+                    const eased = 1 - Math.pow(1 - t, 3);
+                    el.textContent = String(Math.round(target * eased));
+                    if (t < 1) win.requestAnimationFrame(tick);
+                    else el.textContent = String(target);
+                  }
+                  win.requestAnimationFrame(tick);
+                });
+              } catch (e) {}
+            })();
+            </script>
+            """,
+            height=0,
+        )
 
     skipped_count = sum(1 for r in results if r.get("status") == "skipped")
     flagged_count = len(results) - skipped_count
@@ -3985,6 +4567,32 @@ def render_audit_results(
     detect_html += '</div>'
     st.markdown(detect_html, unsafe_allow_html=True)
 
+    if failed_count > 0 and not st.session_state.get("demo_mode"):
+        with st.container(border=True):
+            fc1, fc2 = st.columns([2.2, 1.0], vertical_alignment="center", gap="small")
+            with fc1:
+                st.warning(
+                    f"Could not verify {failed_count} of {len(results)} claims after retries and fallback. "
+                    "Failed claims are excluded from the overall score and status counts. Use **Retry this claim** "
+                    "on individual cards below, or load Demo / Saved results for built-in examples.",
+                    icon=":material/warning:",
+                )
+            with fc2:
+                if st.button(
+                    "Load Demo / Saved results",
+                    key=f"{key_prefix}_failed_demo_fallback_btn",
+                    icon=":material/play_circle:",
+                    use_container_width=True,
+                ):
+                    try:
+                        sample, exact = find_cached_pasted_audit(checked_text_val)
+                        _apply_pasted_demo_sample(sample, exact_match=exact, sync_widget=False)
+                        st.session_state["demo_mode"] = True
+                        st.session_state["pipeline_error_step"] = None
+                        st.rerun()
+                    except FileNotFoundError:
+                        st.info("Saved demo cache file not found.")
+
     grid_cols = 7 if skipped_count > 0 else 6
     with st.grid(grid_cols, min_column_width=80, gap="small"):
         st.metric("Fresh", fresh_count, border=True, height="stretch", help="Claims verified current and fully supported by live web sources.")
@@ -3996,11 +4604,20 @@ def render_audit_results(
         if skipped_count > 0:
             st.metric("Skipped", skipped_count, border=True, height="stretch", help="Stable, non-volatile factual claims skipped to conserve API credits.")
 
-    # PS06 Requirement 5: Contribution Ledger Panel
+    # PS06 Requirement 5: Contribution Ledger Panel (route-aware labels)
     audit_led = st.session_state.get("last_audit_ledger") or compute_audit_ledger(results, extract_meta)
     sess_led = st.session_state.get("session_ledger") or audit_led
-    with st.expander("🤝 How Tavily and Bifrost Contribute (Contribution Ledger)", expanded=False, icon=":material/handshake:"):
-        st.caption("Detailed contribution metrics showing exactly how live Tavily search and Bifrost AI gateway work together.")
+    active_bifrost = is_use_bifrost()
+    ledger_route_info = get_real_model_and_routing_info(use_bifrost=active_bifrost)
+    llm_col_title = "#### ⚡ Bifrost AI Gateway" if active_bifrost else "#### ⚡ Direct Gemini API"
+    llm_calls_lbl = ledger_route_info["calls_label"]
+    llm_fb_lbl = "Gateway fallbacks triggered" if active_bifrost else "Model fallbacks triggered"
+    llm_lat_lbl = "Gateway latency" if active_bifrost else "Measured LLM latency"
+    with st.expander("🤝 Contribution Ledger (Tavily + Active LLM Route)", expanded=False, icon=":material/handshake:"):
+        st.caption(
+            f"Contribution metrics for this audit and session (active route: {ledger_route_info['route_label']}). "
+            "Only LLM calls that returned usage are counted."
+        )
         l_col1, l_col2 = st.columns(2, gap="medium")
         with l_col1:
             st.markdown("#### 🌐 Tavily Web Intelligence")
@@ -4012,30 +4629,30 @@ def render_audit_results(
                 f"- **Primary / official sources:** `{audit_led['tavily']['primary_sources']}` (Session: `{sess_led['tavily']['primary_sources']}`)"
             )
         with l_col2:
-            st.markdown("#### ⚡ Bifrost AI Gateway")
+            st.markdown(llm_col_title)
             cost_str = f"${audit_led['bifrost']['cost']:.5f}" if audit_led['bifrost']['cost_set'] else "Pricing unconfigured"
             sess_cost_str = f"${sess_led['bifrost']['cost']:.5f}" if sess_led['bifrost']['cost_set'] else "Pricing unconfigured"
-            models_list = ", ".join(f"`{m}`" for m in audit_led['bifrost']['models']) or "`Default`"
+            models_list = ", ".join(f"`{m}`" for m in audit_led['bifrost']['models']) or "`None recorded`"
             st.markdown(
-                f"- **LLM calls routed:** `{audit_led['bifrost']['calls']}` (Session: `{sess_led['bifrost']['calls']}`)  \n"
+                f"- **{llm_calls_lbl}:** `{audit_led['bifrost']['calls']}` (Session: `{sess_led['bifrost']['calls']}`)  \n"
                 f"- **Models used:** {models_list}  \n"
-                f"- **Gateway fallbacks triggered:** `{audit_led['bifrost']['fallbacks']}` (Session: `{sess_led['bifrost']['fallbacks']}`)  \n"
-                f"- **Tokens processed:** `{audit_led['bifrost']['total_tokens']:,}` (In: `{audit_led['bifrost']['tokens_in']:,}` | Out: `{audit_led['bifrost']['tokens_out']:,}`)  \n"
-                f"- **Gateway latency:** `{audit_led['bifrost']['total_latency_ms']:.0f} ms`  \n"
+                f"- **{llm_fb_lbl}:** `{audit_led['bifrost']['fallbacks']}` (Session: `{sess_led['bifrost']['fallbacks']}`)  \n"
+                f"- **Tokens returned:** `{audit_led['bifrost']['total_tokens']:,}` (In: `{audit_led['bifrost']['tokens_in']:,}` | Out: `{audit_led['bifrost']['tokens_out']:,}`)  \n"
+                f"- **{llm_lat_lbl}:** `{audit_led['bifrost']['total_latency_ms']:.0f} ms`  \n"
                 f"- **Estimated cost:** `{cost_str}` (Session: `{sess_cost_str}`)"
             )
 
-    # PS06 Requirement 4: How the Freshness Score is Computed Panel
+    # PS06 Requirement 4: How the Freshness Score is Computed Panel (matches verifier.py SCORE_WEIGHTS)
     with st.expander("ℹ️ How the Freshness Score is Computed", expanded=False, icon=":material/calculate:"):
         st.markdown(
-            "Every claim's freshness score is calculated deterministically from four objective pillars:\n\n"
-            "1. **Evidence Agreement (40% weight):** Ratio of independent registered domains supporting the claim vs. contradicting it.\n"
-            "2. **Source Authority (25% weight):** Primary official sources (`docs.*`, `*.gov`, company newsrooms) receive 100%, reputable news outlets receive 75%, blogs receive 50%, forums receive 20%.\n"
-            "3. **Evidence Recency (20% weight):** Sources published within 30 days receive 100%, within 6 months 85%, within 1 year 70%, and older/undated sources receive 50%.\n"
-            "4. **Multi-Model Consensus (15% weight):** Dual-judge consistency across distinct LLM families (penalizes disagreements to Uncertain `40–74`).\n\n"
+            "Every verifiable claim's freshness score is calculated deterministically from four weighted signals in `verifier.py`:\n\n"
+            "1. **LLM Verdict (50% weight):** Grounded factual comparison strictly against retrieved web snippets and extracted text.\n"
+            "2. **Source Recency (20% weight):** Based on `published_date` returned by Tavily.\n"
+            "3. **Source Agreement (20% weight):** Ratio of unique registered domains supporting the current fact.\n"
+            "4. **Source Authority (10% weight):** Domain tier (`PRIMARY`, `NEWS`, `BLOG`, or `FORUM`).\n\n"
             "**Enforced Score Bands:**\n"
             "- **Fresh:** `75 – 100` | **Partially Correct:** `45 – 74` | **Uncertain:** `40 – 74`\n"
-            "- **Outdated:** `10 – 39` | **Incorrect:** `0 – 15` | **Unverifiable:** `Score N/A`"
+            "- **Outdated:** `10 – 39` | **Incorrect:** `0 – 15` | **Unverifiable:** `N/A` | **Verification failed:** `—` (excluded)"
         )
 
     # PS06 Requirement 6: "Why Tavily?" & "Why Bifrost?" Exploration Controls
@@ -4119,46 +4736,40 @@ def render_audit_results(
 
             first_claim = results[0] if results else {"claim": "Example claim", "category": "other"}
             if st.session_state.get("demo_mode"):
-                sim_res = {
-                    "success": True,
-                    "timeline": [
-                        {"timestamp_ms": 0.0, "event": "Request Dispatched", "detail": "Targeting primary model gemini-2.5-flash through Bifrost.", "status": "info"},
-                        {"timestamp_ms": 115.0, "event": "Primary Provider 503 Outage", "detail": "Upstream provider returned HTTP 503 Service Unavailable / 429 Rate Limited.", "status": "warning"},
-                        {"timestamp_ms": 142.0, "event": "Bifrost Instant Circuit Failover", "detail": "Gateway automatically re-routed call to fallback model gemini-3.1-flash-lite.", "status": "info"},
-                        {"timestamp_ms": 320.0, "event": "Fallback Response Received", "detail": "Claim verified successfully with zero user-facing crash or error.", "status": "success"},
-                    ],
-                    "primary_failed": "gemini-2.5-flash",
-                    "answering_model": "gemini-3.1-flash-lite",
-                    "total_latency_ms": 320.0,
-                    "failover_overhead_ms": 27.0,
-                }
+                st.info(
+                    "Demo mode is active (offline). Live outage failover simulation requires an active LLM route. "
+                    "See **Learn -> Architecture & Evidence** for real recorded Bifrost failover events from `evidence/bifrost_evidence.json`.",
+                    icon=":material/info:",
+                )
+                sim_res = None
             else:
-                with st.spinner("Simulating primary model outage through Bifrost gateway..."):
+                with st.spinner("Simulating primary model outage through active routing..."):
                     sim_res = run_why_bifrost_simulation(first_claim)
 
-            st.markdown(
-                f'<div class="sad-meta-row">'
-                f'<span class="sad-cat-badge" style="color: #DC2626;">❌ Primary Outage: <strong>{escape_html(str(sim_res.get("primary_failed", "primary")))}</strong></span>'
-                f'<span class="sad-cat-badge" style="color: #16A34A;">✅ Responded: <strong>{escape_html(str(sim_res.get("answering_model", "fallback")))}</strong></span>'
-                f'<span class="sad-cat-badge">⏱️ Failover Overhead: <strong>{sim_res.get("failover_overhead_ms", 0):.0f} ms</strong></span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-            st.markdown('<div class="sad-timeline">', unsafe_allow_html=True)
-            for step in sim_res.get("timeline", []):
-                st_cls = step.get("status", "info")
-                t_ms = step.get("timestamp_ms", 0.0)
+            if isinstance(sim_res, dict):
                 st.markdown(
-                    f'<div class="sad-timeline-item">'
-                    f'<div class="sad-timeline-dot {st_cls}"></div>'
-                    f'<div class="sad-timeline-content">'
-                    f'<div class="sad-timeline-title">+{t_ms:.0f}ms &mdash; {escape_html(str(step.get("event", "")))}</div>'
-                    f'<div class="sad-timeline-desc">{escape_html(str(step.get("detail", "")))}</div>'
-                    f'</div></div>',
+                    f'<div class="sad-meta-row">'
+                    f'<span class="sad-cat-badge" style="color: #DC2626;">❌ Primary Outage: <strong>{escape_html(str(sim_res.get("primary_failed", "primary")))}</strong></span>'
+                    f'<span class="sad-cat-badge" style="color: #16A34A;">✅ Responded: <strong>{escape_html(str(sim_res.get("answering_model", "fallback")))}</strong></span>'
+                    f'<span class="sad-cat-badge">⏱️ Failover Overhead: <strong>{sim_res.get("failover_overhead_ms", 0):.0f} ms</strong></span>'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
-            st.markdown('</div>', unsafe_allow_html=True)
+
+                st.markdown('<div class="sad-timeline">', unsafe_allow_html=True)
+                for step in sim_res.get("timeline", []):
+                    st_cls = step.get("status", "info")
+                    t_ms = step.get("timestamp_ms", 0.0)
+                    st.markdown(
+                        f'<div class="sad-timeline-item">'
+                        f'<div class="sad-timeline-dot {st_cls}"></div>'
+                        f'<div class="sad-timeline-content">'
+                        f'<div class="sad-timeline-title">+{t_ms:.0f}ms &mdash; {escape_html(str(step.get("event", "")))}</div>'
+                        f'<div class="sad-timeline-desc">{escape_html(str(step.get("detail", "")))}</div>'
+                        f'</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                st.markdown('</div>', unsafe_allow_html=True)
 
     if error_count > 0:
         friendly_reasons: list[str] = []
@@ -4437,6 +5048,24 @@ def render_corrected_and_export_section(
             f'<span class="sad-diff-tag sad-diff-tag-ins">{corr_tag}</span>'
             '</div>'
             f'<div class="sad-diff-body">{diff_result["corrected_html"]}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    cmap_ui = build_citation_map(results)
+    if display_corrected and (cmap_ui["citations"] or cmap_ui["unverified_claims"]):
+        cited_ui_html = render_cited_corrected_answer_html(
+            display_corrected,
+            citations=cmap_ui["citations"],
+            unverified_claims=cmap_ui["unverified_claims"],
+        )
+        st.markdown(
+            '<div class="sad-diff-card" style="margin-top: 0.75rem;">'
+            '<div class="sad-diff-header">'
+            '<span class="sad-diff-title">Cited corrected answer &amp; primary sources</span>'
+            '<span class="sad-diff-tag sad-diff-tag-ins">Numbered citations</span>'
+            '</div>'
+            f'<div class="sad-diff-body">{cited_ui_html}</div>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -5116,37 +5745,41 @@ with st.sidebar:
 # Highlights Bento Grid & Floating Dock Component
 # ---------------------------------------------------------------------------
 def render_highlights_bento_grid() -> None:
-    """Render the 'Highlights of this app' bento grid with real verified facts from saved evidence."""
+    """Render the 'Highlights of this app' bento grid with real values from saved evidence and config."""
+    ev_counts = load_evidence_counts()
+    route_info = get_real_model_and_routing_info()
+    j1_m = escape_html(route_info.get("dual_judge_primary") or "primary judge")
+    j2_m = escape_html(route_info.get("dual_judge_secondary") or "secondary judge")
     bento_html = (
         '<div class="sad-highlights-section">'
         '<div class="sad-section-head">'
         '<span class="sad-section-tag">PLATFORM CAPABILITIES</span>'
         '<h2 class="sad-section-title">Highlights of this app</h2>'
         '<p class="sad-section-desc">'
-        'Enterprise-grade freshness detection, dual-judge consensus, and framework-independent agent benchmarking.'
+        'Freshness verification, optional dual-judge consensus, and framework-independent agent benchmarking.'
         '</p>'
         '</div>'
         '<div class="sad-bento-grid">'
         '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(0) : (parent.sadSwitchTab && parent.sadSwitchTab(0))" role="button" tabindex="0">'
         '<div class="sad-bento-top">'
-        '<span class="sad-bento-badge badge-saved">Saved</span>'
+        '<span class="sad-bento-badge badge-live">Config</span>'
         '<span class="sad-bento-arrow">&#8599;</span>'
         '</div>'
         '<h3 class="sad-bento-title">Dual-Judge Consensus</h3>'
-        '<p class="sad-bento-metric">100% Agreement</p>'
+        '<p class="sad-bento-metric">2 Configured Judges</p>'
         '<p class="sad-bento-fact">'
-        'Cross-evaluated by Gemini 2.5 Flash and Flash-Lite on official primary domains with stance conflict resolution.'
+        f'Cross-evaluates claims across {j1_m} and {j2_m} with conflict detection on official sources.'
         '</p>'
         '</div>'
         '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(0) : (parent.sadSwitchTab && parent.sadSwitchTab(0))" role="button" tabindex="0">'
         '<div class="sad-bento-top">'
-        '<span class="sad-bento-badge badge-saved">Saved</span>'
+        '<span class="sad-bento-badge badge-live">Pipeline</span>'
         '<span class="sad-bento-arrow">&#8599;</span>'
         '</div>'
-        '<h3 class="sad-bento-title">Volatility Classification</h3>'
-        '<p class="sad-bento-metric">6 Volatility Classes</p>'
+        '<h3 class="sad-bento-title">Category &amp; Volatility Detection</h3>'
+        '<p class="sad-bento-metric">9 Claim Categories</p>'
         '<p class="sad-bento-fact">'
-        'Distinguishes between facts that changed over time (pricing, laws, APIs) versus claims that were never true.'
+        'Includes leadership / office holder, capital / geography, records / latest, pricing, versions, and regulations.'
         '</p>'
         '</div>'
         '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(0) : (parent.sadSwitchTab && parent.sadSwitchTab(0))" role="button" tabindex="0">'
@@ -5155,42 +5788,42 @@ def render_highlights_bento_grid() -> None:
         '<span class="sad-bento-arrow">&#8599;</span>'
         '</div>'
         '<h3 class="sad-bento-title">Tavily Live Evidence</h3>'
-        '<p class="sad-bento-metric">6h SQLite Smart Cache</p>'
+        '<p class="sad-bento-metric">6h Server SQLite Cache</p>'
         '<p class="sad-bento-fact">'
-        'Pulls official documentation, classifies support/contradict stances, and extracts verbatim quotes (&le;25 words).'
+        'Deduplicates sources per registered domain, classifies PRIMARY/NEWS/BLOG/FORUM, and extracts verbatim quotes.'
         '</p>'
         '</div>'
-        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(5) : (parent.sadSwitchTab && parent.sadSwitchTab(5))" role="button" tabindex="0">'
+        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(3) : (parent.sadSwitchTab && parent.sadSwitchTab(3))" role="button" tabindex="0">'
         '<div class="sad-bento-top">'
-        '<span class="sad-bento-badge badge-gateway">Gateway</span>'
+        '<span class="sad-bento-badge badge-gateway">Recorded</span>'
         '<span class="sad-bento-arrow">&#8599;</span>'
         '</div>'
-        '<h3 class="sad-bento-title">Bifrost Gateway Routing</h3>'
-        '<p class="sad-bento-metric">490 Requests &bull; 10 Fallbacks</p>'
+        '<h3 class="sad-bento-title">Recorded Bifrost Evidence</h3>'
+        f'<p class="sad-bento-metric">{ev_counts["bifrost_requests"]} Requests &bull; {ev_counts["bifrost_fallbacks"]} Fallbacks</p>'
         '<p class="sad-bento-fact">'
-        'Recorded 127,854 tokens and automatic model failover from local gateway execution (Nov 13, 2026).'
+        f'Recorded {ev_counts["bifrost_tokens"]:,} tokens from local gateway execution ({escape_html(str(ev_counts["bifrost_date"]))}).'
         '</p>'
         '</div>'
-        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(4) : (parent.sadSwitchTab && parent.sadSwitchTab(4))" role="button" tabindex="0">'
+        '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(2) : (parent.sadSwitchTab && parent.sadSwitchTab(2))" role="button" tabindex="0">'
         '<div class="sad-bento-top">'
-        '<span class="sad-bento-badge badge-saved">Saved</span>'
+        '<span class="sad-bento-badge badge-saved">Recorded</span>'
         '<span class="sad-bento-arrow">&#8599;</span>'
         '</div>'
         '<h3 class="sad-bento-title">Agent Lab Benchmark</h3>'
-        '<p class="sad-bento-metric">330 Recorded Runs</p>'
+        f'<p class="sad-bento-metric">{ev_counts["agent_lab_runs"]} Recorded Runs</p>'
         '<p class="sad-bento-fact">'
-        'Evaluates 6 agent architectures across 15 research tasks under clean, model failure, and broken tool conditions.'
+        f'Evaluates {ev_counts["agent_lab_archs"]} agent architectures across clean, model failure, and broken tool scenarios.'
         '</p>'
         '</div>'
         '<div class="sad-bento-card" onclick="window.parent.sadSwitchTab ? window.parent.sadSwitchTab(0) : (parent.sadSwitchTab && parent.sadSwitchTab(0))" role="button" tabindex="0">'
         '<div class="sad-bento-top">'
-        '<span class="sad-bento-badge badge-saved">Saved</span>'
+        '<span class="sad-bento-badge badge-saved">Export</span>'
         '<span class="sad-bento-arrow">&#8599;</span>'
         '</div>'
         '<h3 class="sad-bento-title">Audit Report Export</h3>'
-        '<p class="sad-bento-metric">Markdown &amp; JSON</p>'
+        '<p class="sad-bento-metric">Markdown, HTML &amp; JSON</p>'
         '<p class="sad-bento-fact">'
-        'Download complete evidence dossiers with credit ledgers, timeline latency strips, and corrected answer diffs.'
+        'Download evidence dossiers with contribution ledgers, measured step timings, and corrected answer diffs.'
         '</p>'
         '</div>'
         '</div>'
@@ -5202,7 +5835,11 @@ def render_highlights_bento_grid() -> None:
 def render_floating_dock_component(quota_state: str) -> None:
     """Render the floating macOS-style dock at the bottom of the window using components.html."""
     quota_label = f"Quota: {quota_state}"
-    quota_cls = "quota-live" if quota_state == "Live" else ("quota-limited" if quota_state == "Limited" else "quota-saved")
+    quota_cls = (
+        "quota-live"
+        if quota_state == "Live"
+        else ("quota-limited" if quota_state in {"Limited", "Offline"} else "quota-saved")
+    )
     dock_js = f"""
     <script>
     (function() {{
@@ -5346,6 +5983,9 @@ if not quota_state:
 if quota_state == "Live":
     quota_dot_color = "#10B981"
     quota_border = "rgba(16, 185, 129, 0.35)"
+elif quota_state == "Offline":
+    quota_dot_color = "#EF4444"
+    quota_border = "rgba(239, 68, 68, 0.45)"
 elif quota_state == "Limited":
     quota_dot_color = "#EA580C"
     quota_border = "rgba(234,88,12,0.35)"
@@ -6034,8 +6674,23 @@ with tab_audit:
         or (active_mode_val == "Batch" and (st.session_state.get("batch_text_input", "").strip() or st.session_state.get("batch_file_uploader")))
         or (active_mode_val == "Doc Checker" and (st.session_state.get("doc_checker_text", "").strip() or st.session_state.get("doc_checker_file_uploader")))
     )
-    st.markdown(
-        render_stepper_html(current_busy, has_active_results, has_active_input),
+    active_mode_results: list[dict] = []
+    if active_mode_val == "Paste an answer":
+        active_mode_results = st.session_state.get("results") or []
+    elif active_mode_val == "Ask a question":
+        active_mode_results = st.session_state.get("ask_results") or []
+    elif active_mode_val == "Paste a URL":
+        active_mode_results = st.session_state.get("url_results") or []
+    elif active_mode_val == "Doc Checker":
+        active_mode_results = st.session_state.get("doc_checker_results") or []
+    stepper_placeholder = st.empty()
+    stepper_placeholder.markdown(
+        render_stepper_html(
+            current_busy,
+            has_active_results,
+            has_active_input,
+            results=active_mode_results,
+        ),
         unsafe_allow_html=True,
     )
 
@@ -6173,26 +6828,58 @@ with tab_audit:
                 char_warn = "color: #EF4444;" if char_count > MAX_TEXT_CHARS else ""
                 st.caption(f"⌨️ Hint: Press **Ctrl + Enter** to audit &bull; <span style='{char_warn}'>{char_count:,} / {MAX_TEXT_CHARS:,} chars</span>", unsafe_allow_html=True)
 
+                curr_ui_state = st.session_state.get("audit_ui_state")
+                if not isinstance(curr_ui_state, AuditUIState):
+                    curr_ui_state = create_initial_ui_state()
+                    st.session_state["audit_ui_state"] = curr_ui_state
+
+                if is_pasted_running:
+                    primary_btn_label = curr_ui_state.button_label or "Detecting claims"
+                    primary_btn_icon = "spinner"
+                elif st.session_state.get("pasted_error") or curr_ui_state.button_state == "error":
+                    primary_btn_label = "Retry"
+                    primary_btn_icon = ":material/refresh:"
+                else:
+                    primary_btn_label = "Check Freshness"
+                    primary_btn_icon = ":material/verified:"
+
                 btn_col1, btn_col2 = st.columns([0.8, 0.2], gap="small")
                 with btn_col1:
                     check_clicked = st.button(
-                        "Check Freshness",
+                        primary_btn_label,
                         key="check_freshness_btn",
                         type="primary",
-                        icon=("spinner" if is_pasted_running else ":material/verified:"),
+                        icon=primary_btn_icon,
                         disabled=is_any_busy,
                         width="stretch",
                     )
                 with btn_col2:
-                    st.button(
-                        "Clear",
-                        key="clear_workspace_btn",
-                        type="secondary",
-                        icon=":material/delete_outline:",
-                        on_click=clear_workspace,
-                        disabled=is_any_busy,
-                        width="stretch",
-                    )
+                    if is_pasted_running:
+                        st.button(
+                            "Stop",
+                            key="stop_audit_btn",
+                            type="secondary",
+                            icon=":material/stop_circle:",
+                            on_click=request_stop_audit,
+                            help="Cancel remaining verification steps and keep partial results",
+                            width="stretch",
+                        )
+                    else:
+                        st.button(
+                            "Clear",
+                            key="clear_workspace_btn",
+                            type="secondary",
+                            icon=":material/delete_outline:",
+                            on_click=clear_workspace,
+                            disabled=is_any_busy,
+                            width="stretch",
+                        )
+
+                action_status_slot = st.empty()
+                if not is_pasted_running:
+                    initial_status_pill = render_action_status_pill_html(curr_ui_state)
+                    if initial_status_pill:
+                        action_status_slot.markdown(initial_status_pill, unsafe_allow_html=True)
 
             elif active_input_mode == "Ask a question":
                 st.caption(
@@ -6498,18 +7185,25 @@ with tab_audit:
                         st.error(err_msg, icon=":material/error:")
                     else:
                         st.session_state["results"] = None
-                    st.session_state["extract_model"] = None
-                    st.session_state["extract_meta"] = None
-                    st.session_state["corrected_answer"] = None
-                    st.session_state["corrected_model"] = None
-                    st.session_state["corrected_meta"] = None
-                    st.session_state["pasted_audit_at"] = None
-                    st.session_state["status_steps"] = []
-                    st.session_state["demo_pasted_notice"] = ""
-                    st.session_state["demo_pasted_rewrite"] = None
-                    st.session_state["busy_action"] = "pasted"
-                    st.session_state["_busy_armed"] = True
-                    st.rerun()
+                        st.session_state["extract_model"] = None
+                        st.session_state["extract_meta"] = None
+                        st.session_state["corrected_answer"] = None
+                        st.session_state["corrected_model"] = None
+                        st.session_state["corrected_meta"] = None
+                        st.session_state["pasted_audit_at"] = None
+                        st.session_state["status_steps"] = []
+                        st.session_state["demo_pasted_notice"] = ""
+                        st.session_state["demo_pasted_rewrite"] = None
+                        st.session_state["audit_stopped"] = False
+                        st.session_state["audit_stopped_info"] = None
+                        st.session_state["partial_audit_results"] = []
+                        st.session_state["partial_audit_total"] = 0
+                        live_init = create_initial_ui_state()
+                        apply_pipeline_event(live_init, "detect_start")
+                        st.session_state["audit_ui_state"] = live_init
+                        st.session_state["busy_action"] = "pasted"
+                        st.session_state["_busy_armed"] = True
+                        st.rerun()
 
             elif is_pasted_running:
                 answer_text = st.session_state.get("answer_input", "").strip()
@@ -6518,12 +7212,16 @@ with tab_audit:
                     st.rerun()
                 pasted_finished = False
                 status = None
+                scan_slot = st.empty()
+                discovery_slot = st.empty()
+                verify_board_slot = st.empty()
                 try:
                     if not st.session_state.get("demo_mode") and int(st.session_state.get("live_audits_performed") or 0) >= get_max_session_audits():
                         raise RuntimeError("Live quota is busy, showing saved results. Session audit limit reached.")
 
-                    _show_skeleton_slot(pasted_skel_slot, (128, 82, 165))
-                    with st.status("Extracting claims", expanded=True) as status:
+                    cancel_ev = threading.Event()
+                    st.session_state["audit_cancel_event"] = cancel_ev
+                    with st.status("Detecting claims", expanded=True) as status:
                         steps_log: list[str] = []
                         extract_model, extract_record, verified_results = run_stale_audit(
                             answer_text=answer_text,
@@ -6531,6 +7229,12 @@ with tab_audit:
                             steps_log=steps_log,
                             credits_placeholder=credits_placeholder,
                             gateway_placeholder=gateway_placeholder,
+                            stepper_placeholder=stepper_placeholder,
+                            action_status_slot=action_status_slot,
+                            scan_slot=scan_slot,
+                            discovery_slot=discovery_slot,
+                            verify_board_slot=verify_board_slot,
+                            cancel_event=cancel_ev,
                         )
                         st.session_state["extract_model"] = extract_model
                         st.session_state["extract_meta"] = extract_record
@@ -6541,6 +7245,15 @@ with tab_audit:
                         st.session_state["quota_banner"] = None
                     pasted_finished = True
                 except Exception as exc:
+                    err_ui = st.session_state.get("audit_ui_state")
+                    if not isinstance(err_ui, AuditUIState):
+                        err_ui = create_initial_ui_state()
+                    apply_pipeline_event(
+                        err_ui,
+                        "error",
+                        {"step": "detect", "reason": format_friendly_ui_error(exc, action="verifying your answer")},
+                    )
+                    st.session_state["audit_ui_state"] = err_ui
                     if status is not None:
                         status.update(label="Check failed", state="error", expanded=False)
                     if is_quota_or_rate_limit_error(exc):
@@ -6571,6 +7284,8 @@ with tab_audit:
                     if st.session_state.get("busy_action") == "pasted":
                         st.session_state["busy_action"] = None
                     _clear_slot(pasted_skel_slot)
+                    _clear_slot(scan_slot)
+                    _clear_slot(verify_board_slot)
                 if pasted_finished:
                     st.rerun()
 
@@ -6612,22 +7327,22 @@ with tab_audit:
                         st.error(err_msg, icon=":material/error:")
                     else:
                         st.session_state["ask_question_asked"] = q_text
-                    st.session_state["ask_answer"] = ""
-                    st.session_state["ask_model"] = None
-                    st.session_state["ask_meta"] = None
-                    st.session_state["ask_extract_model"] = None
-                    st.session_state["ask_extract_meta"] = None
-                    st.session_state["ask_results"] = None
-                    st.session_state["ask_corrected_answer"] = None
-                    st.session_state["ask_corrected_model"] = None
-                    st.session_state["ask_corrected_meta"] = None
-                    st.session_state["ask_audit_at"] = None
-                    st.session_state["ask_status_steps"] = []
-                    st.session_state["demo_ask_notice"] = ""
-                    st.session_state["demo_ask_rewrite"] = None
-                    st.session_state["busy_action"] = "ask"
-                    st.session_state["_busy_armed"] = True
-                    st.rerun()
+                        st.session_state["ask_answer"] = ""
+                        st.session_state["ask_model"] = None
+                        st.session_state["ask_meta"] = None
+                        st.session_state["ask_extract_model"] = None
+                        st.session_state["ask_extract_meta"] = None
+                        st.session_state["ask_results"] = None
+                        st.session_state["ask_corrected_answer"] = None
+                        st.session_state["ask_corrected_model"] = None
+                        st.session_state["ask_corrected_meta"] = None
+                        st.session_state["ask_audit_at"] = None
+                        st.session_state["ask_status_steps"] = []
+                        st.session_state["demo_ask_notice"] = ""
+                        st.session_state["demo_ask_rewrite"] = None
+                        st.session_state["busy_action"] = "ask"
+                        st.session_state["_busy_armed"] = True
+                        st.rerun()
 
             elif is_ask_running:
                 question_text = st.session_state.get("ask_question_input", "").strip()
@@ -6669,6 +7384,7 @@ with tab_audit:
                             steps_log=ask_steps,
                             credits_placeholder=credits_placeholder,
                             gateway_placeholder=gateway_placeholder,
+                            stepper_placeholder=stepper_placeholder,
                         )
                         st.session_state["ask_extract_model"] = ext_model
                         st.session_state["ask_extract_meta"] = ext_record
@@ -6730,25 +7446,25 @@ with tab_audit:
                         st.error(err_msg, icon=":material/error:")
                     else:
                         st.session_state["url_audited"] = None
-                    st.session_state["url_article_title"] = ""
-                    st.session_state["url_article_text"] = ""
-                    st.session_state["url_article_truncated"] = False
-                    st.session_state["url_extract_credits"] = 0.0
-                    st.session_state["url_extract_cache_hit"] = False
-                    st.session_state["url_total_claims_found"] = 0
-                    st.session_state["url_results"] = None
-                    st.session_state["url_extract_model"] = None
-                    st.session_state["url_extract_meta"] = None
-                    st.session_state["url_corrected_answer"] = None
-                    st.session_state["url_corrected_model"] = None
-                    st.session_state["url_corrected_meta"] = None
-                    st.session_state["url_audit_at"] = None
-                    st.session_state["url_status_steps"] = []
-                    st.session_state["demo_url_notice"] = ""
-                    st.session_state["demo_url_rewrite"] = None
-                    st.session_state["busy_action"] = "url"
-                    st.session_state["_busy_armed"] = True
-                    st.rerun()
+                        st.session_state["url_article_title"] = ""
+                        st.session_state["url_article_text"] = ""
+                        st.session_state["url_article_truncated"] = False
+                        st.session_state["url_extract_credits"] = 0.0
+                        st.session_state["url_extract_cache_hit"] = False
+                        st.session_state["url_total_claims_found"] = 0
+                        st.session_state["url_results"] = None
+                        st.session_state["url_extract_model"] = None
+                        st.session_state["url_extract_meta"] = None
+                        st.session_state["url_corrected_answer"] = None
+                        st.session_state["url_corrected_model"] = None
+                        st.session_state["url_corrected_meta"] = None
+                        st.session_state["url_audit_at"] = None
+                        st.session_state["url_status_steps"] = []
+                        st.session_state["demo_url_notice"] = ""
+                        st.session_state["demo_url_rewrite"] = None
+                        st.session_state["busy_action"] = "url"
+                        st.session_state["_busy_armed"] = True
+                        st.rerun()
 
             elif is_url_running:
                 url_val = st.session_state.get("url_input", "").strip()
@@ -6796,6 +7512,7 @@ with tab_audit:
                             credits_placeholder=credits_placeholder,
                             gateway_placeholder=gateway_placeholder,
                             max_claims=8,
+                            stepper_placeholder=stepper_placeholder,
                         )
                         st.session_state["url_total_claims_found"] = len(all_url_results)
                         st.session_state["url_results"] = all_url_results
@@ -7389,14 +8106,14 @@ with tab_audit:
 
         with st.expander("ℹ️ How the Freshness Score is Computed", expanded=False, icon=":material/calculate:"):
             st.markdown(
-                "Every claim's freshness score is calculated deterministically from four objective pillars:\n\n"
-                "1. **Evidence Agreement (40% weight):** Ratio of independent registered domains supporting the claim vs. contradicting it.\n"
-                "2. **Source Authority (25% weight):** Primary official sources (`docs.*`, `*.gov`, company newsrooms) receive 100%, reputable news outlets receive 75%, blogs receive 50%, forums receive 20%.\n"
-                "3. **Evidence Recency (20% weight):** Sources published within 30 days receive 100%, within 6 months 85%, within 1 year 70%, and older/undated sources receive 50%.\n"
-                "4. **Multi-Model Consensus (15% weight):** Dual-judge consistency across distinct LLM families (penalizes disagreements to Uncertain `40–74`).\n\n"
+                "Every verifiable claim's freshness score is calculated deterministically from four weighted signals in `verifier.py`:\n\n"
+                "1. **LLM Verdict (50% weight):** Grounded factual comparison strictly against retrieved web snippets and extracted text.\n"
+                "2. **Source Recency (20% weight):** Based on `published_date` returned by Tavily.\n"
+                "3. **Source Agreement (20% weight):** Ratio of unique registered domains supporting the current fact.\n"
+                "4. **Source Authority (10% weight):** Domain tier (`PRIMARY`, `NEWS`, `BLOG`, or `FORUM`).\n\n"
                 "**Enforced Score Bands:**\n"
                 "- **Fresh:** `75 – 100` | **Partially Correct:** `45 – 74` | **Uncertain:** `40 – 74`\n"
-                "- **Outdated:** `10 – 39` | **Incorrect:** `0 – 15` | **Unverifiable:** `Score N/A`"
+                "- **Outdated:** `10 – 39` | **Incorrect:** `0 – 15` | **Unverifiable:** `N/A` | **Verification failed:** `—` (excluded)"
             )
 
         # ===============================================================
@@ -7438,12 +8155,12 @@ with tab_lab:
 with tab_learn:
     learn_subview = st.segmented_control(
         "Learn Navigation",
-        options=["Architecture & Telemetry", "Detection Methodology", "API Playground"],
-        default="Architecture & Telemetry",
+        options=["Architecture & Evidence", "Detection Methodology", "API Playground"],
+        default="Architecture & Evidence",
         key="learn_subview_choice",
         label_visibility="collapsed",
     )
-    if learn_subview == "Architecture & Telemetry":
+    if learn_subview == "Architecture & Evidence":
         render_architecture_tab(use_bifrost_mode)
         render_architecture_telemetry_expander(use_bifrost_mode)
     elif learn_subview == "Detection Methodology":
@@ -7457,7 +8174,7 @@ with tab_history:
 render_floating_dock_component(quota_state)
 
 # ---------------------------------------------------------------------------
-# Footer
+# Footer (Truthful Privacy Notice — Requirement 6)
 # ---------------------------------------------------------------------------
 st.markdown(
     '<div class="sad-footer">'
@@ -7465,8 +8182,10 @@ st.markdown(
     '<a href="https://github.com/PurabTomar/stale-detector" target="_blank" rel="noopener noreferrer">'
     'GitHub Repository &#8599;</a>'
     '<div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 6px; letter-spacing: -0.01em;">'
-    '🔒 <strong>No tracking:</strong> Nothing stored beyond this session. Zero telemetry or user analytics collected. '
-    'Prompts are routed to Google Gemini (or local Bifrost gateway); web searches use Tavily with temporary 6-hour local SQLite snippet caching to conserve API credits. Zero credentials or user inputs are logged.'
+    '🔒 <strong>Privacy &amp; Data Handling:</strong> Your input text, extracted claims, and web snippets are sent to Google Gemini '
+    '(directly or via your configured Bifrost gateway); search queries and target URLs are sent to Tavily. '
+    'Search queries and snippets derived from your input are cached on the server in SQLite for 6 hours. '
+    'Session history lives in memory for the current session. The hosting platform and API providers may keep their own operational logs.'
     '</div>'
     '</div>',
     unsafe_allow_html=True,

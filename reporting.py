@@ -19,6 +19,8 @@ import re
 from urllib.parse import urlparse
 
 from verifier import (
+    apply_citations_to_corrected_answer,
+    build_citation_map,
     classify_source_type,
     compute_risk_weighted_overall_score,
     truncate_snippet_words,
@@ -521,6 +523,8 @@ def build_draft_corrected_answer(
             return char_start, char_end
         return clause_start, clause_end
 
+    cmap = build_citation_map(results)
+    claim_to_citation = cmap["claim_to_citation"]
     replaced_spans: list[tuple[int, int]] = []
     for claim_idx, item in outdated_entries:
         replacement_text = _ensure_sentence(
@@ -528,6 +532,14 @@ def build_draft_corrected_answer(
         )
         if not replacement_text:
             continue
+        cit_num = claim_to_citation.get(claim_idx + 1)
+        if cit_num is not None:
+            tag = f"[{cit_num}]"
+            if tag not in replacement_text:
+                if replacement_text.endswith((".", "!", "?")):
+                    replacement_text = f"{replacement_text[:-1]} {tag}{replacement_text[-1]}"
+                else:
+                    replacement_text = f"{replacement_text} {tag}"
 
         raw_span = all_claim_spans.get(claim_idx) or _fallback_sentence_span(str(item.get("claim", "")))
         if raw_span and 0 <= raw_span[0] < raw_span[1] <= len(text):
@@ -604,6 +616,8 @@ def build_draft_corrected_answer(
     if unmatched_updates:
         extra = " ".join(dict.fromkeys(unmatched_updates))
         updated_text = f"{updated_text}\n\n{extra}".strip() if updated_text else extra
+    if cmap["citations"] or cmap["unverified_claims"]:
+        updated_text = apply_citations_to_corrected_answer(updated_text, results)
     return updated_text
 
 
@@ -946,6 +960,8 @@ def build_report_payload(
 
     changes_made = build_change_log(results)
 
+    citation_map = build_citation_map(results)
+
     return {
         "report_version": "1.0",
         "app": "Stale-Answer Detector",
@@ -960,6 +976,8 @@ def build_report_payload(
         "source_url": (source_url or "").strip() or None,
         "original_answer": original_answer or "",
         "corrected_answer": corrected_answer,
+        "corrected_citations": citation_map["citations"],
+        "unverified_claims_marked": citation_map["unverified_claims"],
         "diff_summary": diff_stats,
         "summary": {
             "overall_score": overall_score,
@@ -1054,12 +1072,47 @@ def format_report_markdown(payload: dict) -> str:
 
     if payload.get("corrected_answer"):
         diff_stats = payload.get("diff_summary") or {}
+        corr_cits = payload.get("corrected_citations") or []
+        unv_marked = payload.get("unverified_claims_marked") or []
+        corr_body = re.split(
+            r"\n{1,2}(?:#{1,3}\s*)?Sources:\s*\n",
+            str(payload["corrected_answer"]),
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0].strip()
         lines.extend(
             [
                 "## Corrected Answer",
                 "",
-                payload["corrected_answer"],
+                corr_body,
                 "",
+            ]
+        )
+        if corr_cits:
+            lines.append("### Cited Sources")
+            lines.append("")
+            for cit in corr_cits:
+                if not isinstance(cit, dict):
+                    continue
+                c_num = cit.get("number")
+                c_title = cit.get("title") or cit.get("domain") or cit.get("url")
+                c_url = cit.get("url") or ""
+                c_date = f" ({cit['published_date']})" if cit.get("published_date") else ""
+                c_type = f" — {cit['source_type']}" if cit.get("source_type") else ""
+                if c_url:
+                    lines.append(f"- [{c_num}] [{c_title}]({c_url}){c_type}{c_date}")
+                else:
+                    lines.append(f"- [{c_num}] {c_title}{c_type}{c_date}")
+            lines.append("")
+        if unv_marked:
+            lines.append("### Unverified Claims (Left Untouched)")
+            lines.append("")
+            for uv in unv_marked:
+                if isinstance(uv, dict) and uv.get("claim"):
+                    lines.append(f"- `{uv.get('status', 'unverifiable')}`: {uv['claim']} `[unverified]`")
+            lines.append("")
+        lines.extend(
+            [
                 f"_Word diff: {int(diff_stats.get('removed_words', 0))} removed, "
                 f"{int(diff_stats.get('added_words', 0))} added, "
                 f"{int(diff_stats.get('unchanged_words', 0))} unchanged._",
@@ -1275,6 +1328,92 @@ def format_shareable_summary(payload: dict) -> str:
     return "\n".join(lines).strip()
 
 
+def render_cited_corrected_answer_html(
+    corrected_text: str,
+    citations: list[dict] | None = None,
+    unverified_claims: list[dict] | None = None,
+) -> str:
+    """Render a corrected answer as XSS-safe HTML with clickable [1], [2] citation
+    links to primary sources, highlighted [unverified] markers, and a Sources list.
+    """
+    raw = str(corrected_text or "").strip()
+    if not raw:
+        return ""
+    body = re.split(r"\n{1,2}(?:#{1,3}\s*)?Sources:\s*\n", raw, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    cits = [c for c in (citations or []) if isinstance(c, dict)]
+    cit_by_num = {int(c["number"]): c for c in cits if c.get("number") is not None}
+
+    escaped_body = escape_html_text(body).replace("\n", "<br>")
+
+    def _replace_cit_tag(match: re.Match) -> str:
+        num = int(match.group(1))
+        src = cit_by_num.get(num)
+        if not src:
+            return match.group(0)
+        href = safe_href_url(src.get("url"))
+        title = escape_html_text(src.get("title") or src.get("domain") or f"Source {num}")
+        return (
+            f'<a href="#cited-source-{num}" data-source-url="{href}" '
+            f'title="{title}" '
+            f'style="color: #4F46E5; font-weight: 700; text-decoration: none; '
+            f'background: rgba(79,70,229,0.12); padding: 1px 5px; border-radius: 4px; font-size: 0.85em;">'
+            f'[{num}]</a>'
+        )
+
+    linked_body = re.sub(r"\[(\d+)\]", _replace_cit_tag, escaped_body)
+    linked_body = re.sub(
+        r"\[unverified\]",
+        '<span style="display:inline-block; background: rgba(148,163,184,0.22); color: #64748B; '
+        'border: 1px solid rgba(148,163,184,0.45); border-radius: 4px; padding: 0px 5px; '
+        'font-size: 0.78em; font-weight: 700;">unverified</span>',
+        linked_body,
+        flags=re.IGNORECASE,
+    )
+
+    sources_html = ""
+    if cits:
+        li_items: list[str] = []
+        for c in cits:
+            num = int(c.get("number") or 0)
+            title = escape_html_text(c.get("title") or c.get("domain") or c.get("url") or f"Source {num}")
+            href = safe_href_url(c.get("url"))
+            stype = escape_html_text(c.get("source_type") or "Primary")
+            date_part = f" &bull; {escape_html_text(c['published_date'])}" if c.get("published_date") else ""
+            li_items.append(
+                f'<li id="cited-source-{num}" style="margin: 4px 0; font-size: 13px;">'
+                f'<strong>[{num}]</strong> '
+                f'<a href="{href}" target="_blank" rel="noopener noreferrer" '
+                f'style="color: #4F46E5; font-weight: 600; text-decoration: none;">{title}</a> '
+                f'<span style="color: #64748B; font-size: 12px;">({stype}{date_part})</span>'
+                f'</li>'
+            )
+        sources_html = (
+            '<div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed #CBD5E1;">'
+            '<div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 6px;">Sources</div>'
+            f'<ul style="list-style: none; padding-left: 0; margin: 0;">{"".join(li_items)}</ul>'
+            '</div>'
+        )
+
+    unv_list = [u for u in (unverified_claims or []) if isinstance(u, dict) and u.get("claim")]
+    unv_html = ""
+    if unv_list:
+        unv_items = "".join(
+            f'<li style="margin: 3px 0; font-size: 12.5px; color: #64748B;">'
+            f'{escape_html_text(u["claim"])} '
+            f'<span style="font-weight: 700;">[unverified]</span></li>'
+            for u in unv_list
+        )
+        unv_html = (
+            '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #CBD5E1;">'
+            '<div style="font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 4px;">'
+            'Unverified claims (left untouched)</div>'
+            f'<ul style="padding-left: 18px; margin: 0;">{unv_items}</ul>'
+            '</div>'
+        )
+
+    return f'<div>{linked_body}</div>{sources_html}{unv_html}'
+
+
 def format_report_html(payload: dict) -> str:
     """Render an audit report dictionary as a self-contained, offline-compatible HTML file with inline CSS."""
     summary = payload.get("summary") or {}
@@ -1349,13 +1488,26 @@ def format_report_html(payload: dict) -> str:
     claims_section = "".join(claims_html) if claims_html else '<p style="color: #64748B;">No time-sensitive claims extracted.</p>'
 
     corrected_answer = payload.get("corrected_answer") or ""
+    corrected_citations = payload.get("corrected_citations") or []
+    unverified_marked = payload.get("unverified_claims_marked") or []
+    if corrected_answer and not corrected_citations and payload.get("claims"):
+        cmap_fallback = build_citation_map(payload.get("claims"))
+        corrected_citations = cmap_fallback["citations"]
+        if not unverified_marked:
+            unverified_marked = cmap_fallback["unverified_claims"]
+
     corrected_section = ""
     if corrected_answer:
+        cited_html = render_cited_corrected_answer_html(
+            corrected_answer,
+            citations=corrected_citations,
+            unverified_claims=unverified_marked,
+        )
         corrected_section = (
             f'<div style="background: rgba(255,255,255,0.7); border: 1px solid rgba(229,231,239,0.8); border-radius: 12px; padding: 18px; margin: 20px 0;">'
             f'<h3 style="margin-top: 0; color: #0F172A; font-size: 16px;">Corrected &amp; Rewritten Answer</h3>'
             f'<div style="font-size: 14px; color: #1E293B; line-height: 1.6; background: #F8FAFC; padding: 12px 16px; border-radius: 8px; border-left: 3px solid #16A34A;">'
-            f'{escape_html_text(corrected_answer)}'
+            f'{cited_html}'
             f'</div>'
             f'</div>'
         )
