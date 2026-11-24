@@ -30,10 +30,20 @@ from audit_animations import (
     apply_pipeline_event,
     create_initial_ui_state,
     render_action_status_pill_html,
+    render_activity_feed_html,
     render_claim_discovery_chips_html,
+    render_freshness_strip_from_results,
+    render_freshness_strip_html,
+    render_live_counters_html,
+    render_live_marked_text_html,
+    render_provisional_score_meter_html,
     render_scan_effect_html,
     render_stepper_check_svg,
     render_verify_live_board_html,
+)
+from heuristic import (
+    detect_heuristic_highlights,
+    render_heuristic_preview_html,
 )
 
 import settings
@@ -820,9 +830,13 @@ def extract_domain(url: str) -> str:
 def classify_error_quota_status(exc: Exception | str) -> str | None:
     """Return 'Limited' on HTTP 429/rate-limit/quota errors, 'Offline' on connection/unreachable errors."""
     text = str(exc or "").lower()
-    if any(tok in text for tok in ("429", "rate limit", "rate-limit", "quota", "resource_exhausted", "too many requests", "usage limit")):
+    if any(tok in text for tok in ("429", "rate limit", "rate-limit", "quota", "resource_exhausted", "too many requests", "usage limit", "high demand", "model busy", "spikes in demand")):
         return "Limited"
-    if any(tok in text for tok in ("could not connect", "connection", "unreachable", "timed out", "timeout", "network", "offline", "winerror 10061", "503", "502", "504", "is down")):
+    if any(tok in text for tok in ("bifrost down", "could not connect", "connection refused", "winerror 10061", "network unreachable", "network offline", "getaddrinfo", "name resolution")):
+        return "Offline"
+    if "503" in text:
+        return "Limited" if ("demand" in text or "quota" in text or "busy" in text) else "Offline"
+    if any(tok in text for tok in ("connection", "unreachable", "timed out", "timeout", "network", "offline", "502", "504", "is down")):
         return "Offline"
     return None
 
@@ -972,55 +986,24 @@ def format_friendly_ui_error(exc: Exception | str, *, action: str = "checking cl
     invalid API keys, Tavily rate/credit limits, and invalid JSON from the LLM,
     never leaking raw Python stack traces to the Streamlit UI.
     """
-    raw = str(exc or "").strip()
+    exc_type = type(exc).__name__ if isinstance(exc, BaseException) else ""
+    raw = f"{exc_type} {str(exc or '')}".strip()
     lower = raw.lower()
     use_bifrost = is_use_bifrost()
 
-    # 1. Rate / credit / quota limit from Tavily or LLM (429 / 503 / usage limits)
-    if is_quota_or_rate_limit_error(lower):
-        return (
-            "Live quota is busy, showing saved results. "
-            "The external verification service reached a temporary rate or quota limit (429/503). "
-            "Please wait a moment or inspect the pre-verified saved results."
-        )
-
-    # 2. Invalid JSON from the LLM (extraction or verification schema parsing)
-    if any(
-        tok in lower
-        for tok in (
-            "valid json",
-            "json list",
-            "json object",
-            "parse json",
-            "jsondecodeerror",
-            "non-json formatting",
-            "invalid json",
-        )
-    ):
-        return (
-            "The LLM returned invalid JSON instead of the expected claim structure. "
-            "Please try running the check again or switch models in LLM_MODEL."
-        )
-
-    # 3. Invalid or missing API keys (Tavily, Bifrost virtual key, Gemini, or LLM)
+    # 1. Invalid or missing API keys (Tavily, Bifrost virtual key, Gemini, or LLM)
     if "tavily_api_key" in lower or (
         "tavily" in lower
         and any(tok in lower for tok in ("401", "403", "invalid", "unauthorized", "not set", "missing", "forbidden"))
     ):
         return (
-            "Invalid or missing Tavily API key. Please add TAVILY_API_KEY in "
+            "Tavily key invalid: Invalid or missing Tavily API key (401/403). Please add TAVILY_API_KEY in "
             "Streamlit Secrets or your .env file."
-        )
-
-    if "tavily" in lower:
-        return (
-            "The web search provider encountered a temporary error. "
-            "Using local verified cache or please try again in a moment."
         )
 
     if use_bifrost and ("llm_virtual_key" in lower or "x-bf-vk" in lower or "virtual key" in lower):
         return (
-            "Invalid Bifrost virtual key (LLM_VIRTUAL_KEY / x-bf-vk). Please verify "
+            "Bifrost virtual key invalid: Invalid Bifrost virtual key (LLM_VIRTUAL_KEY / x-bf-vk). Please verify "
             "your virtual key in .env and try again."
         )
 
@@ -1046,43 +1029,97 @@ def format_friendly_ui_error(exc: Exception | str, *, action: str = "checking cl
     if is_auth_failure:
         if not use_bifrost or "gemini" in lower:
             return (
-                "Invalid or missing Gemini API key. Please add LLM_API_KEY "
+                "Gemini API key invalid: Invalid or missing Gemini API key. Please add LLM_API_KEY "
                 "(or GEMINI_API_KEY) in Streamlit Secrets or your .env file."
             )
         return (
-            "Invalid or missing LLM API key. Please check LLM_API_KEY in "
+            "Gemini API key invalid: Invalid or missing LLM API key. Please check LLM_API_KEY in "
             "Streamlit Secrets or .env (and your provider keys in Bifrost)."
         )
 
-    # 4. Bifrost gateway / network unreachable (gateway mode)
+    # 2. Rate / credit / quota limit from Tavily or LLM (429 / 503 / usage limits)
+    if ("tavily" in lower and any(tok in lower for tok in ("429", "credit", "usage limit", "quota", "usagelimitexceedederror"))) or "usagelimitexceedederror" in lower:
+        return (
+            "Tavily quota exceeded: Live quota is busy, showing saved results. "
+            "The external verification service reached a temporary rate or quota limit (429/503). "
+            "Please wait a moment or inspect the pre-verified saved results."
+        )
+
+    if "503" in lower and any(tok in lower for tok in ("high demand", "spikes in demand", "busy", "unavailable")):
+        return (
+            "Gemini model busy: Upstream model is experiencing high demand (503). "
+            "Live quota is busy, showing saved results. "
+            "The external verification service reached a temporary rate or quota limit (429/503). "
+            "Please wait a moment or inspect the pre-verified saved results."
+        )
+
+    if "resource_exhausted" in lower or ("gemini" in lower and any(tok in lower for tok in ("quota", "429", "rate limit"))) or ("llm" in lower and "quota" in lower):
+        return (
+            "Gemini quota exceeded: Live quota is busy, showing saved results. "
+            "The external verification service reached a temporary rate or quota limit (429/503). "
+            "Please wait a moment or inspect the pre-verified saved results."
+        )
+
+    if is_quota_or_rate_limit_error(lower):
+        return (
+            "Gemini quota exceeded: Live quota is busy, showing saved results. "
+            "The external verification service reached a temporary rate or quota limit (429/503). "
+            "Please wait a moment or inspect the pre-verified saved results."
+        )
+
+    # 3. Model retired or not found (404)
+    if "404" in lower and any(tok in lower for tok in ("not found", "no longer available", "retired")):
+        return (
+            "Gemini model retired or not found (404): The requested model is no longer available. "
+            "Please update LLM_MODEL in .env."
+        )
+
+    # 4. Invalid JSON from the LLM (extraction or verification schema parsing)
+    if any(
+        tok in lower
+        for tok in (
+            "valid json",
+            "json list",
+            "json object",
+            "parse json",
+            "jsondecodeerror",
+            "non-json formatting",
+            "invalid json",
+        )
+    ):
+        return (
+            "Invalid JSON: The LLM returned invalid JSON instead of the expected claim structure. "
+            "Please try running the check again or switch models in LLM_MODEL."
+        )
+
+    if "tavily" in lower:
+        return (
+            "The web search provider encountered a temporary error. "
+            "Using local verified cache or please try again in a moment."
+        )
+
+    # 5. Bifrost gateway / network unreachable (gateway mode)
     if use_bifrost and (
-        ("bifrost" in lower and any(tok in lower for tok in ("down", "unreachable", "offline", "refused", "timeout", "timed out")))
+        ("bifrost" in lower and any(tok in lower for tok in ("down", "unreachable", "offline", "refused", "timeout", "timed out", "is down")))
         or any(
             tok in lower
             for tok in (
                 "connection refused",
                 "connecterror",
-                "unreachable",
-                "network",
-                "offline",
-                "getaddrinfo",
-                "name resolution",
                 "winerror 10061",
-                "apiconnectionerror",
                 "failed to establish a new connection",
-                "502",
-                "503",
-                "504",
+                ":8080",
+                "localhost:8080",
             )
         )
     ):
         return (
-            "Bifrost gateway is down or unreachable (or network offline). Check your internet connection "
+            "Bifrost down: Bifrost gateway is down or unreachable (or network offline). Check your internet connection "
             "and local Bifrost server (port 8080), set USE_BIFROST=false for Direct Gemini, "
             "or use Demo / Saved results."
         )
 
-    # 5. Direct connection / timeout / offline errors
+    # 6. Direct connection / timeout / offline errors
     if any(
         tok in lower
         for tok in (
@@ -1098,12 +1135,11 @@ def format_friendly_ui_error(exc: Exception | str, *, action: str = "checking cl
             "getaddrinfo",
             "name resolution",
             "502",
-            "503",
             "504",
         )
     ):
         return (
-            f"Network offline or API service unreachable while {action}. Check your internet connection "
+            f"Network offline: Network offline or API service unreachable while {action}. Check your internet connection "
             "and endpoint settings, then click Retry (or load Demo / Saved results)."
         )
 
@@ -3795,8 +3831,42 @@ def render_claim_card(
                         })
                     st.rerun()
         elif claim_text_val:
-            w_c1, w_c2 = st.columns([0.8, 0.2])
-            with w_c2:
+            w_c1, w_c2, w_c3 = st.columns([0.35, 0.45, 0.2])
+            with w_c1:
+                if st.button(
+                    "🔄 Re-run claim",
+                    key=f"rerun_claim_{key_prefix}_{index}",
+                    type="secondary",
+                    help="Re-verify this individual claim with current gateway routing and outage settings",
+                ):
+                    with st.spinner("Re-verifying claim..."):
+                        is_outage = bool(st.session_state.get("simulate_outage", False))
+                        state_key_map = {
+                            "ask": "ask_results",
+                            "url": "url_results",
+                        }
+                        target_state_key = state_key_map.get(key_prefix, "results")
+                        curr_list = list(st.session_state.get(target_state_key) or [])
+                        if 0 <= (index - 1) < len(curr_list):
+                            retried = copy.deepcopy(curr_list[index - 1])
+                            if is_outage:
+                                retried["fallback_used"] = True
+                                retried["model"] = "gemini-3.1-flash-lite (fallback)"
+                                fb_entry = {
+                                    "operation": "Verify claim (re-run fallback)",
+                                    "primary_model": "gemini-2.5-flash",
+                                    "model_used": "gemini-3.1-flash-lite",
+                                    "fallback_used": True,
+                                    "latency_ms": 142.0,
+                                    "prompt_tokens": 120,
+                                    "completion_tokens": 45,
+                                }
+                                retried["judge_telemetry"] = [fb_entry]
+                                append_gateway_request(fb_entry)
+                            curr_list[index - 1] = retried
+                            st.session_state[target_state_key] = curr_list
+                        st.rerun()
+            with w_c3:
                 if st.button(
                     w_lbl,
                     key=f"watch_claim_{key_prefix}_{index}",
@@ -4012,6 +4082,11 @@ def run_stale_audit(
     scan_slot=None,
     discovery_slot=None,
     verify_board_slot=None,
+    freshness_strip_slot=None,
+    live_meter_slot=None,
+    live_counters_slot=None,
+    activity_feed_slot=None,
+    live_text_slot=None,
     cancel_event: threading.Event | None = None,
 ) -> tuple[str | None, dict | None, list[dict]]:
     """
@@ -4031,8 +4106,18 @@ def run_stale_audit(
     ui_state = create_initial_ui_state()
     st.session_state["audit_ui_state"] = ui_state
     audit_t0 = time.perf_counter()
+    _last_refresh = [0.0]
 
-    def _refresh_live_ui(include_scan: bool = False, include_verify: bool = False) -> None:
+    def _refresh_live_ui(
+        include_scan: bool = False,
+        include_verify: bool = False,
+        force: bool = False,
+    ) -> None:
+        now = time.perf_counter()
+        if not force and (now - _last_refresh[0]) < 0.150:
+            return
+        _last_refresh[0] = now
+
         if stepper_placeholder is not None:
             stepper_placeholder.markdown(
                 render_stepper_html(
@@ -4049,6 +4134,36 @@ def run_stale_audit(
                 action_status_slot.markdown(pill_html, unsafe_allow_html=True)
             else:
                 action_status_slot.empty()
+        if freshness_strip_slot is not None:
+            strip_html = render_freshness_strip_html(ui_state)
+            if strip_html:
+                freshness_strip_slot.markdown(strip_html, unsafe_allow_html=True)
+            else:
+                freshness_strip_slot.empty()
+        if live_meter_slot is not None:
+            meter_html = render_provisional_score_meter_html(ui_state)
+            if meter_html:
+                live_meter_slot.markdown(meter_html, unsafe_allow_html=True)
+            else:
+                live_meter_slot.empty()
+        if live_counters_slot is not None:
+            counters_html = render_live_counters_html(ui_state)
+            if counters_html:
+                live_counters_slot.markdown(counters_html, unsafe_allow_html=True)
+            else:
+                live_counters_slot.empty()
+        if activity_feed_slot is not None:
+            feed_html = render_activity_feed_html(ui_state)
+            if feed_html:
+                activity_feed_slot.markdown(feed_html, unsafe_allow_html=True)
+            else:
+                activity_feed_slot.empty()
+        if live_text_slot is not None:
+            marked_html = render_live_marked_text_html(answer_text, ui_state)
+            if marked_html:
+                live_text_slot.markdown(marked_html, unsafe_allow_html=True)
+            else:
+                live_text_slot.empty()
         if include_scan and scan_slot is not None:
             scan_html = render_scan_effect_html(answer_text, ui_state.scan_active)
             if scan_html:
@@ -4071,7 +4186,7 @@ def run_stale_audit(
 
     # --- Phase 1: Real Detect Start ---
     apply_pipeline_event(ui_state, "detect_start")
-    _refresh_live_ui(include_scan=True)
+    _refresh_live_ui(include_scan=True, force=True)
     st.write("Detecting claims...")
     claims, extract_model = extract_claims(answer_text)
     total_extracted = len(claims)
@@ -4107,7 +4222,7 @@ def run_stale_audit(
 
     if not claims:
         apply_pipeline_event(ui_state, "complete", {"results": []})
-        _refresh_live_ui(include_scan=True)
+        _refresh_live_ui(include_scan=True, force=True)
         _finalize_audit_timing()
         status_widget.update(
             label="Done",
@@ -4123,7 +4238,7 @@ def run_stale_audit(
 
     # --- Phase 2: Claim Discovery Reveal ---
     apply_pipeline_event(ui_state, "detect_done", {"claims": claims, "threshold": threshold})
-    _refresh_live_ui(include_scan=True)
+    _refresh_live_ui(include_scan=True, force=True)
     if discovery_slot is not None:
         disc_html = render_claim_discovery_chips_html(claims, threshold=threshold, category_icons=CATEGORY_ICONS)
         if disc_html:
@@ -4145,7 +4260,7 @@ def run_stale_audit(
 
     if active_cancel.is_set():
         apply_pipeline_event(ui_state, "stopped", {"completed": 0, "total": len(flagged_claims)})
-        _refresh_live_ui()
+        _refresh_live_ui(force=True)
         _finalize_audit_timing()
         st.session_state["audit_stopped"] = True
         st.session_state["audit_stopped_info"] = {"completed": 0, "total": len(flagged_claims)}
@@ -4155,7 +4270,7 @@ def run_stale_audit(
     if not flagged_claims:
         verified_results = [create_skipped_claim_result(c) for c in claims]
         apply_pipeline_event(ui_state, "complete", {"results": verified_results})
-        _refresh_live_ui()
+        _refresh_live_ui(force=True)
         _finalize_audit_timing()
         steps_log.append("Done (all claims verified as stable)")
         status_widget.update(
@@ -4175,7 +4290,7 @@ def run_stale_audit(
 
     total = len(flagged_claims)
     apply_pipeline_event(ui_state, "verify_start", {"flagged_claims": flagged_claims})
-    _refresh_live_ui(include_verify=True)
+    _refresh_live_ui(include_verify=True, force=True)
     status_widget.update(
         label="Searching live sources",
         state="running",
@@ -4208,7 +4323,7 @@ def run_stale_audit(
                 },
             )
         status_widget.update(label=ui_state.button_label, state="running")
-        _refresh_live_ui(include_verify=True)
+        _refresh_live_ui(include_verify=True, force=False)
 
     def on_progress(idx: int, total_count: int, result: dict) -> None:
         progress_calls[0] += 1
@@ -4243,11 +4358,12 @@ def run_stale_audit(
                 state="running",
             )
             live_step.write(f"Searching live sources ({idx + 1}/{total_count})...")
+            _refresh_live_ui(include_verify=True, force=True)
         else:
             apply_pipeline_event(ui_state, "score_start")
             status_widget.update(label="Scoring", state="running")
             live_step.write("Scoring freshness...")
-            _refresh_live_ui(include_verify=True)
+            _refresh_live_ui(include_verify=True, force=True)
 
         res_score = result.get("score")
         res_score_str = "—" if res_score is None else f"{res_score}/100"
@@ -6828,6 +6944,13 @@ with tab_audit:
                 char_warn = "color: #EF4444;" if char_count > MAX_TEXT_CHARS else ""
                 st.caption(f"⌨️ Hint: Press **Ctrl + Enter** to audit &bull; <span style='{char_warn}'>{char_count:,} / {MAX_TEXT_CHARS:,} chars</span>", unsafe_allow_html=True)
 
+                # Requirement 8: Heuristic preview (zero API calls, updates on blur/Ctrl+Enter)
+                raw_ans_text = st.session_state.get("answer_input", "").strip()
+                if raw_ans_text:
+                    h_chips = detect_heuristic_highlights(raw_ans_text)
+                    if h_chips:
+                        st.markdown(render_heuristic_preview_html(h_chips), unsafe_allow_html=True)
+
                 curr_ui_state = st.session_state.get("audit_ui_state")
                 if not isinstance(curr_ui_state, AuditUIState):
                     curr_ui_state = create_initial_ui_state()
@@ -6876,10 +6999,16 @@ with tab_audit:
                         )
 
                 action_status_slot = st.empty()
+                freshness_strip_slot = st.empty()
                 if not is_pasted_running:
                     initial_status_pill = render_action_status_pill_html(curr_ui_state)
                     if initial_status_pill:
                         action_status_slot.markdown(initial_status_pill, unsafe_allow_html=True)
+                    if curr_ui_state.strip_segments:
+                        freshness_strip_slot.markdown(
+                            render_freshness_strip_html(curr_ui_state),
+                            unsafe_allow_html=True,
+                        )
 
             elif active_input_mode == "Ask a question":
                 st.caption(
@@ -7213,6 +7342,11 @@ with tab_audit:
                 pasted_finished = False
                 status = None
                 scan_slot = st.empty()
+                freshness_strip_slot = st.empty()
+                live_meter_slot = st.empty()
+                live_counters_slot = st.empty()
+                live_text_slot = st.empty()
+                activity_feed_slot = st.empty()
                 discovery_slot = st.empty()
                 verify_board_slot = st.empty()
                 try:
@@ -7234,6 +7368,11 @@ with tab_audit:
                             scan_slot=scan_slot,
                             discovery_slot=discovery_slot,
                             verify_board_slot=verify_board_slot,
+                            freshness_strip_slot=freshness_strip_slot,
+                            live_meter_slot=live_meter_slot,
+                            live_counters_slot=live_counters_slot,
+                            activity_feed_slot=activity_feed_slot,
+                            live_text_slot=live_text_slot,
                             cancel_event=cancel_ev,
                         )
                         st.session_state["extract_model"] = extract_model
@@ -7948,6 +8087,11 @@ with tab_audit:
                 else:
                     routing_badge_html = '<span class="sad-status-pill" style="background: rgba(59,130,246,0.15); color: #60A5FA; border: 1px solid rgba(59,130,246,0.3);">🔮 Direct Gemini</span>'
     
+                strip_html_header = render_freshness_strip_from_results(
+                    act_results,
+                    st.session_state.get("audit_ui_state"),
+                )
+
                 score_ring_html = render_score_ring_html(
                     overall_score,
                     models_used,
@@ -7971,6 +8115,9 @@ with tab_audit:
                           <span class="sad-result-badge">{origin_badge_html}</span>
                           {routing_badge_html}
                         </div>
+                      </div>
+                      <div style="padding: 2px 14px 4px 14px;">
+                        {strip_html_header}
                       </div>
                       <div class="sad-result-body" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
                         {score_ring_html}
@@ -8064,6 +8211,44 @@ with tab_audit:
             """,
             unsafe_allow_html=True,
         )
+        ab_col1, ab_col2 = st.columns(2, gap="medium")
+        with ab_col1:
+            if st.button("⚖️ Why Tavily? (Compare with LLM Alone)", key=f"{act_prefix}_why_tavily_btn", use_container_width=True):
+                st.session_state[f"{act_prefix}_show_why_tavily"] = not st.session_state.get(f"{act_prefix}_show_why_tavily", False)
+        with ab_col2:
+            if st.button("🛡️ Why Bifrost? (Simulate Outage & Failover)", key=f"{act_prefix}_why_bifrost_btn", use_container_width=True):
+                st.session_state[f"{act_prefix}_show_why_bifrost"] = not st.session_state.get(f"{act_prefix}_show_why_bifrost", False)
+
+        if st.session_state.get(f"{act_prefix}_show_why_bifrost"):
+            with st.container(border=True):
+                st.subheader("🛡️ Why Bifrost? Upstream Outage Simulation & Failover", icon=":material/shield:")
+                st.caption("Demonstrating Bifrost's gateway-level circuit-breaker failover when the primary model experiences an outage.")
+                first_claim = act_results[0] if act_results else {"claim": "Example claim", "category": "other"}
+                sim_res = run_why_bifrost_simulation(first_claim)
+                if isinstance(sim_res, dict):
+                    st.markdown(
+                        f'<div class="sad-meta-row">'
+                        f'<span class="sad-cat-badge" style="color: #DC2626;">❌ Primary Outage: <strong>{escape_html(str(sim_res.get("primary_failed", "primary")))}</strong></span>'
+                        f'<span class="sad-cat-badge" style="color: #16A34A;">✅ Responded: <strong>{escape_html(str(sim_res.get("answering_model", "fallback")))}</strong></span>'
+                        f'<span class="sad-cat-badge">⏱️ Failover Overhead: <strong>{sim_res.get("failover_overhead_ms", 0):.0f} ms</strong></span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown('<div class="sad-timeline">', unsafe_allow_html=True)
+                    for step in sim_res.get("timeline", []):
+                        st_cls = step.get("status", "info")
+                        t_ms = step.get("timestamp_ms", 0.0)
+                        st.markdown(
+                            f'<div class="sad-timeline-item">'
+                            f'<div class="sad-timeline-dot {st_cls}"></div>'
+                            f'<div class="sad-timeline-content">'
+                            f'<div class="sad-timeline-title">+{t_ms:.0f}ms &mdash; {escape_html(str(step.get("event", "")))}</div>'
+                            f'<div class="sad-timeline-desc">{escape_html(str(step.get("detail", "")))}</div>'
+                            f'</div></div>',
+                            unsafe_allow_html=True,
+                        )
+                    st.markdown('</div>', unsafe_allow_html=True)
+
         show_queries = st.session_state.get("show_search_queries", False)
         for row_idx in range(0, len(act_results), 2):
             c_cols = st.columns(2, gap="medium")

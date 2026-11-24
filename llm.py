@@ -273,7 +273,7 @@ def _resolve_task_models_from_env(
 
     # Bifrost Gateway mode (USE_BIFROST=true): preserve all cross-provider `provider/model` strings.
     base_url = raw_base_url or None
-    default_primary = raw_default or "gpt-4o-mini"
+    default_primary = raw_default or "gemini/gemini-3-flash-preview"
 
     if override_clean:
         primary_model = override_clean
@@ -432,16 +432,11 @@ def get_llm_config(
         return api_key, base_url, model_chain
 
     api_key = _get_config_value("LLM_API_KEY")
-    virtual_key = _get_config_value("LLM_VIRTUAL_KEY") or _get_config_value("BIFROST_VIRTUAL_KEY")
-    bifrost_url = _get_config_value("BIFROST_URL")
     if not api_key:
-        if bifrost_url and virtual_key:
-            api_key = virtual_key
-        else:
-            raise ValueError(
-                "Missing LLM API key: LLM_API_KEY is not set. Add it to Streamlit Secrets or your .env file "
-                "(if your local Bifrost gateway does not require a key, set 'bifrost-local')."
-            )
+        raise ValueError(
+            "Missing LLM API key: LLM_API_KEY is not set. Add it to Streamlit Secrets or your .env file "
+            "(if your local Bifrost gateway does not require a key, set 'bifrost-local')."
+        )
 
     return api_key, base_url, model_chain
 
@@ -486,11 +481,16 @@ def get_llm_client(
         except ValueError:
             pass
 
+    # Ensure client base_url has a trailing slash so httpx does not strip /v1
+    client_base_url = base_url
+    if client_base_url and not client_base_url.endswith("/"):
+        client_base_url = f"{client_base_url}/"
+
     # max_retries=0 disables the SDK's hidden retry loop so our explicit
     # 1-retry-per-model + fallback chain behaves predictably.
     client = OpenAI(
         api_key=api_key,
-        base_url=base_url,
+        base_url=client_base_url,
         default_headers=headers_arg,
         timeout=timeout_seconds,
         max_retries=0,
@@ -718,19 +718,29 @@ def format_llm_error(
     raw_msg = str(exc or "").strip()
     lower = raw_msg.lower()
 
-    if bifrost_enabled and _is_gateway_unreachable(exc):
+    # 1. Quota / rate limit errors
+    if status_code == 429 or any(tok in lower for tok in ("rate limit", "quota", "resource_exhausted", "too many requests", "usage limit")):
         return (
-            f"Bifrost gateway is down or unreachable at {endpoint}. "
-            "Start Bifrost locally on port 8080, or set USE_BIFROST=false in .env "
-            "to call Gemini directly."
+            "Gemini quota exceeded: The LLM rate or quota limit was reached (429). Please wait a moment "
+            "or add fallback models in LLM_MODEL_FALLBACKS."
         )
 
-    if (not bifrost_enabled) and _is_gateway_unreachable(exc):
+    # 2. Upstream model high demand / busy (503)
+    if status_code == 503 and any(tok in lower for tok in ("high demand", "spikes in demand", "unavailable", "busy")):
         return (
-            f"Could not connect to the Gemini API endpoint ({endpoint}). "
-            "Please check your network connection and try again."
+            "Gemini model busy: Upstream model is experiencing high demand (503). "
+            "Please try again in a moment or add fallback models in LLM_MODEL_FALLBACKS."
         )
 
+    # 3. Model retired / not found (404)
+    if status_code == 404 or any(tok in lower for tok in ("not found", "no longer available")):
+        model_hint = f" '{primary_model}'" if primary_model else ""
+        return (
+            f"Gemini model retired or not found (404): The requested model{model_hint} was not found or is retired. "
+            "Please update LLM_MODEL in .env to a supported model."
+        )
+
+    # 4. Authentication / virtual key errors
     if isinstance(exc, (AuthenticationError, PermissionDeniedError)) or status_code in {401, 403} or any(
         tok in lower
         for tok in (
@@ -746,7 +756,7 @@ def format_llm_error(
     ):
         if "virtual key" in lower or "x-bf-vk" in lower:
             return (
-                "Invalid or restricted Bifrost virtual key (LLM_VIRTUAL_KEY / x-bf-vk). "
+                "Bifrost virtual key invalid: Invalid or restricted Bifrost virtual key (LLM_VIRTUAL_KEY / x-bf-vk). "
                 "Verify the key and ensure this provider is allowed under Virtual Keys in the Bifrost dashboard."
             )
         if not bifrost_enabled:
@@ -759,10 +769,18 @@ def format_llm_error(
             "LLM_API_KEY and your Bifrost provider keys."
         )
 
-    if status_code == 429 or "rate limit" in lower or "quota" in lower or "resource_exhausted" in lower:
+    # 5. Endpoint unreachable / gateway down
+    if bifrost_enabled and _is_gateway_unreachable(exc):
         return (
-            "The LLM rate or quota limit was reached (429). Please wait a moment "
-            "or add fallback models in LLM_MODEL_FALLBACKS."
+            f"Bifrost down: Bifrost gateway is down or unreachable at {endpoint}. "
+            "Start Bifrost locally on port 8080, or set USE_BIFROST=false in .env "
+            "to call Gemini directly."
+        )
+
+    if (not bifrost_enabled) and _is_gateway_unreachable(exc):
+        return (
+            f"Network offline: Could not connect to the Gemini API endpoint ({endpoint}). "
+            "Please check your network connection and try again."
         )
 
     if status_code == 404 or "not found" in lower:

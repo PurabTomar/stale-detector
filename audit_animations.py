@@ -8,12 +8,15 @@ Design constraints:
   opacity, SVG stroke-dashoffset), reserved space to avoid layout shift.
 - Full `prefers-reduced-motion: reduce` fallback (static progress bar, no motion).
 - All user text, claims, and source metadata are escaped with `html.escape`.
+- Requirements 1-12: live freshness strip, provisional score meter, live counters,
+  activity feed, heuristic preview, accessibility aria-live, 150ms throttle.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import html
+import time as _time
 from typing import Any
 
 
@@ -27,6 +30,52 @@ STAGE_TO_BUTTON_LABEL: dict[str, str] = {
     "judge": "Judging",
     "score": "Scoring",
     "report": "Scoring",
+}
+
+# Strip segment status to CSS class and icon
+_STRIP_STATUS: dict[str, tuple[str, str]] = {
+    "pending":   ("sad-strip-pending",   "⋯"),
+    "running":   ("sad-strip-running",   "⟳"),
+    "fresh":     ("sad-strip-fresh",     "✓"),
+    "outdated":  ("sad-strip-outdated",  "⚠"),
+    "incorrect": ("sad-strip-incorrect", "✗"),
+    "partially_correct": ("sad-strip-partial",  "~"),
+    "partial":   ("sad-strip-partial",   "~"),
+    "uncertain": ("sad-strip-uncertain", "?"),
+    "unverifiable": ("sad-strip-uncertain", "—"),
+    "verification_failed": ("sad-strip-failed", "!"),
+    "failed":    ("sad-strip-failed",    "!"),
+    "skipped":   ("sad-strip-skipped",   "·"),
+    "cancelled": ("sad-strip-skipped",   "·"),
+}
+
+# Statuses that contribute a verified count (not failed/skipped/pending)
+_VERIFIED_STATUSES = frozenset({
+    "fresh", "outdated", "incorrect", "partially_correct", "partial",
+    "uncertain", "unverifiable",
+})
+
+# Statuses that contribute to the risk-weighted provisional score
+_SCORABLE_STATUSES = frozenset({
+    "fresh", "outdated", "incorrect", "partially_correct", "partial",
+    "uncertain", "unverifiable",
+})
+
+# Activity feed event type to CSS class
+_FEED_CLS: dict[str, str] = {
+    "audit_started":     "sad-feed-info",
+    "claims_detected":   "sad-feed-info",
+    "claim_started":     "sad-feed-search",
+    "source_found":      "sad-feed-source",
+    "claim_verified":    "sad-feed-verified",
+    "claim_failed":      "sad-feed-error",
+    "audit_finished":    "sad-feed-info",
+    "audit_cancelled":   "sad-feed-warn",
+    "search":            "sad-feed-search",
+    "extract":           "sad-feed-search",
+    "judge":             "sad-feed-search",
+    "done":              "sad-feed-verified",
+    "error":             "sad-feed-error",
 }
 
 
@@ -48,6 +97,8 @@ class ClaimLiveState:
     score: int | None = None
     sources: list[dict[str, str]] = field(default_factory=list)
     error: str | None = None
+    duration_ms: float | None = None
+    started_at: float = field(default_factory=_time.monotonic)
 
 
 @dataclass
@@ -82,10 +133,126 @@ class AuditUIState:
     stopped: bool = False
     reveal_ready: bool = False
 
+    # --- NEW: Live Freshness Strip (Requirement 3) ---
+    # strip_segments mirrors claim_states but keyed 0..N in original text order
+    strip_segments: list[dict[str, Any]] = field(default_factory=list)
+
+    # --- NEW: Provisional Score Meter (Requirement 5) ---
+    provisional_score: int | None = None
+    verified_count: int = 0      # claims with a real status (not pending/failed/skipped)
+    failed_count: int = 0
+
+    # --- NEW: Live Counters (Requirement 6) ---
+    counters: dict[str, int] = field(
+        default_factory=lambda: {
+            "fresh": 0,
+            "outdated": 0,
+            "incorrect": 0,
+            "partial": 0,
+            "uncertain": 0,
+            "failed": 0,
+        }
+    )
+
+    # --- NEW: Live Activity Feed (Requirement 7) ---
+    # Newest-first list of feed entries.
+    activity_feed: list[dict[str, Any]] = field(default_factory=list)
+    # Last aria-live announcement text.
+    last_announcement: str = ""
+
+    # --- NEW: Throttle state (Requirement 10) ---
+    last_render_monotonic: float = 0.0
+
 
 def create_initial_ui_state() -> AuditUIState:
     """Return a clean idle AuditUIState (all stepper stages pending)."""
     return AuditUIState()
+
+
+# ---------------------------------------------------------------------------
+# Private helpers for the reducer
+# ---------------------------------------------------------------------------
+
+def _status_to_counter_key(status: str) -> str | None:
+    """Map a claim status to a live-counter bucket key."""
+    s = str(status or "").lower().strip()
+    if s == "fresh":
+        return "fresh"
+    if s == "outdated":
+        return "outdated"
+    if s == "incorrect":
+        return "incorrect"
+    if s in ("partially_correct", "partial"):
+        return "partial"
+    if s in ("uncertain", "unverifiable"):
+        return "uncertain"
+    if s in ("verification_failed", "failed"):
+        return "failed"
+    return None
+
+
+def _recompute_provisional_score(state: AuditUIState) -> None:
+    """Recompute state.provisional_score using risk weighting across scorable claims (failed excluded)."""
+    cat_weights = {
+        "price": 1.5,
+        "leadership": 1.5,
+        "regulation": 1.4,
+        "version": 1.2,
+        "statistic": 1.2,
+        "geography": 1.0,
+        "records": 1.0,
+        "other": 1.0,
+    }
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for cs in state.claim_states.values():
+        if cs.status in _SCORABLE_STATUSES and cs.score is not None:
+            w = cat_weights.get(cs.category, 1.0)
+            weighted_sum += float(cs.score) * w
+            total_weight += w
+    state.provisional_score = max(0, min(100, round(weighted_sum / total_weight))) if total_weight > 0 else None
+
+
+def _add_feed_entry(
+    state: AuditUIState,
+    event_type: str,
+    message: str,
+    claim_idx: int | None = None,
+    duration_ms: float | None = None,
+) -> None:
+    """Prepend a new activity-feed entry (newest-first). Caps at 60 entries."""
+    entry: dict[str, Any] = {
+        "event_type": event_type,
+        "message": message,
+        "claim_idx": claim_idx,
+        "duration_ms": duration_ms,
+        "ts": _time.monotonic(),
+    }
+    state.activity_feed.insert(0, entry)
+    if len(state.activity_feed) > 60:
+        state.activity_feed = state.activity_feed[:60]
+
+
+def _sync_strip_from_states(state: AuditUIState) -> None:
+    """Rebuild strip_segments list from claim_states (preserves text order by index)."""
+    new_strip: list[dict[str, Any]] = []
+    for idx in sorted(state.claim_states.keys()):
+        cs = state.claim_states[idx]
+        # Determine strip status
+        if cs.substep in ("done", "error"):
+            strip_status = cs.status or ("failed" if cs.substep == "error" else "uncertain")
+        elif cs.substep == "pending":
+            strip_status = "pending"
+        else:
+            strip_status = "running"
+        new_strip.append({
+            "idx": idx,
+            "text": cs.claim,
+            "status": strip_status,
+            "duration_ms": cs.duration_ms,
+            "sources": cs.sources,
+        })
+    state.strip_segments = new_strip
 
 
 def apply_pipeline_event(
@@ -113,7 +280,7 @@ def apply_pipeline_event(
     if ev == "reset":
         return create_initial_ui_state()
 
-    if ev == "detect_start":
+    if ev in ("detect_start", "audit_started"):
         state.phase = "running"
         state.active_stage = "detect"
         state.button_state = "loading"
@@ -126,6 +293,13 @@ def apply_pipeline_event(
         state.stopped = False
         state.reveal_ready = False
         state.progress_ratio = 0.12
+        state.strip_segments = []
+        state.provisional_score = None
+        state.verified_count = 0
+        state.failed_count = 0
+        state.counters = {k: 0 for k in state.counters}
+        state.activity_feed = []
+        state.last_announcement = "Starting claim detection…"
         state.stepper = {
             "input": "done",
             "detect": "running",
@@ -133,9 +307,10 @@ def apply_pipeline_event(
             "score": "pending",
             "report": "pending",
         }
+        _add_feed_entry(state, "audit_started", "Audit started — detecting claims")
         return state
 
-    if ev == "detect_done":
+    if ev in ("detect_done", "claims_detected"):
         claims = list(data.get("claims") or [])
         threshold = int(data.get("threshold", 40))
         state.detected_claims = claims
@@ -163,6 +338,14 @@ def apply_pipeline_event(
         state.total_flagged_claims = flagged_idx
         state.completed_claims = 0
         state.progress_ratio = 0.25 if flagged_idx > 0 else 0.90
+        _sync_strip_from_states(state)
+        n_total = len(claims)
+        _add_feed_entry(
+            state,
+            "claims_detected",
+            f"Detected {n_total} claim(s) — {flagged_idx} flagged for live verification",
+        )
+        state.last_announcement = f"Detected {n_total} claims, {flagged_idx} to verify"
         if flagged_idx > 0:
             state.phase = "running"
             state.active_stage = "search"
@@ -223,6 +406,7 @@ def apply_pipeline_event(
             "score": "pending",
             "report": "pending",
         }
+        _sync_strip_from_states(state)
         return state
 
     if ev == "claim_substep":
@@ -250,6 +434,13 @@ def apply_pipeline_event(
             if dedupe_key not in state.seen_source_urls:
                 state.seen_source_urls.add(dedupe_key)
                 state.sources_read += 1
+                # Emit source feed entry
+                _add_feed_entry(
+                    state,
+                    "source_found",
+                    f"Source: {domain or url}",
+                    claim_idx=claim_idx,
+                )
             if not any(s.get("url") == url and s.get("domain") == domain for s in c_state.sources):
                 c_state.sources.append(
                     {
@@ -258,6 +449,15 @@ def apply_pipeline_event(
                         "source_type": str(src.get("source_type") or "News"),
                     }
                 )
+
+        if substep == "search" and c_state.substep == "search":
+            claim_short = c_state.claim[:60] + ("…" if len(c_state.claim) > 60 else "")
+            _add_feed_entry(
+                state,
+                "claim_started",
+                f'Searching: "{claim_short}"',
+                claim_idx=claim_idx,
+            )
 
         if state.phase == "running":
             if substep == "score":
@@ -276,11 +476,99 @@ def apply_pipeline_event(
                 "score": "pending",
                 "report": "pending",
             }
+        _sync_strip_from_states(state)
         return state
 
-    if ev == "claim_done":
-        claim_idx = int(data.get("claim_index", 0))
-        result = data.get("result") if isinstance(data.get("result"), dict) else {}
+    if ev == "claim_started":
+        claim_idx = int(data.get("claim_id", data.get("claim_index", data.get("id", 0))))
+        if claim_idx not in state.claim_states:
+            state.claim_states[claim_idx] = ClaimLiveState(
+                index=claim_idx,
+                claim=str(data.get("claim") or f"Claim #{claim_idx + 1}"),
+                category=str(data.get("category") or "other").strip().lower(),
+            )
+        c_state = state.claim_states[claim_idx]
+        if c_state.substep not in {"done", "error"}:
+            c_state.substep = "search"
+        c_state.started_at = _time.monotonic()
+        claim_short = c_state.claim[:60] + ("…" if len(c_state.claim) > 60 else "")
+        _add_feed_entry(
+            state,
+            "claim_started",
+            f'Searching: "{claim_short}"',
+            claim_idx=claim_idx,
+        )
+        _sync_strip_from_states(state)
+        return state
+
+    if ev == "source_found":
+        claim_idx = int(data.get("claim_id", data.get("claim_index", data.get("id", 0))))
+        domain = str(data.get("domain") or "").strip()
+        url = str(data.get("url") or "").strip()
+        src_type = str(data.get("type", data.get("source_type", "News"))).strip()
+        key = url or domain
+        if key and key not in state.seen_source_urls:
+            state.seen_source_urls.add(key)
+            state.sources_read += 1
+            _add_feed_entry(
+                state,
+                "source_found",
+                f"Source: {domain or url}",
+                claim_idx=claim_idx,
+            )
+        if claim_idx in state.claim_states and key:
+            c_state = state.claim_states[claim_idx]
+            if not any(s.get("url") == url and s.get("domain") == domain for s in c_state.sources):
+                c_state.sources.append(
+                    {
+                        "url": url,
+                        "domain": domain or url,
+                        "source_type": src_type,
+                    }
+                )
+        _sync_strip_from_states(state)
+        return state
+
+    if ev == "claim_failed":
+        claim_idx = int(data.get("claim_id", data.get("claim_index", data.get("id", 0))))
+        reason = str(data.get("reason") or "Verification failed").strip()
+        if claim_idx not in state.claim_states:
+            state.claim_states[claim_idx] = ClaimLiveState(
+                index=claim_idx,
+                claim=str(data.get("claim") or f"Claim #{claim_idx + 1}"),
+                category=str(data.get("category") or "other").strip().lower(),
+            )
+        c_state = state.claim_states[claim_idx]
+        was_finished = c_state.substep in {"done", "error"}
+        c_state.status = "verification_failed"
+        c_state.error = reason
+        c_state.score = None
+        c_state.substep = "error"
+        if not was_finished:
+            state.completed_claims += 1
+            state.failed_count += 1
+            if "failed" in state.counters:
+                state.counters["failed"] += 1
+            _recompute_provisional_score(state)
+            _add_feed_entry(
+                state,
+                "claim_failed",
+                f"Verification failed: Claim #{claim_idx + 1} — {reason}",
+                claim_idx=claim_idx,
+            )
+            state.last_announcement = (
+                f"Claim {state.verified_count + state.failed_count} of "
+                f"{state.total_flagged_claims} failed: {reason}"
+            )
+        total_f = max(state.total_flagged_claims, len(state.claim_states), 1)
+        state.progress_ratio = round(0.25 + 0.65 * min(1.0, state.completed_claims / total_f), 3)
+        _sync_strip_from_states(state)
+        return state
+
+    if ev in ("claim_done", "claim_verified"):
+        claim_idx = int(data.get("claim_id", data.get("claim_index", data.get("id", 0))))
+        raw_res = data.get("result")
+        result = raw_res if isinstance(raw_res, dict) else data
         if claim_idx not in state.claim_states:
             state.claim_states[claim_idx] = ClaimLiveState(
                 index=claim_idx,
@@ -290,6 +578,13 @@ def apply_pipeline_event(
         c_state = state.claim_states[claim_idx]
         was_finished = c_state.substep in {"done", "error"}
         res_status = str(result.get("status") or "uncertain").strip().lower()
+
+        # Duration from result or elapsed since started_at
+        dur_ms = result.get("duration_ms")
+        if dur_ms is None and hasattr(c_state, "started_at"):
+            dur_ms = round((_time.monotonic() - c_state.started_at) * 1000.0, 1)
+        c_state.duration_ms = dur_ms
+
         c_state.status = res_status
         c_state.score = result.get("score")
         c_state.error = result.get("error")
@@ -315,6 +610,34 @@ def apply_pipeline_event(
 
         if not was_finished:
             state.completed_claims += 1
+            # Update live counters
+            ck = _status_to_counter_key(res_status)
+            if ck and ck in state.counters:
+                state.counters[ck] += 1
+            # Update verified / failed counts
+            if res_status in _VERIFIED_STATUSES:
+                state.verified_count += 1
+            elif res_status in ("verification_failed", "failed"):
+                state.failed_count += 1
+            # Recompute provisional score (excludes failed)
+            _recompute_provisional_score(state)
+            # Activity feed
+            status_label = res_status.replace("_", " ").title()
+            dur_str = f" in {dur_ms:.0f}ms" if dur_ms is not None else ""
+            n_srcs = len(c_state.sources)
+            _add_feed_entry(
+                state,
+                "claim_verified",
+                f"Verified: {status_label}{dur_str} · {n_srcs} source(s)",
+                claim_idx=claim_idx,
+                duration_ms=dur_ms,
+            )
+            # aria-live announcement
+            state.last_announcement = (
+                f"Claim {state.verified_count + state.failed_count} of "
+                f"{state.total_flagged_claims} verified: {status_label}"
+            )
+
         total_f = max(state.total_flagged_claims, len(state.claim_states), 1)
         state.progress_ratio = round(0.25 + 0.65 * min(1.0, state.completed_claims / total_f), 3)
         if state.completed_claims >= total_f:
@@ -327,6 +650,7 @@ def apply_pipeline_event(
                 "score": "running",
                 "report": "pending",
             }
+        _sync_strip_from_states(state)
         return state
 
     if ev == "score_start":
@@ -347,17 +671,24 @@ def apply_pipeline_event(
         }
         return state
 
-    if ev == "complete":
+    if ev in ("complete", "audit_finished"):
         results = data.get("results") or []
-        has_failed = any(
-            isinstance(r, dict) and str(r.get("status", "")).lower() == "verification_failed"
-            for r in results
+        has_failed = (
+            any(
+                isinstance(r, dict) and str(r.get("status", "")).lower() == "verification_failed"
+                for r in results
+            )
+            or state.failed_count > 0
+            or any(cs.status == "verification_failed" for cs in state.claim_states.values())
         )
         state.scan_active = False
         state.input_glow = False
         state.button_disabled = False
         state.stopped = False
         state.reveal_ready = True
+        # Final sync of strip segments
+        _sync_strip_from_states(state)
+        _add_feed_entry(state, "audit_finished", "Audit complete")
         if has_failed:
             state.phase = "error"
             state.active_stage = "error"
@@ -402,6 +733,8 @@ def apply_pipeline_event(
         state.scan_active = False
         state.input_glow = False
         state.reveal_ready = False
+        reason_txt = state.error_reason or "Unknown error"
+        _add_feed_entry(state, "error", f"Error at {step}: {reason_txt}")
 
         stepper: dict[str, str] = {}
         hit_error = False
@@ -416,7 +749,7 @@ def apply_pipeline_event(
         state.stepper = stepper
         return state
 
-    if ev == "stopped":
+    if ev in ("stopped", "audit_cancelled"):
         state.phase = "stopped"
         state.active_stage = "stopped"
         state.stopped = True
@@ -437,6 +770,15 @@ def apply_pipeline_event(
             "score": "pending",
             "report": "pending",
         }
+        # Mark all still-pending strip segments as "skipped"
+        for seg in state.strip_segments:
+            if seg.get("status") in ("pending", "running"):
+                seg["status"] = "skipped"
+        _add_feed_entry(
+            state,
+            "audit_cancelled",
+            f"Audit stopped — {state.completed_claims} of {state.total_flagged_claims} verified",
+        )
         return state
 
     return state
@@ -693,4 +1035,385 @@ def render_stepper_check_svg() -> str:
         '<path class="sad-pipe-check-path" d="M3.2 8.4L6.4 11.6L12.8 4.8" '
         'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
         '</svg>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# NEW: Live Freshness Strip (Requirement 3)
+# ---------------------------------------------------------------------------
+
+
+def render_freshness_strip_html(state: AuditUIState) -> str:
+    """Render the Live Freshness Strip directly under Input Studio.
+
+    One segment per claim (in text order): pending=grey/pulse, running=indigo/animated,
+    fresh=green, outdated=orange, incorrect=red, partial=amber, uncertain=slate,
+    failed=hatched red-grey. Click scrolls to claim card (JS anchor).
+    Shows 'N of M verified' label. aria-live polite region.
+    """
+    if not state.strip_segments and state.claim_states:
+        _sync_strip_from_states(state)
+
+    segments = state.strip_segments
+    if not segments:
+        # During detect phase, we may not have segments yet — show placeholder
+        if state.phase not in ("running", "done", "error", "stopped"):
+            return ""
+        total = state.total_flagged_claims
+        if total == 0:
+            return ""
+
+    total = max(state.total_flagged_claims, len(segments))
+    verified = state.verified_count
+    failed = state.failed_count
+    pending_count = total - verified - failed
+
+    # Build label
+    if state.phase in ("done",) and failed == 0:
+        label_txt = f"All {verified} claim(s) verified"
+    elif state.phase in ("done", "error") and failed > 0:
+        label_txt = f"{verified} of {total} verified · {failed} failed"
+    elif state.phase == "stopped":
+        label_txt = f"{verified} of {total} verified (stopped)"
+    elif total > 0:
+        label_txt = f"{verified} of {total} verified…"
+    else:
+        label_txt = "Verifying…"
+
+    segs_html: list[str] = []
+    for seg in segments:
+        idx = seg["idx"]
+        status = seg.get("status", "pending")
+        cls, icon = _STRIP_STATUS.get(status, ("sad-strip-pending", "⋯"))
+        claim_txt = seg.get("text", f"Claim {idx + 1}")
+        short = claim_txt[:80] + ("…" if len(claim_txt) > 80 else "")
+        dur = seg.get("duration_ms")
+        dur_str = f" ({dur:.0f}ms)" if dur is not None else ""
+        tooltip = f"#{idx + 1}: {short} — {status.replace('_', ' ')}{dur_str}"
+        # anchor id used by card scroll
+        segs_html.append(
+            f'<span class="sad-strip-seg {cls}" '
+            f'role="listitem" '
+            f'title="{_esc(tooltip)}" '
+            f'aria-label="Claim {idx + 1}: {_esc(status.replace(chr(95), chr(32)))}" '
+            f'onclick="document.getElementById(\'sad-claim-card-{idx}\')?.scrollIntoView({{behavior:\'smooth\'}})" '
+            f'style="cursor:pointer;">'
+            f'<span class="sad-strip-icon" aria-hidden="true">{icon}</span>'
+            f'</span>'
+        )
+
+    segs_block = "".join(segs_html)
+    return (
+        f'<div class="sad-freshness-strip" role="list" '
+        f'aria-label="Claim verification progress: {_esc(label_txt)}">'
+        f'{segs_block}'
+        f'<span class="sad-strip-label">{_esc(label_txt)}</span>'
+        f'</div>'
+        # aria-live announcement (visually hidden, screen-reader only)
+        f'<div aria-live="polite" aria-atomic="true" class="sad-aria-announcer">'
+        f'{_esc(state.last_announcement)}'
+        f'</div>'
+    )
+
+
+def render_freshness_strip_from_results(
+    results: list[dict],
+    ui_state: AuditUIState | None = None,
+) -> str:
+    """Render the freshness strip from results (or existing ui_state) to stay in results header."""
+    if ui_state is not None and (ui_state.strip_segments or ui_state.claim_states):
+        return render_freshness_strip_html(ui_state)
+    if not results:
+        return ""
+    state = create_initial_ui_state()
+    for idx, r in enumerate(results):
+        status = str(r.get("status") or "uncertain").lower()
+        score = r.get("score")
+        state.claim_states[idx] = ClaimLiveState(
+            index=idx,
+            claim=str(r.get("claim") or f"Claim #{idx + 1}"),
+            status=status,
+            substep="error" if status == "verification_failed" else "done",
+            score=score,
+            duration_ms=r.get("duration_ms"),
+            sources=r.get("sources") or [],
+        )
+    state.phase = "done"
+    state.total_flagged_claims = len(results)
+    state.completed_claims = len(results)
+    state.verified_count = sum(1 for r in results if str(r.get("status", "")).lower() in _VERIFIED_STATUSES)
+    state.failed_count = sum(1 for r in results if str(r.get("status", "")).lower() in ("verification_failed", "failed"))
+    _sync_strip_from_states(state)
+    return render_freshness_strip_html(state)
+
+
+# ---------------------------------------------------------------------------
+# NEW: Provisional Score Meter (Requirement 5)
+# ---------------------------------------------------------------------------
+
+
+def render_provisional_score_meter_html(state: AuditUIState) -> str:
+    """Render the Provisional Score Meter (SVG arc gauge).
+
+    Never shows a final-looking score before the audit completes.
+    At the end, the CSS animates the ring to the real score.
+    Failed claims are excluded; label says 'X could not be verified'.
+    """
+    if state.phase == "idle":
+        return ""
+
+    score = state.provisional_score
+    total = state.total_flagged_claims
+    verified = state.verified_count
+    failed = state.failed_count
+    is_final = state.phase in ("done", "error", "stopped")
+
+    if score is None:
+        score_display = "—"
+        ring_pct = 0
+    else:
+        score_display = str(score)
+        ring_pct = max(0, min(100, score))
+
+    # SVG ring: circumference ≈ 2π×44 ≈ 276.46 for r=44
+    circ = 276.46
+    offset = circ * (1 - ring_pct / 100.0)
+
+    if is_final:
+        label = f"Score: {score_display}/100" if score is not None else "Score unavailable"
+    else:
+        label = f"Provisional ({verified} of {total} verified)"
+
+    if failed > 0:
+        failed_note = (
+            f'<span class="sad-meter-failed-note">{failed} could not be verified</span>'
+        )
+    else:
+        failed_note = ""
+
+    provisional_cls = "" if is_final else "sad-meter-provisional"
+
+    # Pick ring colour based on score
+    if score is None or score < 40:
+        ring_color = "#DC2626"  # red
+    elif score < 65:
+        ring_color = "#EA580C"  # orange
+    elif score < 80:
+        ring_color = "#D97706"  # amber
+    else:
+        ring_color = "#16A34A"  # green
+
+    return (
+        f'<div class="sad-provisional-meter {provisional_cls}" '
+        f'role="meter" aria-valuenow="{ring_pct}" aria-valuemin="0" aria-valuemax="100" '
+        f'aria-label="{_esc(label)}">'
+        f'<div class="sad-meter-ring-wrap">'
+        f'<svg class="sad-meter-svg" viewBox="0 0 100 100" width="80" height="80" aria-hidden="true">'
+        f'<circle class="sad-meter-track" cx="50" cy="50" r="44" fill="none" stroke-width="8"/>'
+        f'<circle class="sad-meter-arc" cx="50" cy="50" r="44" fill="none" '
+        f'stroke="{ring_color}" stroke-width="8" stroke-linecap="round" '
+        f'stroke-dasharray="{circ:.2f}" stroke-dashoffset="{offset:.2f}" '
+        f'transform="rotate(-90 50 50)"/>'
+        f'</svg>'
+        f'<span class="sad-meter-score">{_esc(score_display)}</span>'
+        f'</div>'
+        f'<div class="sad-meter-label">{_esc(label)}</div>'
+        f'{failed_note}'
+        f'</div>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# NEW: Live Status Counters (Requirement 6)
+# ---------------------------------------------------------------------------
+
+
+def render_live_counters_html(state: AuditUIState) -> str:
+    """Render live status counter chips (Fresh / Outdated / Incorrect / Partial / Uncertain / Failed).
+
+    Each chip increments with a 'bump' CSS animation class added dynamically via
+    a data attribute change that the CSS transition responds to.
+    """
+    if state.phase == "idle":
+        return ""
+
+    counters = state.counters
+    _COUNTER_CFG: list[tuple[str, str, str]] = [
+        ("fresh",     "✓", "sad-counter-fresh"),
+        ("outdated",  "⚠", "sad-counter-outdated"),
+        ("incorrect", "✗", "sad-counter-incorrect"),
+        ("partial",   "~", "sad-counter-partial"),
+        ("uncertain", "?", "sad-counter-uncertain"),
+        ("failed",    "!", "sad-counter-failed"),
+    ]
+
+    chips: list[str] = []
+    for key, icon, cls in _COUNTER_CFG:
+        count = counters.get(key, 0)
+        label = key.replace("_", " ").title()
+        chips.append(
+            f'<span class="sad-counter-chip {cls}" '
+            f'data-count="{count}" '
+            f'title="{count} {label}" '
+            f'aria-label="{count} {_esc(label)}">'
+            f'<span class="sad-counter-icon" aria-hidden="true">{icon}</span>'
+            f'<span class="sad-counter-num">{count}</span>'
+            f'<span class="sad-counter-lbl">{_esc(label)}</span>'
+            f'</span>'
+        )
+
+    return (
+        '<div class="sad-live-counters" role="status" aria-label="Live verification counters">'
+        + "".join(chips)
+        + '</div>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# NEW: Live Activity Feed (Requirement 7)
+# ---------------------------------------------------------------------------
+
+
+def render_activity_feed_html(state: AuditUIState) -> str:
+    """Render the collapsible activity feed (newest-first, real durations, real events).
+
+    Click on a feed line scrolls to the corresponding claim card.
+    Errors appear in red.
+    """
+    feed = state.activity_feed
+    if not feed:
+        return ""
+
+    n = len(feed)
+    items: list[str] = []
+    for entry in feed:  # already newest-first
+        ev_type = str(entry.get("event_type") or "")
+        msg = str(entry.get("message") or "")
+        dur = entry.get("duration_ms")
+        claim_idx = entry.get("claim_idx")
+        cls = _FEED_CLS.get(ev_type, "sad-feed-info")
+        dur_html = (
+            f'<span class="sad-feed-dur">{dur:.0f}ms</span>' if dur is not None else ""
+        )
+        onclick_attr = ""
+        if claim_idx is not None:
+            onclick_attr = (
+                f'onclick="document.getElementById(\'sad-claim-card-{claim_idx}\')?.scrollIntoView({{behavior:\'smooth\'}})" '
+                f'style="cursor:pointer;" '
+            )
+        items.append(
+            f'<li class="sad-feed-entry {cls}" {onclick_attr}>'
+            f'<span class="sad-feed-msg">{_esc(msg)}</span>'
+            f'{dur_html}'
+            f'</li>'
+        )
+
+    return (
+        f'<details class="sad-activity-feed">'
+        f'<summary class="sad-feed-summary">Activity <span class="sad-feed-count">({n})</span></summary>'
+        f'<ul class="sad-feed-list">{"".join(items)}</ul>'
+        f'</details>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# NEW: Live Marked Text in Answer (Requirement 4)
+# ---------------------------------------------------------------------------
+
+
+def render_live_marked_text_html(answer_text: str, state: AuditUIState) -> str:
+    """Render user text with real-time status highlights and icons as claims complete (Requirement 4).
+
+    - Exact phrases get status highlight + icon as each claim completes.
+    - Pending or running claims get a dotted pulsing underline (sad-hl-pending).
+    - Failed claims get a hatched underline (sad-hl-failed).
+    - Uses exact/fuzzy span matching against answer_text.
+    - All user text is escaped with html.escape.
+    """
+    if not answer_text or not answer_text.strip():
+        return ""
+    if not state.claim_states and not state.detected_claims:
+        return ""
+
+    from extractor import locate_span_in_text
+
+    spans: list[dict[str, Any]] = []
+
+    # Map each claim in claim_states
+    for idx, cs in sorted(state.claim_states.items()):
+        raw_claim = cs.claim
+        loc = locate_span_in_text(answer_text, span_text=raw_claim, claim_text=raw_claim)
+        if loc is None and len(raw_claim) > 40:
+            loc = locate_span_in_text(answer_text, span_text=raw_claim[:40], claim_text=raw_claim[:40])
+        if loc is not None:
+            s_start, s_end = loc[0], loc[1]
+            if cs.substep == "done":
+                c_status = cs.status or "uncertain"
+            elif cs.substep == "error" or cs.status == "verification_failed":
+                c_status = "failed"
+            elif cs.substep == "skipped":
+                c_status = "skipped"
+            else:
+                c_status = "pending"
+            spans.append({
+                "start": s_start,
+                "end": s_end,
+                "claim_idx": idx,
+                "status": c_status,
+                "claim": cs.claim,
+                "score": cs.score,
+            })
+
+    # Sort and remove overlaps
+    spans.sort(key=lambda s: s["start"])
+    non_overlap: list[dict[str, Any]] = []
+    last_end = 0
+    for sp in spans:
+        if sp["start"] >= last_end:
+            non_overlap.append(sp)
+            last_end = sp["end"]
+
+    _HL_ICONS: dict[str, tuple[str, str]] = {
+        "pending":   ("sad-hl-pending",   "⋯"),
+        "fresh":     ("sad-hl-fresh",     "✓"),
+        "outdated":  ("sad-hl-outdated",  "⚠"),
+        "incorrect": ("sad-hl-incorrect", "✗"),
+        "partial":   ("sad-hl-partial",   "~"),
+        "partially_correct": ("sad-hl-partial", "~"),
+        "uncertain": ("sad-hl-uncertain", "?"),
+        "unverifiable": ("sad-hl-uncertain", "—"),
+        "failed":    ("sad-hl-failed",    "!"),
+        "skipped":   ("sad-hl-skipped",   "·"),
+    }
+
+    parts: list[str] = []
+    cur = 0
+    for sp in non_overlap:
+        if sp["start"] > cur:
+            parts.append(_esc(answer_text[cur:sp["start"]]).replace("\n", "<br>"))
+        st_key = sp["status"]
+        cls, icon = _HL_ICONS.get(st_key, ("sad-hl-pending", "⋯"))
+        score_info = f" ({sp['score']}/100)" if sp.get("score") is not None else ""
+        tooltip = f"#{sp['claim_idx'] + 1}: {st_key.replace('_', ' ').title()}{score_info}"
+        span_slice = _esc(answer_text[sp["start"]:sp["end"]]).replace("\n", "<br>")
+        claim_target_idx = sp["claim_idx"]
+        parts.append(
+            f'<span class="sad-live-hl {cls}" title="{_esc(tooltip)}" '
+            f'data-claim-idx="{claim_target_idx}">'
+            f'<span class="sad-live-hl-icon" aria-hidden="true">{icon}</span>'
+            f'{span_slice}'
+            f'</span>'
+        )
+        cur = sp["end"]
+
+    if cur < len(answer_text):
+        parts.append(_esc(answer_text[cur:]).replace("\n", "<br>"))
+
+    return (
+        f'<div class="sad-live-text-card">'
+        f'<div class="sad-live-text-header">'
+        f'<span class="sad-live-text-title">⚡ Live text verification</span>'
+        f'</div>'
+        f'<div class="sad-live-text-content">{"".join(parts)}</div>'
+        f'</div>'
     )
