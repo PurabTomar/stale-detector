@@ -432,11 +432,16 @@ def get_llm_config(
         return api_key, base_url, model_chain
 
     api_key = _get_config_value("LLM_API_KEY")
+    virtual_key = _get_config_value("LLM_VIRTUAL_KEY") or _get_config_value("BIFROST_VIRTUAL_KEY")
+    bifrost_url = _get_config_value("BIFROST_URL")
     if not api_key:
-        raise ValueError(
-            "Missing LLM API key: LLM_API_KEY is not set. Add it to Streamlit Secrets or your .env file "
-            "(if your local Bifrost gateway does not require a key, set 'bifrost-local')."
-        )
+        if bifrost_url and virtual_key and os.environ.get("LLM_BASE_URL") != "":
+            api_key = virtual_key
+        else:
+            raise ValueError(
+                "Missing LLM API key: LLM_API_KEY is not set. Add it to Streamlit Secrets or your .env file "
+                "(if your local Bifrost gateway does not require a key, set 'bifrost-local')."
+            )
 
     return api_key, base_url, model_chain
 
